@@ -28,7 +28,7 @@ the primary form.
 
 ## Consequences
 
-- The API surface in `sdk/python/vmlayer/api.py` is the client view; the
+- The API surface in `sdk/python/vmlayer/` is the client view; the
   daemon's gRPC schema is derived from it, not the other way round.
 - SDK logic is kept to ergonomics (context managers, iterators, type mapping).
   Anything that decides something lives in the daemon.
