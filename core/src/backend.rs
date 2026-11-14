@@ -79,6 +79,17 @@ pub trait SandboxHandle: Send + Sync {
     /// Open an interactive terminal. *Optional: `pty`.*
     async fn pty(&self, req: ExecRequest) -> Result<Box<dyn Pty>>;
 
+    /// Processes started through vmlayer that are still running.
+    async fn processes(&self) -> Result<Vec<ProcessInfo>>;
+
+    /// Re-attach to a running process (e.g. after a client reconnect). The
+    /// guest agent buffers output not yet consumed, up to a configured cap.
+    async fn process(&self, pid: u32) -> Result<Box<dyn Process>>;
+
+    /// Resolve when something inside the guest listens on `port`. Polled by
+    /// the guest agent; cheap enough to call right after `create`.
+    async fn wait_for_port(&self, port: u16, timeout: std::time::Duration) -> Result<()>;
+
     // -- files (all go through the guest agent, never the host mount) ---------
 
     async fn read_file(&self, path: &str) -> Result<Bytes>;
