@@ -41,6 +41,11 @@ local runs and CI agree.
 ## Layout
 
 ```
+proto/                vmlayer.v1 .proto files and the generated Rust crate
+daemon/               vmlayerd: config, store, volumes, registry, processes,
+                      manager, grpc/{sandboxes,processes,files,volumes,system}
+backends/docker/      Docker backend (connect, sandbox, process, files, expose)
+cli/                  vmlayer command
 core/src/backend.rs   the Backend / SandboxHandle / Process / Pty traits
 core/src/types/       value types, one module per concern (ids, capabilities,
                       spec, volume, process, snapshot), re-exported flat
@@ -54,8 +59,12 @@ docs/                 integrations study, research notes, diagram
 One module per concern, re-exported from one place. A new concept gets a new
 module, not a new section in an existing file.
 
-Planned, one crate or package each: `daemon/` (`vmlayerd`), `backends/{firecracker,libkrun,docker}`,
+Planned, one crate or package each: `backends/{firecracker,libkrun}`,
 `guest-agent/`, `sdk/typescript/`, `integrations/<runtime>/`.
+
+`make check` runs every linter; `make test-live` runs the live Docker and
+end-to-end suites; `make proto` regenerates the Python stubs after a
+`.proto` change (CI fails if they are stale).
 
 ## Commits
 
