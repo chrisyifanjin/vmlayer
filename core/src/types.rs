@@ -126,6 +126,10 @@ pub struct SandboxSpec {
     pub disk_mib: Option<u32>,
     pub env: BTreeMap<String, String>,
     pub workdir: String,
+    /// Started by the guest agent as soon as the sandbox is up; the daemon
+    /// has already resolved `AUTO` to the image's `ENTRYPOINT`/`CMD`. `None`
+    /// starts nothing. Reported as pid 1 in `SandboxHandle::processes`.
+    pub entrypoint: Option<ExecRequest>,
     pub network: NetworkMode,
     /// Hard wall-clock lifetime. The backend kills the sandbox when it
     /// elapses. `None` means unbounded.
@@ -193,6 +197,15 @@ pub enum OutputStream {
 pub struct OutputChunk {
     pub stream: OutputStream,
     pub data: Bytes,
+}
+
+/// A process the guest agent is tracking.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub argv: Vec<String>,
+    pub started_at: SystemTime,
+    pub is_entrypoint: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

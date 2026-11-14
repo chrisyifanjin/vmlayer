@@ -19,16 +19,13 @@ Everything below is a signature with a docstring. Bodies are
 from __future__ import annotations
 
 import enum
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from typing import (
     IO,
-    AsyncIterator,
-    Iterator,
     Literal,
-    Mapping,
-    Sequence,
 )
 
 # --------------------------------------------------------------------------
@@ -51,14 +48,23 @@ class BackendUnsupported(VmlayerError):
     want to avoid this at runtime.
     """
 
-    def __init__(self, backend: "Backend", feature: str) -> None:
+    def __init__(self, backend: Backend, feature: str) -> None:
         super().__init__(f"backend {backend.value!r} does not support {feature!r}")
         self.backend = backend
         self.feature = feature
 
 
 class ExecTimeout(VmlayerError):
-    """A command exceeded its ``timeout``. The process has been killed."""
+    """A command exceeded its ``timeout``. The process has been killed.
+
+    ``partial`` holds whatever the command produced before it was stopped, so
+    callers can still show the model what happened.
+    """
+
+    def __init__(self, timeout: timedelta, partial: ExecResult) -> None:
+        super().__init__(f"command exceeded {timeout}")
+        self.timeout = timeout
+        self.partial = partial
 
 
 class SnapshotIncompatible(VmlayerError):
@@ -127,6 +133,9 @@ class ExecResult:
     exit_code: int
     stdout: str
     stderr: str
+    output: str
+    """stdout and stderr merged in arrival order, the way a terminal shows
+    them. Usually what you feed back to the model."""
     duration: timedelta
 
     @property
@@ -158,6 +167,9 @@ class PtySize:
     rows: int = 24
 
 
+DEFAULT_PTY_SIZE = PtySize()
+
+
 @dataclass(frozen=True)
 class Endpoint:
     """A host-reachable address for a port inside the sandbox."""
@@ -183,7 +195,7 @@ class Snapshot:
     created_at: float
     size_bytes: int
     includes_memory: bool
-    volumes: Sequence["VolumeSnapshot"] = ()
+    volumes: Sequence[VolumeSnapshot] = ()
     """Filesystem snapshots of every volume that was attached, keyed to their
     guest paths. ``Sandbox.restore`` clones these; it never reattaches the
     original volumes."""
@@ -255,7 +267,7 @@ class Volume:
         size_mb: int | None = None,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
-    ) -> "Volume":
+    ) -> Volume:
         """Create an empty volume. ``size_mb`` defaults to the daemon's setting.
         Storage is sparse, so a large size costs nothing until used."""
         raise NotImplementedError
@@ -268,13 +280,13 @@ class Volume:
         name: str | None = None,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
-    ) -> "Volume":
+    ) -> Volume:
         """Create a volume whose contents are a copy-on-write clone of a
         snapshot. This is how templates work: snapshot once, instantiate many."""
         raise NotImplementedError
 
     @classmethod
-    def get(cls, name_or_id: str, *, client: Client | None = None) -> "Volume":
+    def get(cls, name_or_id: str, *, client: Client | None = None) -> Volume:
         raise NotImplementedError
 
     def snapshot(
@@ -292,7 +304,7 @@ class Volume:
         """
         raise NotImplementedError
 
-    def clone(self, *, name: str | None = None) -> "Volume":
+    def clone(self, *, name: str | None = None) -> Volume:
         """Copy-on-write copy of the current contents. Shorthand for
         ``snapshot()`` followed by ``from_snapshot``."""
         raise NotImplementedError
@@ -469,12 +481,13 @@ class Sandbox:
         workdir: str = "/work",
         workspace: Volume | str | None | type[AUTO] = AUTO,
         mounts: Mapping[str, Volume | tuple[Volume, Literal["ro", "rw"]]] | None = None,
+        entrypoint: Sequence[str] | None | type[AUTO] = AUTO,
         timeout: timedelta | None = timedelta(minutes=15),
         backend: Backend = Backend.AUTO,
         network: bool = True,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
-    ) -> "Sandbox":
+    ) -> Sandbox:
         """Boot a new sandbox from an image.
 
         ``image`` is an OCI reference (``python:3.12``,
@@ -494,6 +507,13 @@ class Sandbox:
         ``mounts`` attaches additional volumes at other paths, read-write by
         default; use ``(volume, "ro")`` for shared read-only data.
 
+        ``entrypoint`` is a command the guest agent starts as soon as the
+        sandbox is up, for images that *are* a server (Jupyter kernel gateway,
+        an agent server, a dev server). ``AUTO`` uses the image's
+        ``ENTRYPOINT``/``CMD``; ``None`` starts nothing. Its output is
+        available via ``process(1)``. Combine with ``wait_for_port`` and
+        ``expose``.
+
         ``timeout`` is a hard wall-clock lifetime; the sandbox is killed when
         it elapses. ``None`` disables it.
         """
@@ -507,7 +527,7 @@ class Sandbox:
         timeout: timedelta | None = timedelta(minutes=15),
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
-    ) -> "Sandbox":
+    ) -> Sandbox:
         """Start a new sandbox from a snapshot.
 
         With a memory snapshot this resumes exactly where ``snapshot()`` was
@@ -518,7 +538,7 @@ class Sandbox:
         raise NotImplementedError
 
     @classmethod
-    def connect(cls, sandbox_id: str, *, client: Client | None = None) -> "Sandbox":
+    def connect(cls, sandbox_id: str, *, client: Client | None = None) -> Sandbox:
         """Attach to a sandbox that already exists on the daemon."""
         raise NotImplementedError
 
@@ -552,11 +572,22 @@ class Sandbox:
         """Start a command and return immediately with a streaming handle."""
         raise NotImplementedError
 
+    def processes(self) -> list[Process]:
+        """Every process started through vmlayer that is still running,
+        including the entrypoint. Handles survive client reconnects: a new
+        ``Sandbox.connect`` can pick up output of a ``spawn`` from before."""
+        raise NotImplementedError
+
+    def process(self, pid: int) -> Process:
+        """Re-attach to a running process by pid. ``process(1)`` is the
+        entrypoint. Raises ``SandboxNotFound`` if no such process."""
+        raise NotImplementedError
+
     def pty(
         self,
         cmd: str | Sequence[str] = "/bin/bash",
         *,
-        size: PtySize = PtySize(),
+        size: PtySize = DEFAULT_PTY_SIZE,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
     ) -> Pty:
@@ -582,7 +613,7 @@ class Sandbox:
         """
         raise NotImplementedError
 
-    def fork(self, count: int = 1) -> list["Sandbox"]:
+    def fork(self, count: int = 1) -> list[Sandbox]:
         """Clone this sandbox ``count`` times, each copy continuing from the
         current state with its own identity (new id, new network address) and
         its own copy-on-write clones of every attached volume.
@@ -619,12 +650,23 @@ class Sandbox:
         """Make a guest port reachable from the host. Requires ``capabilities.expose_port``."""
         raise NotImplementedError
 
+    def wait_for_port(self, port: int, *, timeout: timedelta = timedelta(seconds=30)) -> None:
+        """Block until something inside the guest listens on ``port``.
+
+        The usual sequence for server-shaped images::
+
+            sb = Sandbox.create("jupyter/kernel-gateway")
+            sb.wait_for_port(8888)
+            url = sb.expose(8888).url
+        """
+        raise NotImplementedError
+
     def unexpose(self, port: int) -> None:
         raise NotImplementedError
 
     # -- context manager ------------------------------------------------------
 
-    def __enter__(self) -> "Sandbox":
+    def __enter__(self) -> Sandbox:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -645,32 +687,32 @@ class AsyncSandbox:
     id: str
     backend: Backend
     capabilities: Capabilities
-    files: "AsyncFiles"
+    files: AsyncFiles
 
     @classmethod
-    async def create(cls, image: str, **kwargs: object) -> "AsyncSandbox":
+    async def create(cls, image: str, **kwargs: object) -> AsyncSandbox:
         raise NotImplementedError
 
     @classmethod
-    async def restore(cls, snapshot: Snapshot | str, **kwargs: object) -> "AsyncSandbox":
+    async def restore(cls, snapshot: Snapshot | str, **kwargs: object) -> AsyncSandbox:
         raise NotImplementedError
 
     async def exec(self, cmd: str | Sequence[str], **kwargs: object) -> ExecResult:
         raise NotImplementedError
 
-    async def spawn(self, cmd: str | Sequence[str], **kwargs: object) -> "AsyncProcess":
+    async def spawn(self, cmd: str | Sequence[str], **kwargs: object) -> AsyncProcess:
         raise NotImplementedError
 
     async def snapshot(self, **kwargs: object) -> Snapshot:
         raise NotImplementedError
 
-    async def fork(self, count: int = 1) -> list["AsyncSandbox"]:
+    async def fork(self, count: int = 1) -> list[AsyncSandbox]:
         raise NotImplementedError
 
     async def kill(self) -> None:
         raise NotImplementedError
 
-    async def __aenter__(self) -> "AsyncSandbox":
+    async def __aenter__(self) -> AsyncSandbox:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
