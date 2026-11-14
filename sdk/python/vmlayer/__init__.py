@@ -6,7 +6,7 @@ backend exists.
 
 Quick tour::
 
-    from vmlayer import Sandbox
+    from vmlayer import Sandbox, Volume
 
     with Sandbox.create("python:3.12", memory_mb=512) as sb:
         result = sb.exec("python -c 'print(40 + 2)'")
@@ -19,11 +19,20 @@ Quick tour::
 
         snap = sb.snapshot()                 # freeze memory + disk
         children = sb.fork(4)                # four copies, same state
+        ckpt = sb.workspace.snapshot()       # files only, cheap, portable
 
     sb2 = Sandbox.restore(snap)              # ms-scale cold start
+
+    # a workspace that outlives sandboxes
+    repo = Volume.create(name="proj-42", size_mb=8192)
+    with Sandbox.create("python:3.12", workspace=repo) as sb:
+        sb.exec("git clone https://example.com/repo .")
+    with Sandbox.create("python:3.12", workspace=repo) as sb:
+        sb.exec("pytest")                    # same files, new sandbox
 """
 
 from .api import (
+    AUTO,
     AsyncSandbox,
     Backend,
     BackendUnsupported,
@@ -44,9 +53,12 @@ from .api import (
     Snapshot,
     SnapshotIncompatible,
     VmlayerError,
+    Volume,
+    VolumeSnapshot,
 )
 
 __all__ = [
+    "AUTO",
     "AsyncSandbox",
     "Backend",
     "BackendUnsupported",
@@ -67,6 +79,8 @@ __all__ = [
     "Snapshot",
     "SnapshotIncompatible",
     "VmlayerError",
+    "Volume",
+    "VolumeSnapshot",
 ]
 
 __version__ = "0.0.0"

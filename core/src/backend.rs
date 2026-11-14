@@ -94,11 +94,24 @@ pub trait SandboxHandle: Send + Sync {
     async fn snapshot(&self, opts: SnapshotOptions) -> Result<SnapshotRef>;
 
     /// Clone `count` copies continuing from the current state. The parent
-    /// keeps running. Each child gets a fresh identity. *Optional: `fork`.*
+    /// keeps running. Each child gets a fresh identity and the cloned
+    /// volumes in `mounts[i]` (one `Vec<Mount>` per child, prepared by the
+    /// daemon). *Optional: `fork`.*
     ///
-    /// Implementations are expected to share memory copy-on-write where the
-    /// engine allows; this is the primitive agent runtimes branch on.
-    async fn fork(&self, count: u32) -> Result<Vec<Box<dyn SandboxHandle>>>;
+    /// On Firecracker this is snapshot plus `count` restores with memory
+    /// mapped copy-on-write; it is the primitive agent runtimes branch on.
+    async fn fork(
+        &self,
+        count: u32,
+        mounts: Vec<Vec<Mount>>,
+    ) -> Result<Vec<Box<dyn SandboxHandle>>>;
+
+    /// Quiesce filesystems (`fsfreeze` through the guest agent) so the daemon
+    /// can take consistent volume snapshots of a running sandbox, then thaw.
+    /// Used by `Volume::snapshot` on an attached volume; `snapshot` above
+    /// does this implicitly.
+    async fn freeze_fs(&self) -> Result<()>;
+    async fn thaw_fs(&self) -> Result<()>;
 
     /// *Optional: `pause`.*
     async fn pause(&self) -> Result<()>;
@@ -106,6 +119,14 @@ pub trait SandboxHandle: Send + Sync {
 
     /// Destroy the sandbox and release all host resources. Idempotent.
     async fn kill(&self) -> Result<()>;
+
+    // -- volumes -------------------------------------------------------------
+
+    /// Attach a volume to a running sandbox. *Optional: `hot_attach`.*
+    /// On Firecracker this needs PCI mode plus a bus rescan by the guest
+    /// agent; no v1 backend implements it.
+    async fn attach(&self, mount: Mount) -> Result<()>;
+    async fn detach(&self, guest_path: &str) -> Result<()>;
 
     // -- network -------------------------------------------------------------
 

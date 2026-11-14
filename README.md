@@ -10,7 +10,7 @@ daemon plus SDKs you embed in your own platform.
 > compile. Nothing runs yet. See [Roadmap](#roadmap).
 
 ```python
-from vmlayer import Sandbox
+from vmlayer import Sandbox, Volume
 
 with Sandbox.create("python:3.12", memory_mb=512) as sb:
     sb.files.write("/work/main.py", b"print('hello from a microVM')")
@@ -20,6 +20,14 @@ with Sandbox.create("python:3.12", memory_mb=512) as sb:
     kids = sb.fork(4)           # four copies, same state, own identity
 
 sb2 = Sandbox.restore(snap)     # resumes where snapshot() was called
+
+# a workspace that outlives any one sandbox
+repo = Volume.create(name="proj-42", size_mb=8192)
+with Sandbox.create("python:3.12", workspace=repo) as sb:
+    sb.exec("git clone https://example.com/repo .")
+ckpt = repo.snapshot(durable=True)          # files only, cheap, portable
+with Sandbox.create("node:22", workspace=repo) as sb:
+    sb.exec("npm test")                     # same files, different image
 ```
 
 ## Why this exists
@@ -76,6 +84,10 @@ Rules the design holds itself to:
    generated clients plus ergonomics.
 5. **Images resolved in one place.** Backends receive a `Rootfs`, never an OCI
    reference.
+6. **Root disk and workspace are separate.** The root disk is disposable; work
+   lives on a `Volume` that can outlive the sandbox, be shared read-only, be
+   checkpointed cheaply, and is cloned (never reattached) on restore and fork.
+   Anonymous by default, so most callers never see it.
 
 Read the two files that define the project:
 
@@ -118,11 +130,12 @@ and the rules that keep it this way.
 ## Roadmap
 
 - [x] **0. API surface.** Python API, Rust `Backend` trait, design records, this README.
-- [ ] **1. Vertical slice.** Firecracker on a KVM host boots a prebuilt rootfs,
-      guest agent over vsock, `exec("echo hi")` round-trips. Everything else
-      hardcoded.
-- [ ] **2. Snapshot, restore, fork.** On the same host. Measure restore latency.
-      Solve vsock re-attach and fresh network identity after fork.
+- [ ] **1. Vertical slice.** Firecracker on a KVM host boots a prebuilt rootfs
+      plus a second ext4 as the workspace volume, guest agent over vsock mounts
+      it, `exec("echo hi")` round-trips. Everything else hardcoded.
+- [ ] **2. Snapshot, restore, fork.** On the same host, including volume
+      clones via reflink. Measure restore latency. Solve vsock re-attach and
+      fresh network identity after fork.
 - [ ] **3. Second backend.** Docker behind the same trait, to prove the
       abstraction has no leaks.
 - [ ] **4. Productize.** `vmlayerd` gRPC server, Python SDK client, OCI → ext4

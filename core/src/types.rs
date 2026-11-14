@@ -24,7 +24,8 @@ macro_rules! id_type {
 
 id_type!(SandboxId);
 id_type!(SnapshotId);
-id_type!(TemplateId);
+id_type!(VolumeId);
+id_type!(VolumeSnapshotId);
 
 /// What a backend can do. One field per optional method on
 /// [`crate::SandboxHandle`]. The daemon surfaces this to SDK users unchanged.
@@ -38,6 +39,10 @@ pub struct Capabilities {
     pub pause: bool,
     pub pty: bool,
     pub expose_port: bool,
+    /// Can mount [`Mount`]s given in [`SandboxSpec`].
+    pub volumes: bool,
+    /// Can attach/detach volumes on a running sandbox. No v1 backend.
+    pub hot_attach: bool,
 }
 
 impl Capabilities {
@@ -49,6 +54,8 @@ impl Capabilities {
         pause: true,
         pty: true,
         expose_port: true,
+        volumes: true,
+        hot_attach: false,
     };
 
     /// What a container backend offers: good enough for local dev and CI.
@@ -59,6 +66,8 @@ impl Capabilities {
         pause: true,
         pty: true,
         expose_port: true,
+        volumes: true,
+        hot_attach: false,
     };
 }
 
@@ -79,12 +88,38 @@ pub enum Rootfs {
     EngineImage { digest: String },
 }
 
+/// Host-side storage behind one volume attachment. Produced by the daemon's
+/// volume store (which owns creation, copy-on-write cloning, snapshots and
+/// upload); backends only plumb it into the guest.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum VolumeSource {
+    /// A raw ext4 image file, attached as a virtio-blk device. Firecracker
+    /// and libkrun.
+    BlockImage { path: PathBuf },
+    /// A host directory, bind-mounted. Docker.
+    Dir { path: PathBuf },
+}
+
+/// One volume attachment. The guest agent performs the mount at handshake
+/// from a table the daemon sends; images need no `fstab`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Mount {
+    pub volume: VolumeId,
+    pub source: VolumeSource,
+    /// Absolute path inside the guest.
+    pub guest_path: String,
+    pub read_only: bool,
+}
+
 /// Everything needed to boot one sandbox. Produced by `vmlayerd` after image
 /// resolution and policy checks; backends treat it as read-only.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SandboxSpec {
     pub id: SandboxId,
     pub rootfs: Rootfs,
+    /// Volumes to attach at boot. The daemon has already enforced the
+    /// single-writer rule; backends attach what they are given.
+    pub mounts: Vec<Mount>,
     pub vcpus: u32,
     pub memory_mib: u32,
     /// Writable overlay size. `None` lets the backend choose.
@@ -184,7 +219,24 @@ pub struct SnapshotOptions {
     pub stay_paused: bool,
 }
 
-/// A persisted snapshot. Lives in the daemon's store, outlives its sandbox.
+/// A filesystem-only snapshot of one volume. Cheap, portable across hosts
+/// and backends, exportable to the blob store.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VolumeSnapshotRef {
+    pub id: VolumeSnapshotId,
+    pub volume: VolumeId,
+    /// Where it was mounted when taken, if it was attached.
+    pub guest_path: Option<String>,
+    pub created_at: SystemTime,
+    pub size_bytes: u64,
+    /// Uploaded to the configured blob store.
+    pub durable: bool,
+    pub labels: BTreeMap<String, String>,
+}
+
+/// A persisted sandbox snapshot: memory (on microVM backends), root overlay,
+/// and a volume snapshot for every mount that was attached. Taken atomically
+/// while paused. Lives in the daemon's store, outlives its sandbox.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapshotRef {
     pub id: SnapshotId,
@@ -192,15 +244,21 @@ pub struct SnapshotRef {
     pub created_at: SystemTime,
     pub size_bytes: u64,
     pub includes_memory: bool,
+    pub volumes: Vec<VolumeSnapshotRef>,
     pub labels: BTreeMap<String, String>,
 }
 
-/// Per-restore overrides. Identity (id, network address) is always fresh;
-/// everything else defaults to what the snapshot recorded.
+/// Per-restore overrides. Identity (id, network address) is always fresh,
+/// and every volume comes back as a fresh copy-on-write clone (the daemon
+/// prepares these and passes them as `mounts`); everything else defaults to
+/// what the snapshot recorded.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RestoreOptions {
     pub id: Option<SandboxId>,
     pub ttl: Option<Duration>,
+    /// Cloned volumes to attach in place of the ones recorded in the
+    /// snapshot, one per `SnapshotRef::volumes` entry, same guest paths.
+    pub mounts: Vec<Mount>,
     pub labels: BTreeMap<String, String>,
 }
 
