@@ -1,4 +1,4 @@
-use crate::types::{SandboxId, SnapshotId};
+use crate::types::{SandboxId, SnapshotId, VolumeId};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -19,6 +19,13 @@ pub enum Error {
 
     #[error("snapshot {0} not found")]
     SnapshotNotFound(SnapshotId),
+
+    #[error("volume {0} not found")]
+    VolumeNotFound(VolumeId),
+
+    /// Single-writer rule: the volume is already attached read-write.
+    #[error("volume {volume} is attached read-write to sandbox {holder}")]
+    VolumeBusy { volume: VolumeId, holder: SandboxId },
 
     /// The sandbox exists but is in the wrong state for this call
     /// (e.g. `exec` on a paused sandbox, `resume` on a running one).

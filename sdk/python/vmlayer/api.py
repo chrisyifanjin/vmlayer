@@ -87,6 +87,11 @@ class Backend(str, enum.Enum):
     DOCKER = "docker"
 
 
+class AUTO:
+    """Sentinel: let the daemon choose. Used as a default where ``None`` means
+    something else (e.g. ``workspace=None`` means *no* workspace)."""
+
+
 class SandboxState(str, enum.Enum):
     CREATING = "creating"
     RUNNING = "running"
@@ -111,6 +116,10 @@ class Capabilities:
     memory_snapshot: bool
     """True when snapshots include RAM (microVM backends). False when only the
     filesystem is captured (Docker)."""
+    volumes: bool
+    """Can attach ``Volume`` objects at creation time."""
+    hot_attach: bool
+    """Can attach/detach volumes while running. No v1 backend sets this."""
 
 
 @dataclass(frozen=True)
@@ -174,10 +183,122 @@ class Snapshot:
     created_at: float
     size_bytes: int
     includes_memory: bool
+    volumes: Sequence["VolumeSnapshot"] = ()
+    """Filesystem snapshots of every volume that was attached, keyed to their
+    guest paths. ``Sandbox.restore`` clones these; it never reattaches the
+    original volumes."""
     labels: Mapping[str, str] = field(default_factory=dict)
 
     def delete(self) -> None:
         """Remove the snapshot from the daemon's store."""
+        raise NotImplementedError
+
+
+# --------------------------------------------------------------------------
+# Volumes
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VolumeSnapshot:
+    """A filesystem-only snapshot of a ``Volume``.
+
+    Cheap (copy-on-write, milliseconds), portable across hosts and backends,
+    and the thing to keep long-term. Turn it back into a volume with
+    ``Volume.from_snapshot``; use it as a template by doing that many times.
+    """
+
+    id: str
+    volume_id: str
+    guest_path: str | None
+    """Where it was mounted when taken, if it was attached."""
+    created_at: float
+    size_bytes: int
+    durable: bool
+    """True once the snapshot has been uploaded to the configured blob store."""
+    labels: Mapping[str, str] = field(default_factory=dict)
+
+    def delete(self) -> None:
+        raise NotImplementedError
+
+
+class Volume:
+    """Persistent storage with a lifetime independent of any sandbox.
+
+    A volume is a block of storage (ext4 inside) that a sandbox mounts at a
+    path. It is the workspace primitive: vmlayer does not know what a repo or
+    a dependency cache is; put whatever you like on a volume and describe it
+    with ``labels``.
+
+    Rules:
+
+    * Read-write attachment to at most one sandbox at a time. Read-only
+      attachments are unlimited. A second read-write attach fails.
+    * ``Sandbox.restore`` and ``Sandbox.fork`` attach *clones*, never the
+      original. The original stays with whoever holds it.
+    * Anonymous volumes (created implicitly by ``Sandbox.create``) are deleted
+      with their sandbox. Named volumes persist until ``delete``.
+    """
+
+    id: str
+    name: str | None
+    size_mb: int
+    labels: Mapping[str, str]
+    attached_to: str | None
+    """Sandbox id holding the read-write attachment, if any."""
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str | None = None,
+        size_mb: int | None = None,
+        labels: Mapping[str, str] | None = None,
+        client: Client | None = None,
+    ) -> "Volume":
+        """Create an empty volume. ``size_mb`` defaults to the daemon's setting.
+        Storage is sparse, so a large size costs nothing until used."""
+        raise NotImplementedError
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: VolumeSnapshot | str,
+        *,
+        name: str | None = None,
+        labels: Mapping[str, str] | None = None,
+        client: Client | None = None,
+    ) -> "Volume":
+        """Create a volume whose contents are a copy-on-write clone of a
+        snapshot. This is how templates work: snapshot once, instantiate many."""
+        raise NotImplementedError
+
+    @classmethod
+    def get(cls, name_or_id: str, *, client: Client | None = None) -> "Volume":
+        raise NotImplementedError
+
+    def snapshot(
+        self,
+        *,
+        durable: bool = False,
+        labels: Mapping[str, str] | None = None,
+    ) -> VolumeSnapshot:
+        """Take a filesystem snapshot.
+
+        Returns as soon as the local copy-on-write snapshot exists. With
+        ``durable=True`` it also waits for upload to the blob store. A volume
+        attached read-write is quiesced (``fsfreeze`` via the guest agent) for
+        the duration, typically milliseconds.
+        """
+        raise NotImplementedError
+
+    def clone(self, *, name: str | None = None) -> "Volume":
+        """Copy-on-write copy of the current contents. Shorthand for
+        ``snapshot()`` followed by ``from_snapshot``."""
+        raise NotImplementedError
+
+    def delete(self) -> None:
+        """Fails if the volume is attached."""
         raise NotImplementedError
 
 
@@ -301,6 +422,9 @@ class Client:
     def list_snapshots(self, *, labels: Mapping[str, str] | None = None) -> list[Snapshot]:
         raise NotImplementedError
 
+    def list_volumes(self, *, labels: Mapping[str, str] | None = None) -> list[Volume]:
+        raise NotImplementedError
+
     def available_backends(self) -> list[Backend]:
         """Backends the daemon can actually use on this host."""
         raise NotImplementedError
@@ -325,6 +449,11 @@ class Sandbox:
     backend: Backend
     capabilities: Capabilities
     files: Files
+    workspace: Volume | None
+    """The volume mounted at ``workdir``, or ``None`` if created with
+    ``workspace=None``."""
+    mounts: Mapping[str, Volume]
+    """Every attached volume by guest path, ``workspace`` included."""
 
     # -- construction -------------------------------------------------------
 
@@ -338,6 +467,8 @@ class Sandbox:
         disk_mb: int | None = None,
         env: Mapping[str, str] | None = None,
         workdir: str = "/work",
+        workspace: Volume | str | None | type[AUTO] = AUTO,
+        mounts: Mapping[str, Volume | tuple[Volume, Literal["ro", "rw"]]] | None = None,
         timeout: timedelta | None = timedelta(minutes=15),
         backend: Backend = Backend.AUTO,
         network: bool = True,
@@ -347,9 +478,21 @@ class Sandbox:
         """Boot a new sandbox from an image.
 
         ``image`` is an OCI reference (``python:3.12``,
-        ``ghcr.io/org/agent-base:v3``) or a vmlayer template id produced by a
-        prior snapshot. The daemon converts OCI images to the backend's rootfs
-        format and caches the result.
+        ``ghcr.io/org/agent-base:v3``). The daemon converts OCI images to the
+        backend's rootfs format and caches the result. The root disk is
+        disposable: it is the image plus a thin overlay.
+
+        ``workspace`` is the volume mounted at ``workdir``:
+
+        * ``AUTO`` (default): a fresh anonymous volume that is deleted with
+          the sandbox. Most callers never touch this.
+        * a ``Volume`` or its name/id: reuse persistent storage. Fails if it is
+          already attached read-write elsewhere.
+        * ``None``: no workspace volume; work on the root overlay only.
+          Slightly faster boot, nothing survives the sandbox.
+
+        ``mounts`` attaches additional volumes at other paths, read-write by
+        default; use ``(volume, "ro")`` for shared read-only data.
 
         ``timeout`` is a hard wall-clock lifetime; the sandbox is killed when
         it elapses. ``None`` disables it.
@@ -368,8 +511,9 @@ class Sandbox:
         """Start a new sandbox from a snapshot.
 
         With a memory snapshot this resumes exactly where ``snapshot()`` was
-        called, including running processes. Raises ``SnapshotIncompatible``
-        if the host cannot run it.
+        called, including running processes. Every volume that was attached
+        comes back as a fresh copy-on-write clone; the originals are not
+        touched. Raises ``SnapshotIncompatible`` if the host cannot run it.
         """
         raise NotImplementedError
 
@@ -428,15 +572,20 @@ class Sandbox:
     def snapshot(self, *, labels: Mapping[str, str] | None = None) -> Snapshot:
         """Freeze the sandbox and persist it.
 
-        On microVM backends this captures RAM and disk; the sandbox is paused
-        for the duration (tens of ms) and then resumed. On Docker only the
-        filesystem is captured. Requires ``capabilities.snapshot``.
+        On microVM backends this captures RAM, the root overlay and every
+        attached volume atomically; the sandbox is paused for the duration
+        (tens of ms) and then resumed. On Docker only filesystems are
+        captured. Requires ``capabilities.snapshot``.
+
+        For a cheap, portable, long-lived checkpoint of just the files, use
+        ``sandbox.workspace.snapshot()`` instead.
         """
         raise NotImplementedError
 
     def fork(self, count: int = 1) -> list["Sandbox"]:
         """Clone this sandbox ``count`` times, each copy continuing from the
-        current state with its own identity (new id, new network address).
+        current state with its own identity (new id, new network address) and
+        its own copy-on-write clones of every attached volume.
 
         The parent keeps running. Requires ``capabilities.fork``.
         """
@@ -451,6 +600,17 @@ class Sandbox:
 
     def kill(self) -> None:
         """Destroy the sandbox and release everything. Idempotent."""
+        raise NotImplementedError
+
+    # -- volumes --------------------------------------------------------------
+
+    def attach(self, volume: Volume, path: str, *, read_only: bool = False) -> None:
+        """Mount a volume while running. Requires ``capabilities.hot_attach``,
+        which no v1 backend has; attach at ``create`` time instead."""
+        raise NotImplementedError
+
+    def detach(self, path: str) -> None:
+        """Requires ``capabilities.hot_attach``."""
         raise NotImplementedError
 
     # -- network --------------------------------------------------------------
