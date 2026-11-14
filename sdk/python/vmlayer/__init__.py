@@ -31,34 +31,35 @@ Quick tour::
         sb.exec("pytest")                    # same files, new sandbox
 """
 
-from .api import (
-    AUTO,
-    AsyncSandbox,
-    Backend,
+from .aio import AsyncFiles, AsyncProcess, AsyncSandbox
+from .client import Client
+from .errors import (
     BackendUnsupported,
-    Capabilities,
-    Client,
-    Endpoint,
-    ExecResult,
     ExecTimeout,
-    FileInfo,
-    Files,
-    OutputChunk,
-    Process,
-    Pty,
-    PtySize,
-    Sandbox,
     SandboxNotFound,
-    SandboxState,
-    Snapshot,
     SnapshotIncompatible,
     VmlayerError,
-    Volume,
-    VolumeSnapshot,
 )
+from .files import Files
+from .process import Process, Pty
+from .sandbox import Sandbox
+from .types import (
+    AUTO,
+    Backend,
+    Capabilities,
+    Endpoint,
+    ExecResult,
+    FileInfo,
+    OutputChunk,
+    PtySize,
+    SandboxState,
+)
+from .volume import Snapshot, Volume, VolumeSnapshot
 
 __all__ = [
     "AUTO",
+    "AsyncFiles",
+    "AsyncProcess",
     "AsyncSandbox",
     "Backend",
     "BackendUnsupported",

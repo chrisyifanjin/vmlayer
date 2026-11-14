@@ -91,8 +91,12 @@ Rules the design holds itself to:
 
 Read the two files that define the project:
 
-- [`sdk/python/vmlayer/api.py`](sdk/python/vmlayer/api.py): the user-facing surface.
+- [`sdk/python/vmlayer/`](sdk/python/vmlayer/): the user-facing surface, one module per concern (`sandbox.py` is the entry point).
 - [`core/src/backend.rs`](core/src/backend.rs): the contract each engine implements.
+
+And the three documents behind them: [design decisions](docs/decisions/README.md),
+[how six agent runtimes map onto this API](docs/integrations.md), and
+[the research that shapes steps 2 and 4](docs/research.md).
 
 ## Backends
 
@@ -134,12 +138,14 @@ and the rules that keep it this way.
       plus a second ext4 as the workspace volume, guest agent over vsock mounts
       it, `exec("echo hi")` round-trips. Everything else hardcoded.
 - [ ] **2. Snapshot, restore, fork.** On the same host, including volume
-      clones via reflink. Measure restore latency. Solve vsock re-attach and
-      fresh network identity after fork.
+      clones via reflink. uffd memory backend with working-set prefetch
+      (REAP/FaaSnap), zero-page elision. Measure restore latency three ways.
+      Solve vsock re-attach and fresh network identity after fork.
 - [ ] **3. Second backend.** Docker behind the same trait, to prove the
       abstraction has no leaks.
-- [ ] **4. Productize.** `vmlayerd` gRPC server, Python SDK client, OCI → ext4
-      pipeline, networking.
+- [ ] **4. Productize.** `vmlayerd` gRPC server, Python SDK client, image
+      pipeline (layered, see [research notes](docs/research.md)), egress
+      allowlists, quotas.
 - [ ] **5. libkrun backend** for macOS development.
 - [ ] Later: TypeScript SDK, E2B-compatible facade
       ([mapping](docs/e2b-mapping.md)), optional multi-host scheduler.
