@@ -14,10 +14,10 @@ use vmlayer_core::{
 };
 
 use crate::config::Config;
-use crate::processes::{Entry, ProcessTable};
 use crate::registry::Registry;
 use crate::store::{MountRow, SandboxRow, Store, StoreError};
 use crate::volumes::{new_id, VolumeStore};
+use vmlayer_procs::{Entry, ProcessTable};
 
 pub struct Live {
     pub id: SandboxId,

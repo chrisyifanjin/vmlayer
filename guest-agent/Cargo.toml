@@ -1,0 +1,32 @@
+[package]
+name = "vmlayer-guest-agent"
+description = "The vmlayer guest agent: runs as PID 1 inside a microVM and serves the Processes, Files and Guest gRPC services over vsock."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vmlayer-guest-agent"
+path = "src/main.rs"
+
+[dependencies]
+vmlayer-core = { workspace = true }
+vmlayer-procs = { workspace = true }
+vmlayer-proto = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+prost-types = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+nix = { version = "0.31", features = ["fs", "ioctl", "mount", "process", "signal", "term", "hostname", "reboot"] }
+tokio-vsock = { version = "0.7", features = ["tonic014"] }

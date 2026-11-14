@@ -13,60 +13,10 @@ use vmlayer_proto::v1::processes_server::Processes;
 
 use super::convert::{self, status};
 use super::Services;
-use crate::processes::{Entry, Event};
+use vmlayer_procs::grpc::follow;
 
 type EventStream = Pin<Box<dyn Stream<Item = Result<pb::ExecEvent, Status>> + Send>>;
 type PtyStream = Pin<Box<dyn Stream<Item = Result<pb::PtyOutput, Status>> + Send>>;
-
-fn event(ev: &Event) -> pb::ExecEvent {
-    let e = match ev {
-        Event::Output(c) => pb::exec_event::Event::Output(convert::output_chunk(c)),
-        Event::Dropped(n) => pb::exec_event::Event::DroppedBytes(*n),
-        Event::Exited(st) => pb::exec_event::Event::Exited(convert::exit_status(*st)),
-    };
-    pb::ExecEvent { event: Some(e) }
-}
-
-/// Replay history, then follow until exit.
-async fn follow(entry: Arc<Entry>, tx: mpsc::Sender<Result<pb::ExecEvent, Status>>) {
-    let (history, mut live) = entry.subscribe().await;
-    let mut done = false;
-    for ev in &history {
-        if matches!(ev, Event::Exited(_)) {
-            done = true;
-        }
-        if tx.send(Ok(event(ev))).await.is_err() {
-            return;
-        }
-    }
-    if done {
-        return;
-    }
-    loop {
-        match live.recv().await {
-            Ok(ev) => {
-                let exited = matches!(ev, Event::Exited(_));
-                if tx.send(Ok(event(&ev))).await.is_err() || exited {
-                    return;
-                }
-            }
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                let ev = pb::ExecEvent {
-                    event: Some(pb::exec_event::Event::DroppedBytes(n)),
-                };
-                if tx.send(Ok(ev)).await.is_err() {
-                    return;
-                }
-            }
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                if let Some(st) = entry.exited() {
-                    let _ = tx.send(Ok(event(&Event::Exited(st)))).await;
-                }
-                return;
-            }
-        }
-    }
-}
 
 fn exec_request(
     argv: Vec<String>,

@@ -18,6 +18,7 @@ path = "src/lib.rs"
 vmlayer-core = { workspace = true }
 vmlayer-proto = { workspace = true }
 vmlayer-backend-docker = { workspace = true }
+vmlayer-procs = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }

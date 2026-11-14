@@ -6,8 +6,8 @@ use std::time::{Duration, SystemTime};
 
 use tonic::Status;
 use vmlayer_core::{
-    Capabilities, Endpoint, Error, ExitStatus, FileInfo, NetworkMode, OutputChunk, OutputStream,
-    ProcessInfo, SandboxState, SnapshotRef, VolumeSnapshotRef,
+    Capabilities, Endpoint, Error, FileInfo, NetworkMode, ProcessInfo, SandboxState, SnapshotRef,
+    VolumeSnapshotRef,
 };
 use vmlayer_proto::v1 as pb;
 
@@ -196,25 +196,7 @@ pub fn snapshot(s: &SnapshotRef) -> pb::Snapshot {
     }
 }
 
-pub fn exit_status(e: ExitStatus) -> pb::ExitStatus {
-    pb::ExitStatus {
-        code: e.code,
-        signal: e.signal,
-        duration: dur(e.duration),
-        timed_out: e.timed_out,
-    }
-}
-
-pub fn output_chunk(c: &OutputChunk) -> pb::OutputChunk {
-    pb::OutputChunk {
-        stream: match c.stream {
-            OutputStream::Stdout => pb::OutputStream::Stdout,
-            OutputStream::Stderr => pb::OutputStream::Stderr,
-        }
-        .into(),
-        data: c.data.to_vec(),
-    }
-}
+pub use vmlayer_procs::grpc::{exit_status, output_chunk};
 
 pub fn process_info(p: &ProcessInfo) -> pb::ProcessInfo {
     pb::ProcessInfo {
