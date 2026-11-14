@@ -1,0 +1,15 @@
+[package]
+name = "vmlayer-core"
+description = "Backend trait and shared types for vmlayer: one sandbox API over Firecracker, libkrun and Docker."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1"
+futures-core = "0.3"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "time"] }
