@@ -21,9 +21,12 @@ CI runs these; run them locally first.
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace                       # unit tests
+VMLAYER_DOCKER_TESTS=1 cargo test --workspace  # plus live tests against your Docker
 cargo doc --workspace --no-deps
 ```
+
+`protoc` must be on the path (`brew install protobuf` / `apt install protobuf-compiler`).
 
 ```bash
 cd sdk/python

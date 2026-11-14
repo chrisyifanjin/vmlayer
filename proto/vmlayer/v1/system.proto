@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package vmlayer.v1;
+
+import "vmlayer/v1/common.proto";
+
+service System {
+  rpc Info(Empty) returns (SystemInfo);
+  rpc Health(Empty) returns (HealthResponse);
+  rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
+  rpc DeleteSnapshot(DeleteSnapshotRequest) returns (Empty);
+}
+
+message BackendInfo {
+  string name = 1;
+  string engine_version = 2;
+  Capabilities capabilities = 3;
+  // Why the backend is unavailable on this host, empty if usable.
+  string unavailable_reason = 4;
+}
+
+message SystemInfo {
+  string daemon_version = 1;
+  repeated BackendInfo backends = 2;
+  string default_backend = 3;
+  string data_dir = 4;
+}
+
+message HealthResponse { bool ok = 1; }
+
+message ListSnapshotsRequest { map<string, string> labels = 1; }
+message ListSnapshotsResponse { repeated Snapshot snapshots = 1; }
+message DeleteSnapshotRequest { string id = 1; }

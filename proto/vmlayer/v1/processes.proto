@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package vmlayer.v1;
+
+import "google/protobuf/duration.proto";
+import "vmlayer/v1/common.proto";
+
+// Processes inside a sandbox. `Exec` is the one RPC the SDK's exec, spawn
+// and pty are all built on; the rest attach to running processes.
+service Processes {
+  // Start a process. The stream yields Started, then output chunks, then
+  // Exited. With `detach` the stream ends right after Started.
+  rpc Exec(ExecRequest) returns (stream ExecEvent);
+  // Attach to the output of a running process (after `detach` or after a
+  // client reconnect). Yields buffered output first, then live chunks, then
+  // Exited.
+  rpc Output(OutputRequest) returns (stream ExecEvent);
+  // Feed stdin. The stream closes stdin when it ends.
+  rpc Stdin(stream StdinChunk) returns (Empty);
+  rpc Wait(WaitRequest) returns (ExitStatus);
+  rpc Kill(KillProcessRequest) returns (Empty);
+  rpc List(ListProcessesRequest) returns (ListProcessesResponse);
+  // Interactive terminal: bidirectional raw bytes plus resize messages.
+  rpc Pty(stream PtyInput) returns (stream PtyOutput);
+}
+
+message PtySize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message ExecRequest {
+  string sandbox_id = 1;
+  repeated string argv = 2;
+  string cwd = 3;
+  map<string, string> env = 4;
+  google.protobuf.Duration timeout = 5;
+  // Initial stdin, closed after sending. For interactive use, call Stdin.
+  bytes stdin = 6;
+  bool detach = 7;
+}
+
+message ExecEvent {
+  oneof event {
+    Started started = 1;
+    OutputChunk output = 2;
+    ExitStatus exited = 3;
+    // Set when the daemon dropped buffered output because the cap was hit.
+    uint64 dropped_bytes = 4;
+  }
+}
+
+message Started { uint32 pid = 1; }
+
+message OutputRequest {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+}
+
+message StdinChunk {
+  // Only on the first message.
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  bytes data = 3;
+}
+
+message WaitRequest {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  google.protobuf.Duration timeout = 3;
+}
+
+message KillProcessRequest {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  int32 signal = 3;
+}
+
+message ListProcessesRequest { string sandbox_id = 1; }
+message ListProcessesResponse { repeated ProcessInfo processes = 1; }
+
+message PtyInput {
+  oneof input {
+    // First message only.
+    PtyOpen open = 1;
+    bytes data = 2;
+    PtySize resize = 3;
+  }
+}
+
+message PtyOpen {
+  string sandbox_id = 1;
+  repeated string argv = 2;
+  string cwd = 3;
+  map<string, string> env = 4;
+  PtySize size = 5;
+}
+
+message PtyOutput {
+  oneof output {
+    Started started = 1;
+    bytes data = 2;
+    ExitStatus exited = 3;
+  }
+}

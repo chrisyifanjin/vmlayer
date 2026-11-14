@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package vmlayer.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// Shared messages used by more than one service.
+
+message Capabilities {
+  bool snapshot = 1;
+  bool memory_snapshot = 2;
+  bool fork = 3;
+  bool pause = 4;
+  bool pty = 5;
+  bool expose_port = 6;
+  bool volumes = 7;
+  bool hot_attach = 8;
+}
+
+enum SandboxState {
+  SANDBOX_STATE_UNSPECIFIED = 0;
+  SANDBOX_STATE_CREATING = 1;
+  SANDBOX_STATE_RUNNING = 2;
+  SANDBOX_STATE_PAUSED = 3;
+  SANDBOX_STATE_STOPPED = 4;
+  SANDBOX_STATE_FAILED = 5;
+}
+
+enum NetworkMode {
+  NETWORK_MODE_UNSPECIFIED = 0;
+  NETWORK_MODE_NONE = 1;
+  NETWORK_MODE_EGRESS = 2;
+  NETWORK_MODE_EGRESS_AND_EXPOSE = 3;
+}
+
+message Endpoint {
+  string host = 1;
+  uint32 port = 2;
+}
+
+message Mount {
+  string volume_id = 1;
+  string guest_path = 2;
+  bool read_only = 3;
+}
+
+message Sandbox {
+  string id = 1;
+  string backend = 2;
+  SandboxState state = 3;
+  Capabilities capabilities = 4;
+  string image = 5;
+  string workdir = 6;
+  // The volume mounted at workdir, empty if none.
+  string workspace_volume_id = 7;
+  repeated Mount mounts = 8;
+  google.protobuf.Timestamp created_at = 9;
+  map<string, string> labels = 10;
+  // Guest ports currently exposed, by guest port.
+  map<uint32, Endpoint> exposed = 11;
+}
+
+message Volume {
+  string id = 1;
+  string name = 2;
+  uint64 size_mib = 3;
+  map<string, string> labels = 4;
+  // Sandbox holding the read-write attachment, empty if none.
+  string attached_to = 5;
+  // True for volumes created implicitly by Sandboxes.Create; deleted with
+  // their sandbox.
+  bool anonymous = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message VolumeSnapshot {
+  string id = 1;
+  string volume_id = 2;
+  string guest_path = 3;
+  google.protobuf.Timestamp created_at = 4;
+  uint64 size_bytes = 5;
+  bool durable = 6;
+  map<string, string> labels = 7;
+}
+
+message Snapshot {
+  string id = 1;
+  string backend = 2;
+  string engine_version = 3;
+  string cpu_model = 4;
+  google.protobuf.Timestamp created_at = 5;
+  uint64 size_bytes = 6;
+  bool includes_memory = 7;
+  repeated VolumeSnapshot volumes = 8;
+  map<string, string> labels = 9;
+}
+
+message ExitStatus {
+  // Set when the process exited normally.
+  optional int32 code = 1;
+  // Set when the process was killed by a signal.
+  optional int32 signal = 2;
+  google.protobuf.Duration duration = 3;
+}
+
+enum OutputStream {
+  OUTPUT_STREAM_UNSPECIFIED = 0;
+  OUTPUT_STREAM_STDOUT = 1;
+  OUTPUT_STREAM_STDERR = 2;
+}
+
+message OutputChunk {
+  OutputStream stream = 1;
+  bytes data = 2;
+}
+
+message ProcessInfo {
+  uint32 pid = 1;
+  repeated string argv = 2;
+  google.protobuf.Timestamp started_at = 3;
+  bool is_entrypoint = 4;
+}
+
+message FileInfo {
+  string path = 1;
+  uint64 size = 2;
+  bool is_dir = 3;
+  uint32 mode = 4;
+  google.protobuf.Timestamp modified_at = 5;
+}
+
+message Empty {}

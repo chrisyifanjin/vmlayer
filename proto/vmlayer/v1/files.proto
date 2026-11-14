@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package vmlayer.v1;
+
+import "vmlayer/v1/common.proto";
+
+// Files inside a sandbox, through the guest agent (or the engine's archive
+// API for containers). Paths are absolute guest paths.
+service Files {
+  rpc Read(ReadFileRequest) returns (stream FileChunk);
+  rpc Write(stream WriteFileRequest) returns (Empty);
+  rpc Stat(StatRequest) returns (FileInfo);
+  rpc List(ListFilesRequest) returns (ListFilesResponse);
+  rpc Mkdir(MkdirRequest) returns (Empty);
+  rpc Remove(RemoveRequest) returns (Empty);
+}
+
+message ReadFileRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message FileChunk { bytes data = 1; }
+
+message WriteFileRequest {
+  // Header on the first message only.
+  message Header {
+    string sandbox_id = 1;
+    string path = 2;
+    uint32 mode = 3;
+  }
+  oneof part {
+    Header header = 1;
+    bytes data = 2;
+  }
+}
+
+message StatRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message ListFilesRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+message ListFilesResponse { repeated FileInfo entries = 1; }
+
+message MkdirRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message RemoveRequest {
+  string sandbox_id = 1;
+  string path = 2;
+  bool recursive = 3;
+}

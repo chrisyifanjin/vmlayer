@@ -4,6 +4,7 @@
 
 pub mod capabilities;
 pub mod ids;
+pub mod image;
 pub mod process;
 pub mod snapshot;
 pub mod spec;
@@ -11,6 +12,7 @@ pub mod volume;
 
 pub use capabilities::Capabilities;
 pub use ids::{SandboxId, SnapshotId, VolumeId, VolumeSnapshotId};
+pub use image::ResolvedImage;
 pub use process::{
     ExecRequest, ExitStatus, FileInfo, OutputChunk, OutputStream, ProcessInfo, PtySize,
 };

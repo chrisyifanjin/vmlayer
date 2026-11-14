@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use super::ids::{SandboxId, SnapshotId, VolumeId, VolumeSnapshotId};
+use super::spec::SandboxSpec;
 use super::volume::Mount;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -37,6 +38,12 @@ pub struct VolumeSnapshotRef {
 pub struct SnapshotRef {
     pub id: SnapshotId,
     pub backend: &'static str,
+    /// Opaque backend handle for the snapshot data (an image id for Docker,
+    /// a directory for Firecracker). Only the backend that made it reads it.
+    pub engine_ref: String,
+    /// The spec the sandbox was created with. Restore reuses it, with
+    /// `RestoreOptions` overriding identity, ttl, mounts and labels.
+    pub spec: SandboxSpec,
     /// Exact engine release that produced it (e.g. `firecracker 1.16.1`).
     /// Snapshots are not portable across releases; restore checks this.
     pub engine_version: String,
