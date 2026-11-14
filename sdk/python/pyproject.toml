@@ -1,0 +1,19 @@
+[project]
+name = "vmlayer"
+version = "0.0.0"
+description = "The layer between agent runtimes and microVMs: one sandbox API over Firecracker, libkrun and Docker."
+readme = "../../README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "Chris Yifan Jin" }]
+keywords = ["sandbox", "firecracker", "microvm", "agents", "libkrun"]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Emulators",
+]
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

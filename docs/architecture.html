@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandbox library 架构</title>
+<style>
+  :root { --bg:#fff; --fg:#2c2c2a; --muted:#5f5e5a; --line:#888780; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1b1b1a; --fg:#e8e6df; --muted:#b4b2a9; --line:#888780; } }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg); font-family:-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; }
+  h1 { font-size:20px; font-weight:500; margin:0 0 16px; }
+  svg { width:100%; height:auto; display:block; }
+  text { font-family:inherit; }
+  .th { font-size:14px; font-weight:500; }
+  .ts { font-size:12px; }
+  .arr { stroke:var(--line); stroke-width:1.5; fill:none; }
+  .gray rect { fill:#f1efe8; stroke:#5f5e5a; } .gray .th { fill:#444441; } .gray .ts { fill:#5f5e5a; }
+  .purple rect { fill:#eeedfe; stroke:#534ab7; } .purple .th { fill:#3c3489; } .purple .ts { fill:#534ab7; }
+  .teal rect { fill:#e1f5ee; stroke:#0f6e56; } .teal .th { fill:#085041; } .teal .ts { fill:#0f6e56; }
+  .legend { fill:var(--muted); }
+  @media (prefers-color-scheme: dark) {
+    .gray rect { fill:#444441; stroke:#b4b2a9; } .gray .th { fill:#f1efe8; } .gray .ts { fill:#d3d1c7; }
+    .purple rect { fill:#3c3489; stroke:#afa9ec; } .purple .th { fill:#eeedfe; } .purple .ts { fill:#cecbf6; }
+    .teal rect { fill:#085041; stroke:#5dcaa5; } .teal .th { fill:#e1f5ee; } .teal .ts { fill:#9fe1cb; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Sandbox library 分层架构</h1>
+<svg viewBox="0 0 680 604" role="img" aria-label="Sandbox library 分层架构">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="gray"><rect x="50" y="40" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="140" y="62" text-anchor="middle" dominant-baseline="central">开源 agent 框架</text></g>
+<g class="gray"><rect x="250" y="40" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="340" y="62" text-anchor="middle" dominant-baseline="central">商业 agent 产品</text></g>
+<g class="gray"><rect x="450" y="40" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="540" y="62" text-anchor="middle" dominant-baseline="central">Agent runtime 平台</text></g>
+
+<line x1="140" y1="84" x2="140" y2="118" class="arr" marker-end="url(#arrow)"/>
+<line x1="340" y1="84" x2="340" y2="118" class="arr" marker-end="url(#arrow)"/>
+<line x1="540" y1="84" x2="540" y2="118" class="arr" marker-end="url(#arrow)"/>
+
+<g class="purple"><rect x="50" y="120" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="140" y="142" text-anchor="middle" dominant-baseline="central">Python SDK</text></g>
+<g class="purple"><rect x="250" y="120" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="340" y="142" text-anchor="middle" dominant-baseline="central">TypeScript SDK</text></g>
+<g class="purple"><rect x="450" y="120" width="180" height="44" rx="8" stroke-width="0.75"/><text class="th" x="540" y="142" text-anchor="middle" dominant-baseline="central">Go 库（直接 embed）</text></g>
+
+<line x1="140" y1="164" x2="140" y2="198" class="arr" marker-end="url(#arrow)"/>
+<line x1="340" y1="164" x2="340" y2="198" class="arr" marker-end="url(#arrow)"/>
+<path d="M540 164 L540 182 L430 182 L430 198" class="arr" marker-end="url(#arrow)"/>
+
+<g class="teal"><rect x="50" y="200" width="400" height="164" rx="12" stroke-width="0.75"/><text class="th" x="66" y="222" dominant-baseline="central">Sandbox daemon（Go，gRPC）</text></g>
+<g class="gray"><rect x="66" y="240" width="178" height="48" rx="8" stroke-width="0.75"/><text class="th" x="155" y="256" text-anchor="middle" dominant-baseline="central">生命周期</text><text class="ts" x="155" y="274" text-anchor="middle" dominant-baseline="central">create / exec / files</text></g>
+<g class="gray"><rect x="256" y="240" width="178" height="48" rx="8" stroke-width="0.75"/><text class="th" x="345" y="256" text-anchor="middle" dominant-baseline="central">Snapshot 和 fork</text><text class="ts" x="345" y="274" text-anchor="middle" dominant-baseline="central">毫秒级 restore</text></g>
+<g class="gray"><rect x="66" y="298" width="178" height="48" rx="8" stroke-width="0.75"/><text class="th" x="155" y="314" text-anchor="middle" dominant-baseline="central">镜像管线</text><text class="ts" x="155" y="332" text-anchor="middle" dominant-baseline="central">OCI 进，ext4 出</text></g>
+<g class="gray"><rect x="256" y="298" width="178" height="48" rx="8" stroke-width="0.75"/><text class="th" x="345" y="314" text-anchor="middle" dominant-baseline="central">网络</text><text class="ts" x="345" y="332" text-anchor="middle" dominant-baseline="central">tap、bridge、端口暴露</text></g>
+
+<g class="gray"><rect x="470" y="200" width="160" height="164" rx="12" stroke-width="0.75" stroke-dasharray="4 3"/><text class="th" x="550" y="270" text-anchor="middle" dominant-baseline="central">集群层（可选）</text><text class="ts" x="550" y="290" text-anchor="middle" dominant-baseline="central">多机放置、对账</text></g>
+<line x1="470" y1="282" x2="452" y2="282" class="arr" marker-end="url(#arrow)"/>
+
+<line x1="140" y1="364" x2="140" y2="402" class="arr" marker-end="url(#arrow)"/>
+<line x1="340" y1="364" x2="340" y2="402" class="arr" marker-end="url(#arrow)"/>
+<path d="M400 364 L400 384 L540 384 L540 402" class="arr" marker-end="url(#arrow)"/>
+
+<g class="teal"><rect x="50" y="404" width="180" height="56" rx="8" stroke-width="0.75"/><text class="th" x="140" y="422" text-anchor="middle" dominant-baseline="central">Firecracker backend</text><text class="ts" x="140" y="440" text-anchor="middle" dominant-baseline="central">Linux + KVM，生产</text></g>
+<g class="teal"><rect x="250" y="404" width="180" height="56" rx="8" stroke-width="0.75"/><text class="th" x="340" y="422" text-anchor="middle" dominant-baseline="central">Docker backend</text><text class="ts" x="340" y="440" text-anchor="middle" dominant-baseline="central">Mac 和 CI 本地开发</text></g>
+<g class="teal"><rect x="450" y="404" width="180" height="56" rx="8" stroke-width="0.75"/><text class="th" x="540" y="422" text-anchor="middle" dominant-baseline="central">libkrun backend</text><text class="ts" x="540" y="440" text-anchor="middle" dominant-baseline="central">以后，Mac 上真 microVM</text></g>
+
+<line x1="140" y1="460" x2="140" y2="498" class="arr" marker-end="url(#arrow)"/>
+
+<g class="teal"><rect x="50" y="500" width="180" height="56" rx="8" stroke-width="0.75"/><text class="th" x="140" y="518" text-anchor="middle" dominant-baseline="central">Guest agent（VM 内）</text><text class="ts" x="140" y="536" text-anchor="middle" dominant-baseline="central">vsock：exec、文件、PTY</text></g>
+
+<text class="ts legend" x="340" y="584" text-anchor="middle">紫色 = 用户直接调用的 SDK，青色 = 项目提供的组件，灰色 = 外部或可选</text>
+</svg>
+</div>
+</body>
+</html>

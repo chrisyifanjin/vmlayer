@@ -1,0 +1,15 @@
+# Design decisions
+
+Every non-obvious choice gets a short record here before it is implemented:
+what was decided, what was researched, what it rules out. Numbered, never
+edited after acceptance; a reversal is a new record that supersedes the old one.
+
+Format: context, options considered (with evidence), decision, consequences.
+
+| # | Decision | Status |
+|---|---|---|
+| [0001](0001-rust-for-core.md) | Rust for the core, daemon and guest agent | accepted |
+| [0002](0002-daemon-plus-sdks.md) | Daemon plus thin SDKs, not an in-process library | accepted |
+| [0003](0003-backend-trait-boundary.md) | Backends consume `Rootfs`, never OCI references | accepted |
+| [0004](0004-apache-2-license.md) | Apache-2.0 | accepted |
+| [0005](0005-cloud-agnostic.md) | Cloud-agnostic: Linux + KVM only, S3-compatible blob store, no managed services | accepted |
