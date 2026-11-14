@@ -2,19 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .types import Backend, ExecResult
+    from .types import ExecResult
 
 
 class VmlayerError(Exception):
     """Base class for every error raised by this SDK."""
 
 
-class SandboxNotFound(VmlayerError):
+class DaemonUnavailable(VmlayerError):
+    """No daemon answers at the endpoint. Is ``vmlayerd`` running?"""
+
+
+class InvalidArgument(VmlayerError):
+    """The daemon rejected the request's arguments."""
+
+
+class NotFound(VmlayerError):
+    """Something other than a sandbox, volume or snapshot was not found (a file, a process)."""
+
+
+class SandboxNotFound(NotFound):
     """The sandbox id does not exist on the daemon (never created or already gone)."""
+
+
+class VolumeNotFound(NotFound):
+    """No volume with that id or name."""
+
+
+class SnapshotNotFound(NotFound):
+    """No snapshot with that id."""
+
+
+class VolumeBusy(VmlayerError):
+    """The volume is attached read-write elsewhere (single-writer rule)."""
 
 
 class BackendUnsupported(VmlayerError):
@@ -24,13 +49,24 @@ class BackendUnsupported(VmlayerError):
     want to avoid this at runtime.
     """
 
-    def __init__(self, backend: Backend, feature: str) -> None:
-        super().__init__(f"backend {backend.value!r} does not support {feature!r}")
+    def __init__(self, message: str, backend: str = "", feature: str = "") -> None:
+        super().__init__(message)
         self.backend = backend
         self.feature = feature
 
+    @classmethod
+    def from_message(cls, message: str) -> BackendUnsupported:
+        m = re.match(r"backend (\S+) does not support (.+)", message)
+        if m:
+            return cls(message, m.group(1), m.group(2))
+        return cls(message)
 
-class ExecTimeout(VmlayerError):
+
+class TimeoutError(VmlayerError):
+    """A daemon-side wait exceeded its timeout (e.g. ``wait_for_port``)."""
+
+
+class ExecTimeout(TimeoutError):
     """A command exceeded its ``timeout``. The process has been killed.
 
     ``partial`` holds whatever the command produced before it was stopped, so

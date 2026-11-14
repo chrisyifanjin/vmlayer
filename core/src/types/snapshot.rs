@@ -37,7 +37,7 @@ pub struct VolumeSnapshotRef {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapshotRef {
     pub id: SnapshotId,
-    pub backend: &'static str,
+    pub backend: String,
     /// Opaque backend handle for the snapshot data (an image id for Docker,
     /// a directory for Firecracker). Only the backend that made it reads it.
     pub engine_ref: String,

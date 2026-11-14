@@ -65,6 +65,9 @@ class ExecResult:
     """stdout and stderr merged in arrival order, the way a terminal shows
     them. Usually what you feed back to the model."""
     duration: timedelta
+    signal: int | None = None
+    """Set when the process was killed by a signal; ``exit_code`` is then
+    128 + signal, like a shell reports it."""
 
     @property
     def ok(self) -> bool:
@@ -88,6 +91,18 @@ class FileInfo:
     modified_at: float
     """Unix timestamp, seconds."""
 
+    @property
+    def name(self) -> str:
+        return self.path.rstrip("/").rsplit("/", 1)[-1]
+
+
+@dataclass(frozen=True)
+class ProcessInfo:
+    pid: int
+    argv: tuple[str, ...]
+    started_at: float
+    is_entrypoint: bool
+
 
 @dataclass(frozen=True)
 class PtySize:
@@ -108,3 +123,23 @@ class Endpoint:
     @property
     def url(self) -> str:
         return f"http://{self.host}:{self.port}"
+
+
+@dataclass(frozen=True)
+class BackendInfo:
+    name: str
+    engine_version: str
+    capabilities: Capabilities
+    unavailable_reason: str
+
+    @property
+    def available(self) -> bool:
+        return not self.unavailable_reason
+
+
+@dataclass(frozen=True)
+class SystemInfo:
+    daemon_version: str
+    backends: tuple[BackendInfo, ...]
+    default_backend: str
+    data_dir: str

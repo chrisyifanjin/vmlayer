@@ -2,15 +2,31 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from .types import Backend
+from . import _rpc
+from .types import Backend, BackendInfo, Capabilities, SystemInfo
+from .v1 import common_pb2, sandboxes_pb2, system_pb2, volumes_pb2
 
 if TYPE_CHECKING:
     from .sandbox import Sandbox
-    from .volume import Snapshot, Volume
+    from .volume import Snapshot, Volume, VolumeSnapshot
+
+
+def _capabilities(c: common_pb2.Capabilities) -> Capabilities:
+    return Capabilities(
+        snapshot=c.snapshot,
+        fork=c.fork,
+        pause=c.pause,
+        pty=c.pty,
+        expose_port=c.expose_port,
+        memory_snapshot=c.memory_snapshot,
+        volumes=c.volumes,
+        hot_attach=c.hot_attach,
+    )
 
 
 class Client:
@@ -29,21 +45,105 @@ class Client:
         token: str | None = None,
         timeout: timedelta = timedelta(seconds=30),
     ) -> None:
-        raise NotImplementedError
+        self._conn = _rpc.Connection(endpoint, token, timeout)
 
-    def list_sandboxes(self, *, labels: Mapping[str, str] | None = None) -> list[Sandbox]:
-        raise NotImplementedError
+    @property
+    def endpoint(self) -> str:
+        return self._conn.endpoint
 
-    def list_snapshots(self, *, labels: Mapping[str, str] | None = None) -> list[Snapshot]:
-        raise NotImplementedError
+    def info(self) -> SystemInfo:
+        r = self._conn.call(self._conn.system.Info, common_pb2.Empty())
+        return SystemInfo(
+            daemon_version=r.daemon_version,
+            backends=tuple(
+                BackendInfo(
+                    name=b.name,
+                    engine_version=b.engine_version,
+                    capabilities=_capabilities(b.capabilities),
+                    unavailable_reason=b.unavailable_reason,
+                )
+                for b in r.backends
+            ),
+            default_backend=r.default_backend,
+            data_dir=r.data_dir,
+        )
 
-    def list_volumes(self, *, labels: Mapping[str, str] | None = None) -> list[Volume]:
-        raise NotImplementedError
+    def health(self) -> bool:
+        return bool(self._conn.call(self._conn.system.Health, common_pb2.Empty()).ok)
 
     def available_backends(self) -> dict[Backend, str]:
         """Backends the daemon can actually use on this host, with the exact
-        engine version of each (e.g. ``{Backend.FIRECRACKER: "1.16.1"}``)."""
-        raise NotImplementedError
+        engine version of each (e.g. ``{Backend.DOCKER: "29.5.2"}``)."""
+        out: dict[Backend, str] = {}
+        for b in self.info().backends:
+            if b.available:
+                try:
+                    out[Backend(b.name)] = b.engine_version
+                except ValueError:
+                    continue
+        return out
+
+    def list_sandboxes(self, *, labels: Mapping[str, str] | None = None) -> list[Sandbox]:
+        from .sandbox import Sandbox
+
+        r = self._conn.call(
+            self._conn.sandboxes.List,
+            sandboxes_pb2.ListSandboxesRequest(labels=_rpc.labels_arg(labels)),
+        )
+        return [Sandbox._from_pb(self, s) for s in r.sandboxes]
+
+    def list_snapshots(self, *, labels: Mapping[str, str] | None = None) -> list[Snapshot]:
+        from .volume import Snapshot
+
+        r = self._conn.call(
+            self._conn.system.ListSnapshots,
+            system_pb2.ListSnapshotsRequest(labels=_rpc.labels_arg(labels)),
+        )
+        return [Snapshot._from_pb(self, s) for s in r.snapshots]
+
+    def list_volumes(self, *, labels: Mapping[str, str] | None = None) -> list[Volume]:
+        from .volume import Volume
+
+        r = self._conn.call(
+            self._conn.volumes.List, volumes_pb2.ListVolumesRequest(labels=_rpc.labels_arg(labels))
+        )
+        return [Volume._from_pb(self, v) for v in r.volumes]
+
+    def list_volume_snapshots(
+        self, *, labels: Mapping[str, str] | None = None
+    ) -> list[VolumeSnapshot]:
+        from .volume import VolumeSnapshot
+
+        r = self._conn.call(
+            self._conn.volumes.ListSnapshots,
+            volumes_pb2.ListVolumeSnapshotsRequest(labels=_rpc.labels_arg(labels)),
+        )
+        return [VolumeSnapshot._from_pb(self, s) for s in r.snapshots]
 
     def close(self) -> None:
-        raise NotImplementedError
+        self._conn.close()
+
+    def __enter__(self) -> Client:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+_default_lock = threading.Lock()
+_default_client: Client | None = None
+
+
+def default_client() -> Client:
+    """The process-wide client used when none is passed explicitly."""
+    global _default_client
+    with _default_lock:
+        if _default_client is None:
+            _default_client = Client()
+        return _default_client
+
+
+def set_default_client(client: Client | None) -> None:
+    global _default_client
+    with _default_lock:
+        _default_client = client

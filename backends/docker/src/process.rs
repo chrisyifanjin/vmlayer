@@ -91,6 +91,7 @@ pub(crate) async fn wait_exec(
                 code,
                 signal,
                 duration: started.elapsed(),
+                timed_out: false,
             });
         }
         tokio::time::sleep(delay).await;

@@ -10,11 +10,31 @@ repository.workspace = true
 name = "vmlayerd"
 path = "src/main.rs"
 
+[lib]
+name = "vmlayerd"
+path = "src/lib.rs"
+
 [dependencies]
 vmlayer-core = { workspace = true }
 vmlayer-proto = { workspace = true }
 vmlayer-backend-docker = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+prost-types = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

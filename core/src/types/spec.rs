@@ -76,7 +76,7 @@ pub enum SandboxState {
 pub struct SandboxInfo {
     pub id: SandboxId,
     pub state: SandboxState,
-    pub backend: &'static str,
+    pub backend: String,
     pub created_at: SystemTime,
     pub labels: BTreeMap<String, String>,
 }

@@ -412,7 +412,7 @@ impl SandboxHandle for DockerSandbox {
             .max(0) as u64;
         Ok(SnapshotRef {
             id,
-            backend: BACKEND_NAME,
+            backend: BACKEND_NAME.to_string(),
             engine_ref: image.id,
             spec,
             engine_version: String::new(), // filled by the daemon from SystemInfo
