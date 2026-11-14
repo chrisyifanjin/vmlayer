@@ -1,0 +1,63 @@
+from vmlayer.v1 import common_pb2 as _common_pb2
+from google.protobuf.internal import containers as _containers
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class BackendInfo(_message.Message):
+    __slots__ = ("name", "engine_version", "capabilities", "unavailable_reason")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    ENGINE_VERSION_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
+    UNAVAILABLE_REASON_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    engine_version: str
+    capabilities: _common_pb2.Capabilities
+    unavailable_reason: str
+    def __init__(self, name: _Optional[str] = ..., engine_version: _Optional[str] = ..., capabilities: _Optional[_Union[_common_pb2.Capabilities, _Mapping]] = ..., unavailable_reason: _Optional[str] = ...) -> None: ...
+
+class SystemInfo(_message.Message):
+    __slots__ = ("daemon_version", "backends", "default_backend", "data_dir")
+    DAEMON_VERSION_FIELD_NUMBER: _ClassVar[int]
+    BACKENDS_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_BACKEND_FIELD_NUMBER: _ClassVar[int]
+    DATA_DIR_FIELD_NUMBER: _ClassVar[int]
+    daemon_version: str
+    backends: _containers.RepeatedCompositeFieldContainer[BackendInfo]
+    default_backend: str
+    data_dir: str
+    def __init__(self, daemon_version: _Optional[str] = ..., backends: _Optional[_Iterable[_Union[BackendInfo, _Mapping]]] = ..., default_backend: _Optional[str] = ..., data_dir: _Optional[str] = ...) -> None: ...
+
+class HealthResponse(_message.Message):
+    __slots__ = ("ok",)
+    OK_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    def __init__(self, ok: _Optional[bool] = ...) -> None: ...
+
+class ListSnapshotsRequest(_message.Message):
+    __slots__ = ("labels",)
+    class LabelsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    LABELS_FIELD_NUMBER: _ClassVar[int]
+    labels: _containers.ScalarMap[str, str]
+    def __init__(self, labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+
+class ListSnapshotsResponse(_message.Message):
+    __slots__ = ("snapshots",)
+    SNAPSHOTS_FIELD_NUMBER: _ClassVar[int]
+    snapshots: _containers.RepeatedCompositeFieldContainer[_common_pb2.Snapshot]
+    def __init__(self, snapshots: _Optional[_Iterable[_Union[_common_pb2.Snapshot, _Mapping]]] = ...) -> None: ...
+
+class DeleteSnapshotRequest(_message.Message):
+    __slots__ = ("id",)
+    ID_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    def __init__(self, id: _Optional[str] = ...) -> None: ...

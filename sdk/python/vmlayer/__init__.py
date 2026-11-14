@@ -31,14 +31,20 @@ Quick tour::
         sb.exec("pytest")                    # same files, new sandbox
 """
 
-from .aio import AsyncFiles, AsyncProcess, AsyncSandbox
-from .client import Client
+from .client import Client, default_client, set_default_client
 from .errors import (
     BackendUnsupported,
+    DaemonUnavailable,
     ExecTimeout,
+    InvalidArgument,
+    NotFound,
     SandboxNotFound,
     SnapshotIncompatible,
+    SnapshotNotFound,
+    TimeoutError,
     VmlayerError,
+    VolumeBusy,
+    VolumeNotFound,
 )
 from .files import Files
 from .process import Process, Pty
@@ -46,32 +52,37 @@ from .sandbox import Sandbox
 from .types import (
     AUTO,
     Backend,
+    BackendInfo,
     Capabilities,
     Endpoint,
     ExecResult,
     FileInfo,
     OutputChunk,
+    ProcessInfo,
     PtySize,
     SandboxState,
+    SystemInfo,
 )
 from .volume import Snapshot, Volume, VolumeSnapshot
 
 __all__ = [
     "AUTO",
-    "AsyncFiles",
-    "AsyncProcess",
-    "AsyncSandbox",
     "Backend",
+    "BackendInfo",
     "BackendUnsupported",
     "Capabilities",
     "Client",
+    "DaemonUnavailable",
     "Endpoint",
     "ExecResult",
     "ExecTimeout",
     "FileInfo",
     "Files",
+    "InvalidArgument",
+    "NotFound",
     "OutputChunk",
     "Process",
+    "ProcessInfo",
     "Pty",
     "PtySize",
     "Sandbox",
@@ -79,9 +90,16 @@ __all__ = [
     "SandboxState",
     "Snapshot",
     "SnapshotIncompatible",
+    "SnapshotNotFound",
+    "SystemInfo",
+    "TimeoutError",
     "VmlayerError",
     "Volume",
+    "VolumeBusy",
+    "VolumeNotFound",
     "VolumeSnapshot",
+    "default_client",
+    "set_default_client",
 ]
 
 __version__ = "0.0.0"

@@ -1,6 +1,7 @@
 """Persistent storage: ``Volume``, ``VolumeSnapshot``, and the sandbox-level ``Snapshot``.
 
-See ADR 0006 for the rules (single writer, cloned on restore, two kinds of snapshot)."""
+See ADR 0006 for the rules (single writer, cloned on restore, two kinds of snapshot).
+"""
 
 from __future__ import annotations
 
@@ -8,10 +9,60 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from . import _rpc
 from .types import Backend
+from .v1 import common_pb2, system_pb2, volumes_pb2
 
 if TYPE_CHECKING:
     from .client import Client
+
+
+def _client(c: Client | None) -> Client:
+    if c is not None:
+        return c
+    from .client import default_client
+
+    return default_client()
+
+
+@dataclass(frozen=True)
+class VolumeSnapshot:
+    """A filesystem-only snapshot of a ``Volume``.
+
+    Cheap (copy-on-write, milliseconds), portable across hosts and backends,
+    and the thing to keep long-term. Turn it back into a volume with
+    ``Volume.from_snapshot``; use it as a template by doing that many times.
+    """
+
+    id: str
+    volume_id: str
+    guest_path: str | None
+    """Where it was mounted when taken, if it was attached."""
+    created_at: float
+    size_bytes: int
+    durable: bool
+    """True once the snapshot has been uploaded to the configured blob store."""
+    labels: Mapping[str, str] = field(default_factory=dict)
+    _client: Client | None = field(default=None, repr=False, compare=False)
+
+    @classmethod
+    def _from_pb(cls, client: Client, s: common_pb2.VolumeSnapshot) -> VolumeSnapshot:
+        return cls(
+            id=s.id,
+            volume_id=s.volume_id,
+            guest_path=s.guest_path or None,
+            created_at=_rpc.from_timestamp(s.created_at),
+            size_bytes=s.size_bytes,
+            durable=s.durable,
+            labels=dict(s.labels),
+            _client=client,
+        )
+
+    def delete(self) -> None:
+        c = _client(self._client)
+        c._conn.call(
+            c._conn.volumes.DeleteSnapshot, volumes_pb2.DeleteVolumeSnapshotRequest(id=self.id)
+        )
 
 
 @dataclass(frozen=True)
@@ -38,42 +89,40 @@ class Snapshot:
     guest paths. ``Sandbox.restore`` clones these; it never reattaches the
     original volumes."""
     labels: Mapping[str, str] = field(default_factory=dict)
+    _client: Client | None = field(default=None, repr=False, compare=False)
+
+    @classmethod
+    def _from_pb(cls, client: Client, s: common_pb2.Snapshot) -> Snapshot:
+        try:
+            backend = Backend(s.backend)
+        except ValueError:
+            backend = Backend.AUTO
+        return cls(
+            id=s.id,
+            backend=backend,
+            engine_version=s.engine_version,
+            cpu_model=s.cpu_model or None,
+            created_at=_rpc.from_timestamp(s.created_at),
+            size_bytes=s.size_bytes,
+            includes_memory=s.includes_memory,
+            volumes=tuple(VolumeSnapshot._from_pb(client, v) for v in s.volumes),
+            labels=dict(s.labels),
+            _client=client,
+        )
 
     def delete(self) -> None:
         """Remove the snapshot from the daemon's store."""
-        raise NotImplementedError
-
-
-@dataclass(frozen=True)
-class VolumeSnapshot:
-    """A filesystem-only snapshot of a ``Volume``.
-
-    Cheap (copy-on-write, milliseconds), portable across hosts and backends,
-    and the thing to keep long-term. Turn it back into a volume with
-    ``Volume.from_snapshot``; use it as a template by doing that many times.
-    """
-
-    id: str
-    volume_id: str
-    guest_path: str | None
-    """Where it was mounted when taken, if it was attached."""
-    created_at: float
-    size_bytes: int
-    durable: bool
-    """True once the snapshot has been uploaded to the configured blob store."""
-    labels: Mapping[str, str] = field(default_factory=dict)
-
-    def delete(self) -> None:
-        raise NotImplementedError
+        c = _client(self._client)
+        c._conn.call(c._conn.system.DeleteSnapshot, system_pb2.DeleteSnapshotRequest(id=self.id))
 
 
 class Volume:
     """Persistent storage with a lifetime independent of any sandbox.
 
-    A volume is a block of storage (ext4 inside) that a sandbox mounts at a
-    path. It is the workspace primitive: vmlayer does not know what a repo or
-    a dependency cache is; put whatever you like on a volume and describe it
-    with ``labels``.
+    A volume is a block of storage that a sandbox mounts at a path. It is the
+    workspace primitive: vmlayer does not know what a repo or a dependency
+    cache is; put whatever you like on a volume and describe it with
+    ``labels``.
 
     Rules:
 
@@ -85,12 +134,57 @@ class Volume:
       with their sandbox. Named volumes persist until ``delete``.
     """
 
-    id: str
-    name: str | None
-    size_mb: int
-    labels: Mapping[str, str]
-    attached_to: str | None
-    """Sandbox id holding the read-write attachment, if any."""
+    def __init__(self, client: Client, pb: common_pb2.Volume) -> None:
+        self._client = client
+        self._pb = pb
+
+    @classmethod
+    def _from_pb(cls, client: Client, pb: common_pb2.Volume) -> Volume:
+        return cls(client, pb)
+
+    # -- attributes ---------------------------------------------------------
+
+    @property
+    def id(self) -> str:
+        return self._pb.id
+
+    @property
+    def name(self) -> str | None:
+        return self._pb.name or None
+
+    @property
+    def size_mb(self) -> int:
+        return int(self._pb.size_mib)
+
+    @property
+    def labels(self) -> Mapping[str, str]:
+        return dict(self._pb.labels)
+
+    @property
+    def anonymous(self) -> bool:
+        return self._pb.anonymous
+
+    @property
+    def attached_to(self) -> str | None:
+        """Sandbox id holding the read-write attachment, if any."""
+        self.refresh()
+        return self._pb.attached_to or None
+
+    def refresh(self) -> Volume:
+        c = self._client._conn
+        self._pb = c.call(c.volumes.Get, volumes_pb2.GetVolumeRequest(volume=self.id))
+        return self
+
+    def __repr__(self) -> str:
+        return f"Volume(id={self.id!r}, name={self.name!r}, size_mb={self.size_mb})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Volume) and other.id == self.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    # -- construction -------------------------------------------------------
 
     @classmethod
     def create(
@@ -103,7 +197,11 @@ class Volume:
     ) -> Volume:
         """Create an empty volume. ``size_mb`` defaults to the daemon's setting.
         Storage is sparse, so a large size costs nothing until used."""
-        raise NotImplementedError
+        c = _client(client)
+        req = volumes_pb2.CreateVolumeRequest(name=name or "", labels=_rpc.labels_arg(labels))
+        if size_mb is not None:
+            req.size_mib = size_mb
+        return cls(c, c._conn.call(c._conn.volumes.Create, req))
 
     @classmethod
     def from_snapshot(
@@ -116,11 +214,21 @@ class Volume:
     ) -> Volume:
         """Create a volume whose contents are a copy-on-write clone of a
         snapshot. This is how templates work: snapshot once, instantiate many."""
-        raise NotImplementedError
+        c = _client(client)
+        sid = snapshot if isinstance(snapshot, str) else snapshot.id
+        req = volumes_pb2.VolumeFromSnapshotRequest(
+            snapshot_id=sid, name=name or "", labels=_rpc.labels_arg(labels)
+        )
+        return cls(c, c._conn.call(c._conn.volumes.FromSnapshot, req))
 
     @classmethod
     def get(cls, name_or_id: str, *, client: Client | None = None) -> Volume:
-        raise NotImplementedError
+        c = _client(client)
+        return cls(
+            c, c._conn.call(c._conn.volumes.Get, volumes_pb2.GetVolumeRequest(volume=name_or_id))
+        )
+
+    # -- operations ---------------------------------------------------------
 
     def snapshot(
         self,
@@ -132,16 +240,30 @@ class Volume:
 
         Returns as soon as the local copy-on-write snapshot exists. With
         ``durable=True`` it also waits for upload to the blob store. A volume
-        attached read-write is quiesced (``fsfreeze`` via the guest agent) for
-        the duration, typically milliseconds.
+        attached read-write is quiesced for the duration, typically
+        milliseconds.
         """
-        raise NotImplementedError
+        c = self._client._conn
+        req = volumes_pb2.SnapshotVolumeRequest(
+            id=self.id, durable=durable, labels=_rpc.labels_arg(labels)
+        )
+        return VolumeSnapshot._from_pb(
+            self._client, c.call(c.volumes.TakeSnapshot, req, timeout=600)
+        )
 
     def clone(self, *, name: str | None = None) -> Volume:
-        """Copy-on-write copy of the current contents. Shorthand for
-        ``snapshot()`` followed by ``from_snapshot``."""
-        raise NotImplementedError
+        """Copy-on-write copy of the current contents."""
+        c = self._client._conn
+        return Volume(
+            self._client,
+            c.call(
+                c.volumes.Clone,
+                volumes_pb2.CloneVolumeRequest(id=self.id, name=name or ""),
+                timeout=600,
+            ),
+        )
 
     def delete(self) -> None:
         """Fails if the volume is attached."""
-        raise NotImplementedError
+        c = self._client._conn
+        c.call(c.volumes.Delete, volumes_pb2.DeleteVolumeRequest(id=self.id))

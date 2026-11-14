@@ -33,16 +33,28 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   python:
-    name: Python (ruff, mypy)
+    name: Python (ruff, mypy, e2e)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: sdk/python
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.10
       - run: uv sync --group dev --python 3.10
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy vmlayer
+      - name: Generated stubs are current
+        run: |
+          cd ../.. && ./scripts/gen-proto.sh && git diff --exit-code -- sdk/python/vmlayer/v1
+      - run: cargo build -p vmlayerd
+        working-directory: .
+      - name: End-to-end tests against the daemon and Docker
+        run: uv run pytest -q
+        env:
+          VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd

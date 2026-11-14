@@ -55,6 +55,9 @@ pub struct ExitStatus {
     pub code: Option<i32>,
     pub signal: Option<i32>,
     pub duration: Duration,
+    /// Set by the daemon when it killed the process for exceeding its
+    /// `ExecRequest::timeout`. Backends leave it `false`.
+    pub timed_out: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

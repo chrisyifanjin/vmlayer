@@ -102,6 +102,8 @@ message ExitStatus {
   // Set when the process was killed by a signal.
   optional int32 signal = 2;
   google.protobuf.Duration duration = 3;
+  // The daemon killed it for exceeding the request timeout.
+  bool timed_out = 4;
 }
 
 enum OutputStream {
