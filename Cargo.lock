@@ -1799,6 +1799,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "vmlayer-cli"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "hyper-util",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "vmlayer-proto",
+]
+
+[[package]]
 name = "vmlayer-core"
 version = "0.0.0"
 dependencies = [
