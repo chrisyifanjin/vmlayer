@@ -5,7 +5,6 @@
 pub mod config;
 pub mod grpc;
 pub mod manager;
-pub mod processes;
 pub mod registry;
 pub mod server;
 pub mod store;

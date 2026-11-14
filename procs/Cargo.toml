@@ -1,0 +1,18 @@
+[package]
+name = "vmlayer-procs"
+description = "Process table shared by vmlayerd and the guest agent: output buffering, re-attach, timeouts, and the gRPC event plumbing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vmlayer-core = { workspace = true }
+vmlayer-proto = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+prost-types = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }

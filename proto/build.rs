@@ -6,6 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "vmlayer/v1/files.proto",
         "vmlayer/v1/volumes.proto",
         "vmlayer/v1/system.proto",
+        "vmlayer/guest/v1/guest.proto",
     ];
     for p in &protos {
         println!("cargo:rerun-if-changed={p}");
