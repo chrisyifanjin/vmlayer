@@ -27,9 +27,13 @@ cargo doc --workspace --no-deps
 
 ```bash
 cd sdk/python
-uvx ruff check . && uvx ruff format --check .
-uvx mypy vmlayer
+uv sync --group dev
+uv run ruff check . && uv run ruff format --check .
+uv run mypy vmlayer
 ```
+
+Tool versions are pinned in `sdk/python/pyproject.toml` (`dev` group) so
+local runs and CI agree.
 
 ## Layout
 

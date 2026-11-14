@@ -2,7 +2,7 @@
 name = "vmlayer"
 version = "0.0.0"
 description = "The layer between agent runtimes and microVMs: one sandbox API over Firecracker, libkrun and Docker."
-readme = "../../README.md"
+readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "Chris Yifan Jin" }]
@@ -13,6 +13,9 @@ classifiers = [
   "Topic :: System :: Emulators",
 ]
 dependencies = []
+
+[dependency-groups]
+dev = ["ruff==0.17.5", "mypy==2.4.1"]
 
 [build-system]
 requires = ["hatchling"]
