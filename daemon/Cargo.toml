@@ -1,0 +1,20 @@
+[package]
+name = "vmlayerd"
+description = "The vmlayer host daemon: gRPC server, sandbox table, volume store, backend registry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vmlayerd"
+path = "src/main.rs"
+
+[dependencies]
+vmlayer-core = { workspace = true }
+vmlayer-proto = { workspace = true }
+vmlayer-backend-docker = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

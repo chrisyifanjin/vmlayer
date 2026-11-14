@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package vmlayer.v1;
+
+import "google/protobuf/duration.proto";
+import "vmlayer/v1/common.proto";
+
+// Sandbox lifecycle. One RPC per SDK method; anything that must be atomic
+// (snapshot with volumes) is a single RPC.
+service Sandboxes {
+  rpc Create(CreateSandboxRequest) returns (Sandbox);
+  rpc Restore(RestoreSandboxRequest) returns (Sandbox);
+  rpc Get(GetSandboxRequest) returns (Sandbox);
+  rpc List(ListSandboxesRequest) returns (ListSandboxesResponse);
+  rpc Kill(KillSandboxRequest) returns (Empty);
+  rpc Pause(PauseSandboxRequest) returns (Empty);
+  rpc Resume(ResumeSandboxRequest) returns (Empty);
+  rpc TakeSnapshot(SnapshotSandboxRequest) returns (Snapshot);
+  rpc Fork(ForkSandboxRequest) returns (ForkSandboxResponse);
+  rpc Expose(ExposeRequest) returns (Endpoint);
+  rpc Unexpose(UnexposeRequest) returns (Empty);
+  rpc WaitForPort(WaitForPortRequest) returns (Empty);
+  rpc Attach(AttachRequest) returns (Empty);
+  rpc Detach(DetachRequest) returns (Empty);
+}
+
+message WorkspaceSpec {
+  oneof kind {
+    // A fresh anonymous volume deleted with the sandbox (the default when
+    // the field is unset).
+    Empty anonymous = 1;
+    // Reuse an existing volume by id or name.
+    string volume = 2;
+    // No workspace volume at all.
+    Empty none = 3;
+  }
+}
+
+message EntrypointSpec {
+  oneof kind {
+    // Use the image's ENTRYPOINT/CMD (the default when unset).
+    Empty image_default = 1;
+    // Start this argv.
+    Argv argv = 2;
+    // Start nothing.
+    Empty none = 3;
+  }
+}
+
+message Argv {
+  repeated string argv = 1;
+}
+
+message CreateSandboxRequest {
+  // OCI reference. The daemon resolves it for the chosen backend.
+  string image = 1;
+  uint32 vcpus = 2;
+  uint32 memory_mib = 3;
+  optional uint32 disk_mib = 4;
+  map<string, string> env = 5;
+  string workdir = 6;
+  WorkspaceSpec workspace = 7;
+  repeated Mount mounts = 8;
+  EntrypointSpec entrypoint = 9;
+  // Hard lifetime; unset means unbounded.
+  google.protobuf.Duration ttl = 10;
+  // "auto" or a backend name.
+  string backend = 11;
+  NetworkMode network = 12;
+  map<string, string> labels = 13;
+}
+
+message RestoreSandboxRequest {
+  string snapshot_id = 1;
+  google.protobuf.Duration ttl = 2;
+  map<string, string> labels = 3;
+}
+
+message GetSandboxRequest { string id = 1; }
+
+message ListSandboxesRequest { map<string, string> labels = 1; }
+message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
+
+message KillSandboxRequest { string id = 1; }
+message PauseSandboxRequest { string id = 1; }
+message ResumeSandboxRequest { string id = 1; }
+
+message SnapshotSandboxRequest {
+  string id = 1;
+  map<string, string> labels = 2;
+  bool stay_paused = 3;
+}
+
+message ForkSandboxRequest {
+  string id = 1;
+  uint32 count = 2;
+}
+message ForkSandboxResponse { repeated Sandbox children = 1; }
+
+message ExposeRequest {
+  string id = 1;
+  uint32 guest_port = 2;
+}
+message UnexposeRequest {
+  string id = 1;
+  uint32 guest_port = 2;
+}
+
+message WaitForPortRequest {
+  string id = 1;
+  uint32 port = 2;
+  google.protobuf.Duration timeout = 3;
+}
+
+message AttachRequest {
+  string id = 1;
+  Mount mount = 2;
+}
+message DetachRequest {
+  string id = 1;
+  string guest_path = 2;
+}

@@ -59,6 +59,16 @@ pub trait Backend: Send + Sync {
     async fn delete_snapshot(&self, snapshot: &SnapshotRef) -> Result<()>;
 }
 
+/// Turns an image reference into something a backend can boot.
+///
+/// Per ADR 0003 backends never see OCI references; resolution is its own
+/// component. The Docker backend crate implements this itself (the engine
+/// pulls); the daemon's OCI pipeline implements it for microVM backends.
+#[async_trait]
+pub trait ImageResolver: Send + Sync {
+    async fn resolve(&self, image: &str) -> Result<ResolvedImage>;
+}
+
 /// One running (or paused) sandbox.
 ///
 /// Methods guarded by a [`Capabilities`] field are marked *optional*; a backend

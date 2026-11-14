@@ -28,6 +28,6 @@ pub mod backend;
 pub mod error;
 pub mod types;
 
-pub use backend::{Backend, Process, Pty, SandboxHandle};
+pub use backend::{Backend, ImageResolver, Process, Pty, SandboxHandle};
 pub use error::{Error, Result};
 pub use types::*;
