@@ -18,27 +18,33 @@ from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 from vmlayer.v1 import processes_pb2 as vmlayer_dot_v1_dot_processes__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1cvmlayer/guest/v1/guest.proto\x12\x10vmlayer.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x17vmlayer/v1/common.proto\x1a\x1avmlayer/v1/processes.proto\"F\n\rReadyResponse\x12\x15\n\ragent_version\x18\x01 \x01(\t\x12\x0e\n\x06kernel\x18\x02 \x01(\t\x12\x0e\n\x06uptime\x18\x03 \x01(\x01\"O\n\x0cMountRequest\x12\x0e\n\x06source\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06\x66stype\x18\x03 \x01(\t\x12\x11\n\tread_only\x18\x04 \x01(\x08\"\x1e\n\x0eUnmountRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"\x95\x01\n\x11\x45ntrypointRequest\x12\x0c\n\x04\x61rgv\x18\x01 \x03(\t\x12\x0b\n\x03\x63wd\x18\x02 \x01(\t\x12\x39\n\x03\x65nv\x18\x03 \x03(\x0b\x32,.vmlayer.guest.v1.EntrypointRequest.EnvEntry\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"N\n\x12WaitForPortRequest\x12\x0c\n\x04port\x18\x01 \x01(\r\x12*\n\x07timeout\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration2\xa0\x04\n\x05Guest\x12;\n\x05Ready\x12\x11.vmlayer.v1.Empty\x1a\x1f.vmlayer.guest.v1.ReadyResponse\x12:\n\x05Mount\x12\x1e.vmlayer.guest.v1.MountRequest\x1a\x11.vmlayer.v1.Empty\x12>\n\x07Unmount\x12 .vmlayer.guest.v1.UnmountRequest\x1a\x11.vmlayer.v1.Empty\x12K\n\x0fStartEntrypoint\x12#.vmlayer.guest.v1.EntrypointRequest\x1a\x13.vmlayer.v1.Started\x12\x46\n\x0bWaitForPort\x12$.vmlayer.guest.v1.WaitForPortRequest\x1a\x11.vmlayer.v1.Empty\x12\x30\n\x08\x46reezeFs\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12.\n\x06ThawFs\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12\x35\n\rRescanDevices\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12\x30\n\x08Shutdown\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Emptyb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1cvmlayer/guest/v1/guest.proto\x12\x10vmlayer.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x17vmlayer/v1/common.proto\x1a\x1avmlayer/v1/processes.proto\"F\n\rReadyResponse\x12\x15\n\ragent_version\x18\x01 \x01(\t\x12\x0e\n\x06kernel\x18\x02 \x01(\t\x12\x0e\n\x06uptime\x18\x03 \x01(\x01\"\x85\x01\n\x10\x43onfigureRequest\x12\x38\n\x03\x65nv\x18\x01 \x03(\x0b\x32+.vmlayer.guest.v1.ConfigureRequest.EnvEntry\x12\x0b\n\x03\x63wd\x18\x02 \x01(\t\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"O\n\x0cMountRequest\x12\x0e\n\x06source\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06\x66stype\x18\x03 \x01(\t\x12\x11\n\tread_only\x18\x04 \x01(\x08\"\x1e\n\x0eUnmountRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"\x95\x01\n\x11\x45ntrypointRequest\x12\x0c\n\x04\x61rgv\x18\x01 \x03(\t\x12\x0b\n\x03\x63wd\x18\x02 \x01(\t\x12\x39\n\x03\x65nv\x18\x03 \x03(\x0b\x32,.vmlayer.guest.v1.EntrypointRequest.EnvEntry\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"N\n\x12WaitForPortRequest\x12\x0c\n\x04port\x18\x01 \x01(\r\x12*\n\x07timeout\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration2\xe4\x04\n\x05Guest\x12;\n\x05Ready\x12\x11.vmlayer.v1.Empty\x1a\x1f.vmlayer.guest.v1.ReadyResponse\x12\x42\n\tConfigure\x12\".vmlayer.guest.v1.ConfigureRequest\x1a\x11.vmlayer.v1.Empty\x12:\n\x05Mount\x12\x1e.vmlayer.guest.v1.MountRequest\x1a\x11.vmlayer.v1.Empty\x12>\n\x07Unmount\x12 .vmlayer.guest.v1.UnmountRequest\x1a\x11.vmlayer.v1.Empty\x12K\n\x0fStartEntrypoint\x12#.vmlayer.guest.v1.EntrypointRequest\x1a\x13.vmlayer.v1.Started\x12\x46\n\x0bWaitForPort\x12$.vmlayer.guest.v1.WaitForPortRequest\x1a\x11.vmlayer.v1.Empty\x12\x30\n\x08\x46reezeFs\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12.\n\x06ThawFs\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12\x35\n\rRescanDevices\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Empty\x12\x30\n\x08Shutdown\x12\x11.vmlayer.v1.Empty\x1a\x11.vmlayer.v1.Emptyb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'vmlayer.guest.v1.guest_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
+  _globals['_CONFIGUREREQUEST_ENVENTRY']._loaded_options = None
+  _globals['_CONFIGUREREQUEST_ENVENTRY']._serialized_options = b'8\001'
   _globals['_ENTRYPOINTREQUEST_ENVENTRY']._loaded_options = None
   _globals['_ENTRYPOINTREQUEST_ENVENTRY']._serialized_options = b'8\001'
   _globals['_READYRESPONSE']._serialized_start=135
   _globals['_READYRESPONSE']._serialized_end=205
-  _globals['_MOUNTREQUEST']._serialized_start=207
-  _globals['_MOUNTREQUEST']._serialized_end=286
-  _globals['_UNMOUNTREQUEST']._serialized_start=288
-  _globals['_UNMOUNTREQUEST']._serialized_end=318
-  _globals['_ENTRYPOINTREQUEST']._serialized_start=321
-  _globals['_ENTRYPOINTREQUEST']._serialized_end=470
-  _globals['_ENTRYPOINTREQUEST_ENVENTRY']._serialized_start=428
-  _globals['_ENTRYPOINTREQUEST_ENVENTRY']._serialized_end=470
-  _globals['_WAITFORPORTREQUEST']._serialized_start=472
-  _globals['_WAITFORPORTREQUEST']._serialized_end=550
-  _globals['_GUEST']._serialized_start=553
-  _globals['_GUEST']._serialized_end=1097
+  _globals['_CONFIGUREREQUEST']._serialized_start=208
+  _globals['_CONFIGUREREQUEST']._serialized_end=341
+  _globals['_CONFIGUREREQUEST_ENVENTRY']._serialized_start=299
+  _globals['_CONFIGUREREQUEST_ENVENTRY']._serialized_end=341
+  _globals['_MOUNTREQUEST']._serialized_start=343
+  _globals['_MOUNTREQUEST']._serialized_end=422
+  _globals['_UNMOUNTREQUEST']._serialized_start=424
+  _globals['_UNMOUNTREQUEST']._serialized_end=454
+  _globals['_ENTRYPOINTREQUEST']._serialized_start=457
+  _globals['_ENTRYPOINTREQUEST']._serialized_end=606
+  _globals['_ENTRYPOINTREQUEST_ENVENTRY']._serialized_start=299
+  _globals['_ENTRYPOINTREQUEST_ENVENTRY']._serialized_end=341
+  _globals['_WAITFORPORTREQUEST']._serialized_start=608
+  _globals['_WAITFORPORTREQUEST']._serialized_end=686
+  _globals['_GUEST']._serialized_start=689
+  _globals['_GUEST']._serialized_end=1301
 # @@protoc_insertion_point(module_scope)

@@ -224,7 +224,7 @@ impl Daemon {
             WorkspaceSpec::Anonymous => {
                 let v = self
                     .volumes
-                    .create(None, None, BTreeMap::new(), true)
+                    .create_kind(kind, None, None, BTreeMap::new(), true)
                     .await?;
                 self.volumes.attach(&v.id, id, false)?;
                 attached.push(v.id.clone());
@@ -646,55 +646,101 @@ impl Daemon {
             .collect())
     }
 
+    /// Fork a running sandbox into `count` children.
+    ///
+    /// One snapshot, N restores (ADR 0008 D5). The parent stays paused while
+    /// the snapshot is taken *and* its volumes are cloned, so every child's
+    /// disks match the memory image exactly; then the parent resumes and the
+    /// children are restored from the snapshot, which is discarded at the end.
     pub async fn fork(self: &Arc<Self>, id: &SandboxId, count: u32) -> Result<Vec<SandboxView>> {
         let live = self.live(id).await?;
         let row = self.store.get_sandbox(id).map_err(store_err)?;
-        let caps = self
+        let entry = self
             .registry
-            .capabilities_of(&row.backend)
-            .unwrap_or(Capabilities::CONTAINER);
-        if !caps.fork {
+            .get(&row.backend)
+            .ok_or_else(|| Error::SandboxNotFound(id.clone()))?;
+        if !entry.backend.capabilities().fork {
             return Err(Error::Unsupported {
-                backend: self
-                    .registry
-                    .get(&row.backend)
-                    .map(|_| "backend")
-                    .unwrap_or("daemon"),
+                backend: entry.backend.name(),
                 feature: "fork",
             });
         }
-        // Clone volumes per child, then let the backend fork.
-        let mut per_child = Vec::new();
-        let mut ids = Vec::new();
-        for _ in 0..count {
+        let parent_mounts = self.store.mounts_for(id).map_err(store_err)?;
+        let snap = live
+            .handle
+            .snapshot(SnapshotOptions {
+                labels: BTreeMap::new(),
+                stay_paused: true,
+            })
+            .await?;
+
+        // Clone volumes for every child while the parent is still paused.
+        let mut plans: Vec<(SandboxId, Vec<Mount>)> = Vec::new();
+        let mut prep: Result<()> = Ok(());
+        'children: for _ in 0..count.max(1) {
             let cid = SandboxId(new_id("sb"));
-            let mut mounts = Vec::new();
-            for m in self.store.mounts_for(id).map_err(store_err)? {
-                let v = self.volumes.clone_volume(&m.volume_id, None, true).await?;
-                self.volumes.attach(&v.id, &cid, m.read_only)?;
-                let source = self.volumes.source(&v);
-                mounts.push(Mount {
-                    volume: v.id,
+            let mut child_mounts = Vec::new();
+            for m in &parent_mounts {
+                let vol = if m.read_only {
+                    // Read-only data is shared, not copied.
+                    self.volumes.get(&m.volume_id.0)
+                } else {
+                    self.volumes.clone_volume(&m.volume_id, None, true).await
+                };
+                let vol = match vol
+                    .and_then(|v| self.volumes.attach(&v.id, &cid, m.read_only).map(|_| v))
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        prep = Err(e);
+                        plans.push((cid, child_mounts));
+                        break 'children;
+                    }
+                };
+                let source = self.volumes.source(&vol);
+                child_mounts.push(Mount {
+                    volume: vol.id,
                     source,
-                    guest_path: m.guest_path,
+                    guest_path: m.guest_path.clone(),
                     read_only: m.read_only,
                 });
             }
-            per_child.push(mounts);
-            ids.push(cid);
+            plans.push((cid, child_mounts));
         }
-        let handles = live.handle.fork(count, per_child.clone()).await?;
+        if let Err(e) = live.handle.resume().await {
+            tracing::warn!(%id, error = %e, "resuming parent after fork snapshot failed");
+        }
+
         let mut views = Vec::new();
-        for ((handle, cid), mounts) in handles.into_iter().zip(ids).zip(per_child) {
+        let mut failure = prep.err();
+        for (cid, child_mounts) in plans {
+            if failure.is_some() {
+                self.rollback_attach(&cid, &[]).await;
+                continue;
+            }
+            let opts = vmlayer_core::RestoreOptions {
+                id: Some(cid.clone()),
+                ttl: row.ttl,
+                mounts: child_mounts.clone(),
+                labels: BTreeMap::new(),
+            };
+            let handle = match entry.backend.restore(&snap, opts).await {
+                Ok(h) => h,
+                Err(e) => {
+                    self.rollback_attach(&cid, &[]).await;
+                    failure = Some(e);
+                    continue;
+                }
+            };
             let mut spec = row.spec.clone();
-            spec.id = handle.id().clone();
-            spec.mounts = mounts.clone();
+            spec.id = cid.clone();
+            spec.mounts = child_mounts.clone();
             let child_row = SandboxRow {
-                id: spec.id.clone(),
+                id: cid.clone(),
                 backend: row.backend.clone(),
                 image: row.image.clone(),
                 workdir: row.workdir.clone(),
-                workspace_volume_id: mounts
+                workspace_volume_id: child_mounts
                     .iter()
                     .find(|m| m.guest_path == row.workdir)
                     .map(|m| m.volume.clone()),
@@ -704,26 +750,32 @@ impl Daemon {
                 labels: row.labels.clone(),
                 spec,
             };
-            let _ = cid; // backend assigns the final id; volumes were attached under ours
-            self.volumes.detach_all(&cid)?;
-            for m in &mounts {
-                self.volumes.attach(&m.volume, &child_row.id, m.read_only)?;
+            self.store.insert_sandbox(&child_row).map_err(store_err)?;
+            for m in &child_mounts {
                 self.store
                     .insert_mount(&MountRow {
-                        sandbox_id: child_row.id.clone(),
+                        sandbox_id: cid.clone(),
                         volume_id: m.volume.clone(),
                         guest_path: m.guest_path.clone(),
                         read_only: m.read_only,
                     })
                     .map_err(store_err)?;
             }
-            self.store.insert_sandbox(&child_row).map_err(store_err)?;
-            let live = self
-                .register(child_row.id.clone(), row.backend.clone(), handle)
+            let child = self
+                .register(cid.clone(), row.backend.clone(), handle)
                 .await;
-            self.arm_ttl(&live, child_row.created_at, child_row.ttl);
-            views.push(self.view(&child_row.id).await?);
+            self.arm_ttl(&child, child_row.created_at, child_row.ttl);
+            views.push(self.view(&cid).await?);
         }
+        // The children hold their own links to the snapshot's files.
+        let _ = entry.backend.delete_snapshot(&snap).await;
+        if let Some(e) = failure {
+            for v in &views {
+                let _ = self.kill(&v.row.id).await;
+            }
+            return Err(e);
+        }
+        tracing::info!(%id, children = views.len(), "forked");
         Ok(views)
     }
 

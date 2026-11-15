@@ -300,6 +300,9 @@ pub struct SnapshotLoad<'a> {
     pub mem_backend: MemBackend<'a>,
     pub enable_diff_snapshots: bool,
     pub resume_vm: bool,
+    /// Only sent when non-empty: every VM's tap has the same name inside its
+    /// own namespace, so the snapshot's interface config is already right.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub network_overrides: Vec<NetworkOverride<'a>>,
 }
 

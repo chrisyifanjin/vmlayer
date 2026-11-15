@@ -38,6 +38,8 @@ struct Inner {
     entrypoint: AtomicU32,
     mounts: Mutex<Vec<PathBuf>>,
     started: Instant,
+    /// Sandbox-wide environment and working directory (see `Configure`).
+    defaults: std::sync::Mutex<(BTreeMap<String, String>, String)>,
 }
 
 impl Agent {
@@ -48,8 +50,22 @@ impl Agent {
                 entrypoint: AtomicU32::new(0),
                 mounts: Mutex::new(Vec::new()),
                 started: Instant::now(),
+                defaults: std::sync::Mutex::new((BTreeMap::new(), String::new())),
             }),
         }
+    }
+
+    /// Layer a request over the sandbox defaults: its env entries win, and
+    /// it runs in the default working directory unless it names one.
+    fn with_defaults(&self, mut er: ExecRequest) -> ExecRequest {
+        let defaults = self.inner.defaults.lock().unwrap();
+        let mut env = defaults.0.clone();
+        env.extend(std::mem::take(&mut er.env));
+        er.env = env;
+        if er.cwd.is_none() && !defaults.1.is_empty() {
+            er.cwd = Some(defaults.1.clone());
+        }
+        er
     }
 
     fn resolve_pid(&self, pid: u32) -> u32 {
@@ -118,7 +134,7 @@ impl Processes for Agent {
         req: Request<pb::ExecRequest>,
     ) -> Result<Response<Self::ExecStream>, Status> {
         let r = req.into_inner();
-        let er = exec_request(r.argv.clone(), r.cwd, r.env, r.timeout, None)?;
+        let er = self.with_defaults(exec_request(r.argv.clone(), r.cwd, r.env, r.timeout, None)?);
         let timeout = er.timeout;
         let process = LocalProcess::spawn(&er).map_err(status)?;
         let entry = self
@@ -263,7 +279,7 @@ impl Processes for Agent {
         } else {
             open.argv
         };
-        let er = exec_request(argv, open.cwd, open.env, None, Some(size))?;
+        let er = self.with_defaults(exec_request(argv, open.cwd, open.env, None, Some(size))?);
         let mut pty = LocalPty::spawn(&er).map_err(status)?;
         let pid = pty.pid();
         let mut output = vmlayer_core::Pty::output(&mut pty);
@@ -518,6 +534,20 @@ impl Guest for Agent {
         }))
     }
 
+    async fn configure(
+        &self,
+        req: Request<guest::ConfigureRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        if !r.cwd.is_empty() {
+            tokio::fs::create_dir_all(&r.cwd)
+                .await
+                .map_err(|e| Status::failed_precondition(format!("{}: {e}", r.cwd)))?;
+        }
+        *self.inner.defaults.lock().unwrap() = (r.env.into_iter().collect(), r.cwd);
+        Ok(Response::new(pb::Empty {}))
+    }
+
     async fn mount(
         &self,
         req: Request<guest::MountRequest>,
@@ -557,7 +587,7 @@ impl Guest for Agent {
         req: Request<guest::EntrypointRequest>,
     ) -> Result<Response<pb::Started>, Status> {
         let r = req.into_inner();
-        let er = exec_request(r.argv.clone(), r.cwd, r.env, None, None)?;
+        let er = self.with_defaults(exec_request(r.argv.clone(), r.cwd, r.env, None, None)?);
         let process = LocalProcess::spawn(&er).map_err(status)?;
         let entry = self
             .inner

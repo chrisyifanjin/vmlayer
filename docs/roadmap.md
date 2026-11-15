@@ -7,12 +7,12 @@
       per-VM network namespaces, gRPC agent over vsock (tested end to end in
       a container), block-image volumes, snapshot/restore/fork code paths.
       See decision 0008.
-- [ ] **1. First boot on a KVM host.** Run the Firecracker backend for real:
-      boot a prebuilt ext4 root, `exec` round-trips, fix what the hardware
-      disagrees with. Needs a Linux host with KVM.
-- [ ] **2. Snapshot, restore, fork on Firecracker.** uffd memory backend with
-      working-set prefetch, zero-page elision, volume clones via reflink.
-      Measure restore latency three ways (docs/research.md).
+- [x] **1. First boot on a KVM host.** Firecracker 1.18 on aarch64 with
+      nested virtualization: boots OCI images, exec, files, pty, egress.
+- [x] **2. Snapshot, restore, fork on Firecracker.** Memory snapshots with
+      running processes surviving, fork under write load
+      (`bench/stress_snapshots.py`). Not yet: uffd working-set prefetch and
+      zero-page elision (docs/research.md), bare-metal x86_64 numbers.
 - [x] **3. Image pipeline.** The daemon pulls OCI images itself, applies
       layers with whiteouts, builds a cached ext4 per digest (decision 0009);
       `vmlayer pull` pre-builds. Layer sharing via EROFS is the follow-up.

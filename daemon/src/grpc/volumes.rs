@@ -13,10 +13,14 @@ impl Volumes for Services {
         req: Request<pb::CreateVolumeRequest>,
     ) -> Result<Response<pb::Volume>, Status> {
         let r = req.into_inner();
+        // A volume takes the representation of the backend that will mount
+        // it: the requested one, else the daemon's default backend.
+        let (_, entry) = self.daemon.registry.pick(&r.backend).map_err(status)?;
         let v = self
             .daemon
             .volumes
-            .create(
+            .create_kind(
+                entry.backend.volume_source_kind(),
                 (!r.name.is_empty()).then_some(r.name),
                 r.size_mib,
                 convert::labels_from(&r.labels),

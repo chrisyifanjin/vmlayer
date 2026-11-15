@@ -12,6 +12,9 @@ import "vmlayer/v1/processes.proto";
 // what only makes sense inside the guest.
 service Guest {
   rpc Ready(vmlayer.v1.Empty) returns (ReadyResponse);
+  // Defaults applied to every process started afterwards: environment (a
+  // request's own env wins) and working directory (created if missing).
+  rpc Configure(ConfigureRequest) returns (vmlayer.v1.Empty);
   // Mount a block device or a virtio-fs tag at a path, creating the path.
   rpc Mount(MountRequest) returns (vmlayer.v1.Empty);
   rpc Unmount(UnmountRequest) returns (vmlayer.v1.Empty);
@@ -32,6 +35,11 @@ message ReadyResponse {
   string kernel = 2;
   // Seconds since the agent started.
   double uptime = 3;
+}
+
+message ConfigureRequest {
+  map<string, string> env = 1;
+  string cwd = 2;
 }
 
 message MountRequest {

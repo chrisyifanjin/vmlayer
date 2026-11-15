@@ -1,7 +1,12 @@
 # Firecracker backend: host setup
 
-Status: implemented and unit-tested, **not yet run on a KVM host**. This page
-is the setup the first run will use; expect it to change.
+Status: **working on real KVM** (Firecracker 1.18, aarch64, nested
+virtualization): boot, exec, files, pty, networking, volumes, memory
+snapshots, restore, fork. Bare-metal x86_64 has not been run yet.
+
+The quickest way to try it on a laptop is `scripts/kvm-vm/up.sh`, which
+builds everything described below inside a small VM with KVM
+([details](../scripts/kvm-vm/README.md)).
 
 ## Requirements
 

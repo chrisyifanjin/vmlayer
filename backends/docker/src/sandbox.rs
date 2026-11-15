@@ -425,17 +425,6 @@ impl SandboxHandle for DockerSandbox {
         })
     }
 
-    async fn fork(
-        &self,
-        _count: u32,
-        _mounts: Vec<Vec<Mount>>,
-    ) -> Result<Vec<Box<dyn SandboxHandle>>> {
-        Err(Error::Unsupported {
-            backend: BACKEND_NAME,
-            feature: "fork",
-        })
-    }
-
     async fn freeze_fs(&self) -> Result<()> {
         let _ = self.run_capture(vec!["sync".into()]).await;
         Ok(())

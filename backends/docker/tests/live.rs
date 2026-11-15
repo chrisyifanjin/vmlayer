@@ -232,11 +232,7 @@ async fn entrypoint_expose_and_snapshot() {
         .wait_for_port(8080, Duration::from_secs(10))
         .await
         .unwrap();
-
-    assert!(matches!(
-        sb.fork(2, vec![]).await,
-        Err(Error::Unsupported { .. })
-    ));
+    assert!(!be.capabilities().fork);
 
     restored.kill().await.unwrap();
     sb.kill().await.unwrap();

@@ -45,6 +45,11 @@ class GuestStub(object):
                 request_serializer=vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
                 response_deserializer=vmlayer_dot_guest_dot_v1_dot_guest__pb2.ReadyResponse.FromString,
                 _registered_method=True)
+        self.Configure = channel.unary_unary(
+                '/vmlayer.guest.v1.Guest/Configure',
+                request_serializer=vmlayer_dot_guest_dot_v1_dot_guest__pb2.ConfigureRequest.SerializeToString,
+                response_deserializer=vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
+                _registered_method=True)
         self.Mount = channel.unary_unary(
                 '/vmlayer.guest.v1.Guest/Mount',
                 request_serializer=vmlayer_dot_guest_dot_v1_dot_guest__pb2.MountRequest.SerializeToString,
@@ -96,6 +101,14 @@ class GuestServicer(object):
 
     def Ready(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Configure(self, request, context):
+        """Defaults applied to every process started afterwards: environment (a
+        request's own env wins) and working directory (created if missing).
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -160,6 +173,11 @@ def add_GuestServicer_to_server(servicer, server):
                     servicer.Ready,
                     request_deserializer=vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
                     response_serializer=vmlayer_dot_guest_dot_v1_dot_guest__pb2.ReadyResponse.SerializeToString,
+            ),
+            'Configure': grpc.unary_unary_rpc_method_handler(
+                    servicer.Configure,
+                    request_deserializer=vmlayer_dot_guest_dot_v1_dot_guest__pb2.ConfigureRequest.FromString,
+                    response_serializer=vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
             ),
             'Mount': grpc.unary_unary_rpc_method_handler(
                     servicer.Mount,
@@ -233,6 +251,33 @@ class Guest(object):
             '/vmlayer.guest.v1.Guest/Ready',
             vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
             vmlayer_dot_guest_dot_v1_dot_guest__pb2.ReadyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Configure(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vmlayer.guest.v1.Guest/Configure',
+            vmlayer_dot_guest_dot_v1_dot_guest__pb2.ConfigureRequest.SerializeToString,
+            vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

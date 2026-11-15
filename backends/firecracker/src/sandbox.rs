@@ -20,7 +20,7 @@ use vmlayer_proto::guest::v1 as guest;
 use vmlayer_proto::v1 as pb;
 
 use crate::api::{self, err};
-use crate::guest::Agent;
+use crate::guest::{Agent, Link};
 use crate::net::{self, Lease, Pool};
 use crate::process::{RemoteProcess, RemotePty};
 use crate::vm::{self, Vm};
@@ -52,11 +52,14 @@ pub struct FirecrackerSandbox {
     spec: SandboxSpec,
     lease: Lease,
     vm: Mutex<Vm>,
-    agent: Agent,
+    link: Arc<Link>,
     /// Mount order as given to Firecracker: (device, guest path).
     mounts: Vec<(String, String)>,
     exposed: Mutex<HashMap<u16, net::Proxy>>,
 }
+
+/// PATH for guest processes when neither the image nor the caller sets one.
+const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 fn device_for(i: usize) -> String {
     // vda is the root; volumes follow in drive order.
@@ -102,7 +105,35 @@ impl FirecrackerSandbox {
             })?;
             out.push((device_for(i), m.guest_path.clone()));
         }
+        // Firecracker drops to the jail uid: it must own the jail root (it
+        // creates sockets and snapshot files there) and every disk it opens.
+        vm::chown_for_jail(jail, config.jail_uid, config.jail_gid)?;
+        vm::chown_for_jail(&root, config.jail_uid, config.jail_gid)?;
+        for i in 0..mounts.len() {
+            vm::chown_for_jail(
+                &jail.join(vm::vol_disk(i)),
+                config.jail_uid,
+                config.jail_gid,
+            )?;
+        }
         Ok(out)
+    }
+
+    /// Connect to the guest agent; on failure include the console tail.
+    async fn agent_ready(config: &Config, jail: &Path) -> Result<Agent> {
+        match Agent::wait_ready(
+            jail.join(vm::VSOCK),
+            config.agent_port,
+            Duration::from_secs(30),
+        )
+        .await
+        {
+            Ok(a) => Ok(a),
+            Err(e) => {
+                let tail = vm::console_tail(jail).await;
+                Err(err(format!("{e}; guest console: {tail}")))
+            }
+        }
     }
 
     async fn configure_and_start(
@@ -164,13 +195,7 @@ impl FirecrackerSandbox {
             net::create_netns(&lease, config.jail_uid, config.jail_gid).await?;
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
             Self::configure_and_start(&vmm, &config, &spec, &lease, &spec.mounts).await?;
-            let agent = Agent::wait_ready(
-                jail.join(vm::VSOCK),
-                config.agent_port,
-                Duration::from_secs(10),
-            )
-            .await?;
-            let mut agent = agent;
+            let mut agent = Self::agent_ready(&config, &jail).await?;
             for (dev, path) in &mounts {
                 let ro = spec
                     .mounts
@@ -189,6 +214,23 @@ impl FirecrackerSandbox {
                     .await
                     .map_err(|e| err(format!("mounting {dev} at {path}: {e}")))?;
             }
+            // Sandbox-wide defaults: the image's and caller's environment and
+            // the working directory apply to every process, as on Docker.
+            let mut env: std::collections::HashMap<String, String> = spec
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            env.entry("PATH".into())
+                .or_insert_with(|| DEFAULT_PATH.into());
+            agent
+                .guest
+                .configure(guest::ConfigureRequest {
+                    env,
+                    cwd: spec.workdir.clone(),
+                })
+                .await
+                .map_err(|e| err(format!("configuring guest: {e}")))?;
             if let Some(entry) = &spec.entrypoint {
                 agent
                     .guest
@@ -221,7 +263,7 @@ impl FirecrackerSandbox {
                 spec,
                 lease: lease.clone(),
                 vm: Mutex::new(vmm),
-                agent,
+                link: Arc::new(Link::new(agent)),
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
             })
@@ -250,16 +292,29 @@ impl FirecrackerSandbox {
         let result: Result<Self> = async {
             // Root disk: CoW clone of the snapshot's; no agent injection
             // (it is already inside). Volumes: the daemon's fresh clones.
-            let mounts = Self::populate_jail(
-                &config,
-                &jail,
-                &snap_dir.join(&meta.root),
-                false,
-                &spec.mounts,
-            )
-            .await?;
+            // The guest's block devices are fixed by the snapshot (vdb is
+            // whatever was vol0 then), so attach the new volumes in the
+            // snapshot's order, matched by guest path.
+            let ordered: Vec<Mount> = meta
+                .volumes
+                .iter()
+                .map(|(_, path)| {
+                    spec.mounts
+                        .iter()
+                        .find(|m| &m.guest_path == path)
+                        .cloned()
+                        .ok_or_else(|| err(format!("restore is missing a volume for {path}")))
+                })
+                .collect::<Result<_>>()?;
+            let mounts =
+                Self::populate_jail(&config, &jail, &snap_dir.join(&meta.root), false, &ordered)
+                    .await?;
+
             vm::link_or_clone(&snap_dir.join(&meta.vmstate), &jail.join("vmstate")).await?;
             vm::link_or_clone(&snap_dir.join(&meta.mem), &jail.join("mem")).await?;
+            for f in ["vmstate", "mem"] {
+                vm::chown_for_jail(&jail.join(f), config.jail_uid, config.jail_gid)?;
+            }
             net::create_netns(&lease, config.jail_uid, config.jail_gid).await?;
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
             vmm.api
@@ -271,19 +326,36 @@ impl FirecrackerSandbox {
                     },
                     enable_diff_snapshots: false,
                     resume_vm: true,
-                    network_overrides: vec![api::NetworkOverride {
-                        iface_id: "eth0",
-                        host_dev_name: net::TAP,
-                    }],
+                    network_overrides: Vec::new(),
                 })
                 .await?;
             // The guest resumed with its old vsock connections dead; reconnect.
-            let agent = Agent::wait_ready(
-                jail.join(vm::VSOCK),
-                config.agent_port,
-                Duration::from_secs(10),
-            )
-            .await?;
+            // The snapshot was taken with volumes frozen; let writes flow
+            // again. Must not be skipped, so retry on a fresh connection.
+            let mut agent = Self::agent_ready(&config, &jail).await?;
+            let mut attempt = 0;
+            loop {
+                let call =
+                    tokio::time::timeout(Duration::from_secs(2), agent.guest.thaw_fs(pb::Empty {}));
+                match call.await {
+                    Ok(Ok(_)) => break,
+                    _ if attempt < 5 => {
+                        attempt += 1;
+                        agent = Self::agent_ready(&config, &jail).await?;
+                    }
+                    Ok(Err(e)) => {
+                        return Err(err(format!(
+                            "thawing volumes after restore: {}",
+                            e.message()
+                        )))
+                    }
+                    Err(_) => {
+                        return Err(err(
+                            "thawing volumes after restore: no answer from the agent",
+                        ))
+                    }
+                }
+            }
             let created_at = SystemTime::now();
             Self::write_jail_meta(
                 &jail,
@@ -301,7 +373,7 @@ impl FirecrackerSandbox {
                 spec,
                 lease: lease.clone(),
                 vm: Mutex::new(vmm),
-                agent,
+                link: Arc::new(Link::new(agent)),
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
             })
@@ -345,7 +417,7 @@ impl FirecrackerSandbox {
             spec: meta.spec,
             lease,
             vm: Mutex::new(vmm),
-            agent,
+            link: Arc::new(Link::new(agent)),
             mounts: meta.mounts,
             exposed: Mutex::new(HashMap::new()),
         })
@@ -379,6 +451,15 @@ impl FirecrackerSandbox {
             });
         }
         Ok(out)
+    }
+
+    /// Install a fresh agent connection. Needed after every snapshot:
+    /// Firecracker resets the guest's vsock connections when it takes one.
+    async fn reconnect(&self) -> Result<()> {
+        let jail = self.config.jail_root(&self.id);
+        let fresh = Self::agent_ready(&self.config, &jail).await?;
+        self.link.replace(fresh);
+        Ok(())
     }
 
     fn exec_pb(req: &ExecRequest) -> pb::ExecRequest {
@@ -419,7 +500,7 @@ impl SandboxHandle for FirecrackerSandbox {
 
     async fn exec(&self, req: ExecRequest) -> Result<Box<dyn Process>> {
         Ok(Box::new(
-            RemoteProcess::spawn(self.agent.clone(), Self::exec_pb(&req)).await?,
+            RemoteProcess::spawn(self.link.clone(), Self::exec_pb(&req)).await?,
         ))
     }
 
@@ -441,11 +522,11 @@ impl SandboxHandle for FirecrackerSandbox {
             }),
             ..Default::default()
         };
-        Ok(Box::new(RemotePty::open(self.agent.clone(), open).await?))
+        Ok(Box::new(RemotePty::open(self.link.agent(), open).await?))
     }
 
     async fn processes(&self) -> Result<Vec<ProcessInfo>> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         let r = agent
             .processes
             .list(pb::ListProcessesRequest::default())
@@ -468,12 +549,12 @@ impl SandboxHandle for FirecrackerSandbox {
 
     async fn process(&self, pid: u32) -> Result<Box<dyn Process>> {
         Ok(Box::new(
-            RemoteProcess::attach(self.agent.clone(), pid).await?,
+            RemoteProcess::attach(self.link.clone(), pid).await?,
         ))
     }
 
     async fn wait_for_port(&self, port: u16, timeout: Duration) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         agent
             .guest
             .wait_for_port(guest::WaitForPortRequest {
@@ -489,7 +570,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn read_file(&self, path: &str) -> Result<Bytes> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         let mut stream = agent
             .files
             .read(pb::ReadFileRequest {
@@ -511,7 +592,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn write_file(&self, path: &str, data: Bytes, mode: u32) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         let header = pb::WriteFileRequest {
             part: Some(pb::write_file_request::Part::Header(
                 pb::write_file_request::Header {
@@ -536,7 +617,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn list_dir(&self, path: &str) -> Result<Vec<FileInfo>> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         let r = agent
             .files
             .list(pb::ListFilesRequest {
@@ -562,7 +643,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn remove(&self, path: &str, recursive: bool) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         agent
             .files
             .remove(pb::RemoveRequest {
@@ -576,7 +657,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn mkdir(&self, path: &str) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         agent
             .files
             .mkdir(pb::MkdirRequest {
@@ -595,7 +676,7 @@ impl SandboxHandle for FirecrackerSandbox {
         let vmm = self.vm.lock().await;
         let was_paused = matches!(vmm.api.info().await.map(|i| i.state), Ok(s) if s == "Paused");
         // Quiesce guest filesystems, pause the vCPUs, write memory + state.
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         let _ = agent.guest.freeze_fs(pb::Empty {}).await;
         if !was_paused {
             vmm.api.pause().await?;
@@ -611,9 +692,9 @@ impl SandboxHandle for FirecrackerSandbox {
             Ok(())
         }
         .await;
-        if !was_paused && !opts.stay_paused {
+        let resumed = !was_paused && !opts.stay_paused;
+        if resumed {
             let _ = vmm.api.resume().await;
-            let _ = agent.guest.thaw_fs(pb::Empty {}).await;
         }
         result?;
         let meta = SnapshotMeta {
@@ -647,6 +728,13 @@ impl SandboxHandle for FirecrackerSandbox {
             .await
             .map(|i| i.vmm_version)
             .unwrap_or_default();
+        drop(vmm);
+        if resumed {
+            // The snapshot reset the agent connection; reconnect and thaw.
+            self.reconnect().await?;
+            let mut agent = self.link.agent();
+            let _ = agent.guest.thaw_fs(pb::Empty {}).await;
+        }
         Ok(SnapshotRef {
             id,
             backend: BACKEND_NAME.to_string(),
@@ -662,28 +750,8 @@ impl SandboxHandle for FirecrackerSandbox {
         })
     }
 
-    /// Fork = snapshot + N restores sharing the memory file copy-on-write.
-    async fn fork(
-        &self,
-        count: u32,
-        mounts: Vec<Vec<Mount>>,
-    ) -> Result<Vec<Box<dyn SandboxHandle>>> {
-        let snap = self.snapshot(SnapshotOptions::default()).await?;
-        let mut children: Vec<Box<dyn SandboxHandle>> = Vec::new();
-        for i in 0..count as usize {
-            let mut spec = self.spec.clone();
-            spec.id = SandboxId(format!("sb-{}", Uuid::now_v7().simple()));
-            spec.mounts = mounts.get(i).cloned().unwrap_or_default();
-            let lease = self.pool.lock().await.allocate(&spec.id)?;
-            let child =
-                Self::restore(self.config.clone(), self.pool.clone(), spec, &snap, lease).await?;
-            children.push(Box::new(child));
-        }
-        Ok(children)
-    }
-
     async fn freeze_fs(&self) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         agent
             .guest
             .freeze_fs(pb::Empty {})
@@ -693,7 +761,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn thaw_fs(&self) -> Result<()> {
-        let mut agent = self.agent.clone();
+        let mut agent = self.link.agent();
         agent
             .guest
             .thaw_fs(pb::Empty {})
@@ -707,10 +775,21 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn resume(&self) -> Result<()> {
-        self.vm.lock().await.api.resume().await
+        self.vm.lock().await.api.resume().await?;
+        // If the pause was for a snapshot, the agent connection was reset and
+        // the volumes are frozen: reconnect, then let writes through again.
+        self.reconnect().await?;
+        let mut agent = self.link.agent();
+        agent
+            .guest
+            .thaw_fs(pb::Empty {})
+            .await
+            .map(|_| ())
+            .map_err(|e| err(format!("thawing volumes after resume: {}", e.message())))
     }
 
     async fn kill(&self) -> Result<()> {
+        self.link.mark_dead();
         self.exposed.lock().await.clear();
         let mut vmm = self.vm.lock().await;
         vmm.kill().await?;

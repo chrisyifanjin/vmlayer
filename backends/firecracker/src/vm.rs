@@ -18,6 +18,29 @@ pub const API_SOCK: &str = "api.sock";
 pub const PID_FILE: &str = "vm.pid";
 pub const LEASE_FILE: &str = "lease";
 pub const AGENT_IN_GUEST: &str = "/vmlayer-guest-agent";
+/// Serial console and VMM log, kept beside the chroot (outside the jail).
+pub const CONSOLE_LOG: &str = "console.log";
+
+pub fn console_log_path(jail_root: &Path) -> PathBuf {
+    jail_root.parent().unwrap_or(jail_root).join(CONSOLE_LOG)
+}
+
+/// Last part of the console log, for error messages when a boot fails.
+pub async fn console_tail(jail_root: &Path) -> String {
+    match tokio::fs::read(console_log_path(jail_root)).await {
+        Ok(bytes) => {
+            let start = bytes.len().saturating_sub(2000);
+            String::from_utf8_lossy(&bytes[start..]).trim().to_string()
+        }
+        Err(_) => String::new(),
+    }
+}
+
+/// Give a file or directory to the uid/gid Firecracker runs as in the jail.
+pub fn chown_for_jail(path: &Path, uid: u32, gid: u32) -> Result<()> {
+    std::os::unix::fs::chown(path, Some(uid), Some(gid))
+        .map_err(|e| api::err(format!("chown {}: {e}", path.display())))
+}
 
 pub fn vol_disk(i: usize) -> String {
     format!("vol{i}.ext4")
@@ -117,6 +140,8 @@ impl Vm {
         let jail_root = config.jail_root(&vmlayer_core::SandboxId(id.to_string()));
         let chroot_base = config.data_dir.join("jail");
         tokio::fs::create_dir_all(&jail_root).await?;
+        // The guest's serial console and the VMM's own messages go here.
+        let console = std::fs::File::create(console_log_path(&jail_root))?;
         let mut cmd = Command::new(&config.jailer_bin);
         cmd.arg("--id")
             .arg(id)
@@ -128,14 +153,16 @@ impl Vm {
             .arg(config.jail_gid.to_string())
             .arg("--chroot-base-dir")
             .arg(&chroot_base)
+            .arg("--cgroup-version")
+            .arg("2")
             .arg("--netns")
             .arg(format!("/var/run/netns/{}", lease.netns))
             .arg("--")
             .arg("--api-sock")
             .arg(format!("/{API_SOCK}"))
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::from(console.try_clone()?))
+            .stderr(std::process::Stdio::from(console))
             .kill_on_drop(false);
         let child = cmd
             .spawn()
@@ -144,7 +171,12 @@ impl Vm {
         tokio::fs::write(jail_root.join(PID_FILE), pid.to_string()).await?;
         tokio::fs::write(jail_root.join(LEASE_FILE), lease.index.to_string()).await?;
         let api = Client::new(jail_root.join(API_SOCK));
-        api.wait_ready(Duration::from_secs(5)).await?;
+        if let Err(e) = api.wait_ready(Duration::from_secs(10)).await {
+            let tail = console_tail(&jail_root).await;
+            let mut child = child;
+            let _ = child.kill().await;
+            return Err(api::err(format!("{e}; jailer/firecracker output: {tail}")));
+        }
         Ok(Self {
             jail_root,
             api,

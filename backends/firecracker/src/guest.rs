@@ -54,6 +54,13 @@ impl Agent {
         let channel = Endpoint::try_from("http://[::]:1")
             .map_err(|e| err(e.to_string()))?
             .connect_timeout(Duration::from_secs(5))
+            // A guest drops its vsock connections without telling the peer
+            // when it handles a transport reset (after a snapshot or a
+            // restore). Keepalive pings turn that silence into an error
+            // within seconds, and the channel reconnects on the next call.
+            .http2_keep_alive_interval(Duration::from_secs(2))
+            .keep_alive_timeout(Duration::from_secs(2))
+            .keep_alive_while_idle(true)
             .connect_with_connector(tower::service_fn(move |_: Uri| {
                 let uds = uds.clone();
                 async move { connect_vsock(&uds, port).await.map(TokioIo::new) }
@@ -68,18 +75,44 @@ impl Agent {
     }
 
     /// Connect and wait for `Ready`, retrying while the guest boots.
+    ///
+    /// A connection made just before the guest handles a pending vsock
+    /// transport reset (right after a restore) is dropped by the guest
+    /// without notice. So one answer is not enough: the same connection
+    /// must still answer a moment later before it is handed out.
     pub async fn wait_ready(uds: PathBuf, port: u32, timeout: Duration) -> Result<Self> {
+        const CALL: Duration = Duration::from_secs(1);
+        const SETTLE: Duration = Duration::from_millis(30);
         let deadline = tokio::time::Instant::now() + timeout;
-        let mut last;
+        let mut last: String;
         loop {
             match Self::connect(uds.clone(), port).await {
-                Ok(mut a) => match a.guest.ready(vmlayer_proto::v1::Empty {}).await {
-                    Ok(r) => {
-                        tracing::debug!(agent = %r.get_ref().agent_version, kernel = %r.get_ref().kernel, "guest agent ready");
-                        return Ok(a);
+                Ok(mut a) => {
+                    match tokio::time::timeout(CALL, a.guest.ready(vmlayer_proto::v1::Empty {}))
+                        .await
+                    {
+                        Ok(Ok(r)) => {
+                            tokio::time::sleep(SETTLE).await;
+                            match tokio::time::timeout(
+                                CALL,
+                                a.guest.ready(vmlayer_proto::v1::Empty {}),
+                            )
+                            .await
+                            {
+                                Ok(Ok(_)) => {
+                                    tracing::debug!(agent = %r.get_ref().agent_version, kernel = %r.get_ref().kernel, "guest agent ready");
+                                    return Ok(a);
+                                }
+                                Ok(Err(e)) => last = format!("connection did not survive: {e}"),
+                                Err(_) => {
+                                    last = "connection went silent after the first answer".into()
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => last = e.to_string(),
+                        Err(_) => last = "no answer from the agent".into(),
                     }
-                    Err(e) => last = e.to_string(),
-                },
+                }
                 Err(e) => last = e.to_string(),
             }
             if tokio::time::Instant::now() >= deadline {
@@ -90,6 +123,55 @@ impl Agent {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     }
+}
+
+/// The current connection to one guest's agent, shared by the sandbox
+/// handle and every process handle it gave out.
+///
+/// Firecracker resets all vsock connections when it takes a snapshot, so a
+/// connection cannot be held for the life of the sandbox: after a snapshot
+/// the handle installs a fresh one here and everyone picks it up.
+pub struct Link {
+    agent: std::sync::RwLock<Agent>,
+    dead: std::sync::atomic::AtomicBool,
+}
+
+impl Link {
+    pub fn new(agent: Agent) -> Self {
+        Self {
+            agent: std::sync::RwLock::new(agent),
+            dead: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    pub fn agent(&self) -> Agent {
+        self.agent.read().unwrap().clone()
+    }
+
+    pub fn replace(&self, agent: Agent) {
+        *self.agent.write().unwrap() = agent;
+    }
+
+    /// The sandbox was killed: stop retrying.
+    pub fn mark_dead(&self) {
+        self.dead.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn is_dead(&self) -> bool {
+        self.dead.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Errors that mean "the connection went away", as opposed to an answer
+/// from the agent. Worth retrying on a fresh connection.
+pub fn is_transport_error(status: &tonic::Status) -> bool {
+    matches!(
+        status.code(),
+        tonic::Code::Unknown
+            | tonic::Code::Unavailable
+            | tonic::Code::Cancelled
+            | tonic::Code::Aborted
+    )
 }
 
 #[cfg(test)]

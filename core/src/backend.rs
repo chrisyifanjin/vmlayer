@@ -126,18 +126,11 @@ pub trait SandboxHandle: Send + Sync {
     /// `opts.stay_paused`. *Optional: `snapshot`.*
     async fn snapshot(&self, opts: SnapshotOptions) -> Result<SnapshotRef>;
 
-    /// Clone `count` copies continuing from the current state. The parent
-    /// keeps running. Each child gets a fresh identity and the cloned
-    /// volumes in `mounts[i]` (one `Vec<Mount>` per child, prepared by the
-    /// daemon). *Optional: `fork`.*
-    ///
-    /// On Firecracker this is snapshot plus `count` restores with memory
-    /// mapped copy-on-write; it is the primitive agent runtimes branch on.
-    async fn fork(
-        &self,
-        count: u32,
-        mounts: Vec<Vec<Mount>>,
-    ) -> Result<Vec<Box<dyn SandboxHandle>>>;
+    // There is no `fork` here on purpose: the daemon forks by taking one
+    // snapshot with the sandbox left paused, cloning its volumes, resuming
+    // it, and restoring the snapshot once per child. `Capabilities::fork`
+    // says whether a backend's snapshots carry memory, which is what makes
+    // that a real fork.
 
     /// Quiesce filesystems (`fsfreeze` through the guest agent) so the daemon
     /// can take consistent volume snapshots of a running sandbox, then thaw.

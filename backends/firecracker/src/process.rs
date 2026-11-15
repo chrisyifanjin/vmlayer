@@ -13,7 +13,7 @@ use vmlayer_core::{Error, ExitStatus, OutputChunk, OutputStream, Process, Pty, P
 use vmlayer_proto::v1 as pb;
 
 use crate::api::err;
-use crate::guest::Agent;
+use crate::guest::{is_transport_error, Agent, Link};
 
 pub fn exit_status(st: &pb::ExitStatus) -> ExitStatus {
     ExitStatus {
@@ -87,24 +87,102 @@ impl tokio::io::AsyncWrite for StdinWriter {
 }
 
 pub struct RemoteProcess {
-    agent: Agent,
+    link: Arc<Link>,
     pid: u32,
     output: Option<OutputStreamBox>,
     stdin: Option<StdinBox>,
 }
 
+type EventStream = tonic::Streaming<pb::ExecEvent>;
+
+async fn open_output(link: &Link, pid: u32) -> std::result::Result<EventStream, tonic::Status> {
+    let mut agent = link.agent();
+    Ok(agent
+        .processes
+        .output(pb::OutputRequest {
+            pid,
+            ..Default::default()
+        })
+        .await?
+        .into_inner())
+}
+
+/// Forward a process's output to `tx` until it exits, surviving connection
+/// resets: on a reset, reopen the stream on the link's current connection
+/// and skip the history the agent replays up to what was already delivered.
+async fn pump_output(
+    link: Arc<Link>,
+    pid: u32,
+    mut stream: EventStream,
+    tx: mpsc::Sender<Result<OutputChunk>>,
+) {
+    let mut delivered: u64 = 0;
+    let mut skip: u64 = 0;
+    loop {
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(pb::ExecEvent {
+                    event: Some(pb::exec_event::Event::Output(c)),
+                }) => {
+                    let len = c.data.len() as u64;
+                    if skip >= len {
+                        skip -= len;
+                        continue;
+                    }
+                    let mut out = chunk(&c);
+                    if skip > 0 {
+                        out.data = out.data.slice(skip as usize..);
+                        skip = 0;
+                    }
+                    delivered += out.data.len() as u64;
+                    if tx.send(Ok(out)).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(pb::ExecEvent {
+                    event: Some(pb::exec_event::Event::DroppedBytes(n)),
+                }) => {
+                    // The agent no longer has the oldest bytes; they were ours already.
+                    skip = skip.saturating_sub(n);
+                }
+                Ok(pb::ExecEvent {
+                    event: Some(pb::exec_event::Event::Exited(_)),
+                }) => return,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        // The stream ended without an exit: the connection was reset.
+        let mut delay = std::time::Duration::from_millis(50);
+        stream = loop {
+            if link.is_dead() {
+                return;
+            }
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(std::time::Duration::from_secs(1));
+            match open_output(&link, pid).await {
+                Ok(s) => break s,
+                Err(e) if is_transport_error(&e) => continue,
+                Err(_) => return, // the agent no longer knows the process
+            }
+        };
+        skip = delivered;
+    }
+}
+
 impl RemoteProcess {
     /// Start a detached process in the guest and attach to its output.
-    pub async fn spawn(mut agent: Agent, req: pb::ExecRequest) -> Result<Self> {
+    pub async fn spawn(link: Arc<Link>, req: pb::ExecRequest) -> Result<Self> {
         let req = pb::ExecRequest {
             detach: true,
             ..req
         };
+        let mut agent = link.agent();
         let mut started = agent
             .processes
             .exec(req)
             .await
-            .map_err(|e| err(format!("exec: {e}")))?
+            .map_err(|e| err(format!("exec: {}", e.message())))?
             .into_inner();
         let pid = match started.next().await {
             Some(Ok(pb::ExecEvent {
@@ -112,32 +190,20 @@ impl RemoteProcess {
             })) => s.pid,
             other => return Err(err(format!("exec did not report a pid: {other:?}"))),
         };
-        Self::attach(agent, pid).await
+        Self::attach(link, pid).await
     }
 
     /// Attach to an existing guest process by pid.
-    pub async fn attach(mut agent: Agent, pid: u32) -> Result<Self> {
-        let stream = agent
-            .processes
-            .output(pb::OutputRequest {
-                pid,
-                ..Default::default()
-            })
+    pub async fn attach(link: Arc<Link>, pid: u32) -> Result<Self> {
+        let first = open_output(&link, pid)
             .await
-            .map_err(|e| err(format!("output: {e}")))?
-            .into_inner();
-        let output: OutputStreamBox = Box::pin(stream.filter_map(|item| async move {
-            match item {
-                Ok(pb::ExecEvent {
-                    event: Some(pb::exec_event::Event::Output(c)),
-                }) => Some(Ok(chunk(&c))),
-                Ok(_) => None,
-                Err(e) => Some(Err(Error::Guest(e.to_string()))),
-            }
-        }));
-        // Stdin: a channel pumped into the Stdin RPC lazily on first write.
+            .map_err(|e| Error::Guest(e.message().to_string()))?;
+        let (out_tx, out_rx) = mpsc::channel::<Result<OutputChunk>>(256);
+        tokio::spawn(pump_output(link.clone(), pid, first, out_tx));
+        // Stdin: a channel pumped into the Stdin RPC. It does not survive a
+        // snapshot (the connection is reset); output and wait do.
         let (tx, rx) = mpsc::channel::<pb::StdinChunk>(64);
-        let mut stdin_agent = agent.clone();
+        let mut stdin_agent = link.agent();
         tokio::spawn(async move {
             let first = pb::StdinChunk {
                 pid,
@@ -147,9 +213,9 @@ impl RemoteProcess {
             let _ = stdin_agent.processes.stdin(stream).await;
         });
         Ok(Self {
-            agent,
+            link,
             pid,
-            output: Some(output),
+            output: Some(Box::pin(ReceiverStream::new(out_rx))),
             stdin: Some(Box::pin(StdinWriter { tx: Some(tx) })),
         })
     }
@@ -172,21 +238,32 @@ impl Process for RemoteProcess {
     }
 
     async fn wait(&mut self) -> Result<ExitStatus> {
-        let st = self
-            .agent
-            .processes
-            .wait(pb::WaitRequest {
-                pid: self.pid,
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| err(format!("wait: {e}")))?
-            .into_inner();
-        Ok(exit_status(&st))
+        let mut delay = std::time::Duration::from_millis(50);
+        loop {
+            let mut agent = self.link.agent();
+            match agent
+                .processes
+                .wait(pb::WaitRequest {
+                    pid: self.pid,
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(st) => return Ok(exit_status(st.get_ref())),
+                // A snapshot reset the connection (or the VM is paused):
+                // the process is still there, ask again on the new one.
+                Err(e) if is_transport_error(&e) && !self.link.is_dead() => {
+                    tokio::time::sleep(delay).await;
+                    delay = (delay * 2).min(std::time::Duration::from_secs(1));
+                }
+                Err(e) => return Err(err(format!("wait: {}", e.message()))),
+            }
+        }
     }
 
     async fn kill(&mut self, signal: i32) -> Result<()> {
-        self.agent
+        let mut agent = self.link.agent();
+        agent
             .processes
             .kill(pb::KillProcessRequest {
                 pid: self.pid,
@@ -195,7 +272,7 @@ impl Process for RemoteProcess {
             })
             .await
             .map(|_| ())
-            .map_err(|e| err(format!("kill: {e}")))
+            .map_err(|e| err(format!("kill: {}", e.message())))
     }
 }
 

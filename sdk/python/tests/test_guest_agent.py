@@ -189,6 +189,30 @@ def test_entrypoint_wait_for_port_pid1_alias(
     assert procs.Wait(p.WaitRequest(pid=1), timeout=10).signal == 9
 
 
+def test_configure_sets_default_env_and_cwd(
+    agent: tuple[gg.GuestStub, pg.ProcessesStub, fg.FilesStub],
+) -> None:
+    guest, procs, _ = agent
+    guest.Configure(
+        g.ConfigureRequest(env={"FROM_DEFAULTS": "yes", "X": "default"}, cwd="/srv/defaults")
+    )
+    try:
+        out, ex = _events(
+            procs.Exec(p.ExecRequest(argv=["sh", "-c", "echo $FROM_DEFAULTS $X; pwd"]), timeout=10)
+        )
+        assert ex.code == 0 and out == b"yes default\n/srv/defaults\n"
+        # a request's own env and cwd win over the defaults
+        out, _ = _events(
+            procs.Exec(
+                p.ExecRequest(argv=["sh", "-c", "echo $X; pwd"], env={"X": "mine"}, cwd="/tmp"),
+                timeout=10,
+            )
+        )
+        assert out == b"mine\n/tmp\n"
+    finally:
+        guest.Configure(g.ConfigureRequest())
+
+
 def test_pty(agent: tuple[gg.GuestStub, pg.ProcessesStub, fg.FilesStub]) -> None:
     _, procs, _ = agent
 
