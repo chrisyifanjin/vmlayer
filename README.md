@@ -38,11 +38,12 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working (directory and ext4 block-image kinds) |
 | Guest agent (PID 1 in the VM; exec, files, pty, mounts over vsock) | working, tested end to end in a container |
 | Image pipeline for microVMs (OCI pull → cached ext4, no Docker needed) | working, tested on Linux with a real pull |
-| Firecracker backend (memory snapshots, fork) | implemented and unit-tested; first run on a KVM host pending ([setup](docs/firecracker.md)) |
+| Firecracker backend (memory snapshots, fork) | working on aarch64 nested KVM ([setup](docs/firecracker.md), [benchmark](docs/benchmarks.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | S3-compatible blob store for durable snapshots | planned |
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
-| E2B-compatible facade, asyncio client, more adapters (ADK, SWE-ReX, OpenHands, smolagents) | planned |
+| Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |
+| E2B-compatible facade, asyncio client, more adapters (ADK, SWE-ReX, smolagents) | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says
@@ -106,6 +107,18 @@ microVM snapshots ([docs/research.md](docs/research.md)).
 
 ## Design
 
+The agent loop, credentials, and model calls can stay in the host control
+plane. A framework adapter sends only sandbox tool calls to `vmlayerd`, which
+creates a Firecracker microVM directly on a KVM host. Kubernetes may schedule
+and restart those hosts, but a sandbox create does not create a Kubernetes pod
+or put the control plane in a VM. OpenHands is an optional second pattern:
+its agent server runs inside the sandbox when that framework needs it.
+
+The local [Agent Sandbox + gVisor comparison](docs/benchmarks.md) measures
+the pod-per-sandbox alternative. Kubernetes can use VM-backed RuntimeClasses
+such as Kata; the distinction here is the sandbox request path and lifecycle,
+not a claim that Kubernetes cannot run VMs.
+
 ```
   Python SDK / CLI / (TypeScript)        your agent runtime links one of these
               │  gRPC (unix socket, or TCP + token)
@@ -160,7 +173,7 @@ backend implements). Every non-obvious choice has a record in
 | Isolation | microVM, own kernel | microVM, own kernel | container |
 | Memory snapshot | yes | yes | no (filesystem only) |
 | Fork | yes | planned | no |
-| Status | code complete, untested on KVM | planned | **working** |
+| Status | working on aarch64 nested KVM | planned | **working** |
 
 `Backend.AUTO` picks the strongest one the host supports.
 

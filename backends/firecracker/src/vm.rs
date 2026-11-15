@@ -107,11 +107,57 @@ pub async fn inject_agent(image: &Path, agent: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The base image with the guest agent injected, built once per (image,
+/// agent binary) and cached under `<data>/prepared/`. Sandboxes clone this,
+/// so the injection cost is not paid on every boot.
+pub async fn prepared_image(config: &Config, base: &Path) -> Result<PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let Some(agent) = &config.guest_agent else {
+        return Ok(base.to_path_buf());
+    };
+    let stamp = |p: &Path| {
+        std::fs::metadata(p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    };
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (base, stamp(base), agent, stamp(agent)).hash(&mut h);
+    let dir = config.data_dir.join("prepared");
+    let prepared = dir.join(format!("{:016x}.ext4", h.finish()));
+    if prepared.exists() {
+        return Ok(prepared);
+    }
+    tokio::fs::create_dir_all(&dir).await?;
+    // Each concurrent builder needs its own image. Publish only after
+    // injection is complete, without replacing another builder's result.
+    let tmp = dir.join(format!(".{}.partial", uuid::Uuid::now_v7()));
+    let built: Result<()> = async {
+        clone_file(base, &tmp).await?;
+        inject_agent(&tmp, agent).await?;
+        match tokio::fs::hard_link(&tmp, &prepared).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
+        Ok(())
+    }
+    .await;
+    let _ = tokio::fs::remove_file(&tmp).await;
+    built.map(|_| prepared)
+}
+
 /// Default kernel command line. `pci=off` keeps the device layout stable for
 /// snapshots (hot attach would need PCI; see Capabilities::hot_attach).
 pub fn boot_args(config: &Config, hostname: &str) -> String {
+    // `quiet`: every character the kernel writes to the serial console is a
+    // VM exit, and boot messages are most of the boot time (far more so under
+    // nested virtualization). Warnings and panics still reach console.log;
+    // put `loglevel=7` in `kernel_args` to see everything.
     let mut args = String::from(
-        "console=ttyS0 reboot=k panic=1 pci=off nomodules random.trust_cpu=on i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd",
+        "console=ttyS0 quiet reboot=k panic=1 pci=off nomodules random.trust_cpu=on i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd",
     );
     args.push_str(&format!(" init={AGENT_IN_GUEST}"));
     args.push_str(&format!(" {}", net::Lease::kernel_args(&config.dns)));

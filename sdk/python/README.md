@@ -10,5 +10,5 @@ with Sandbox.create("python:3.12") as sb:
     print(sb.exec("python -c 'print(42)'").stdout)
 ```
 
-Status: API surface only; the daemon does not exist yet. See the repository
-README for the roadmap.
+The daemon and both Docker and Firecracker backends work. See the repository
+README for current platform coverage and benchmark results.

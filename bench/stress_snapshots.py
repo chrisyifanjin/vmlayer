@@ -49,7 +49,9 @@ def usable(sb: Sandbox) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--image", default="python:3.12-alpine")
     ap.add_argument("--restores", type=int, default=20)
     ap.add_argument("--forks", type=int, default=10)
@@ -78,7 +80,7 @@ def main() -> int:
             try:
                 ok = usable(child)
                 times.append(time.perf_counter() - t0)
-            except Exception as e:  # noqa: BLE001 - report and count
+            except Exception as e:
                 print(f"restore {i}: {type(e).__name__}: {str(e)[:160]}", flush=True)
             failures += not ok
             child.kill()
@@ -103,7 +105,7 @@ def main() -> int:
                 ok = False
                 try:
                     ok = usable(k)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     print(f"fork {i}: {type(e).__name__}: {str(e)[:160]}", flush=True)
                 failures += not ok
                 k.kill()
@@ -121,7 +123,9 @@ def main() -> int:
         writer.kill()
         signal = writer.wait(timeout=timedelta(seconds=10)).signal
         n = args.restores + args.forks
-        print(f"original process handle after {n} snapshots: killed with signal {signal}", flush=True)
+        print(
+            f"original process handle after {n} snapshots: killed with signal {signal}", flush=True
+        )
         failures += signal != 9
     finally:
         sb.kill()

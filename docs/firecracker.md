@@ -61,8 +61,9 @@ vmlayer pull python:3.12 --backend firecracker
 An absolute path to an existing ext4 file is also accepted and used as is,
 for hand-built images.
 
-Either way the daemon injects the guest agent into each sandbox's clone as
-`/vmlayer-guest-agent`, which the kernel runs as `init`. The image needs
+Either way the daemon caches a prepared ext4 image with the guest agent at
+`/vmlayer-guest-agent`, then clones that image for each sandbox. The kernel
+runs the agent as `init`. The image needs
 nothing else: no init system, no network scripts. The image's
 `ENTRYPOINT`/`CMD`, `ENV` and `WORKDIR` are honoured like on Docker. See
 [decision 0009](decisions/0009-image-pipeline.md).

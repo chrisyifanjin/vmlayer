@@ -77,10 +77,16 @@ impl Agent {
     /// Connect and wait for `Ready`, retrying while the guest boots.
     ///
     /// A connection made just before the guest handles a pending vsock
-    /// transport reset (right after a restore) is dropped by the guest
-    /// without notice. So one answer is not enough: the same connection
-    /// must still answer a moment later before it is handed out.
-    pub async fn wait_ready(uds: PathBuf, port: u32, timeout: Duration) -> Result<Self> {
+    /// transport reset (right after a snapshot or a restore) is dropped by
+    /// the guest without notice. With `settle`, one answer is therefore not
+    /// enough: the same connection must still answer a moment later before
+    /// it is handed out. A cold boot has no reset pending and skips that.
+    pub async fn wait_ready(
+        uds: PathBuf,
+        port: u32,
+        timeout: Duration,
+        settle: bool,
+    ) -> Result<Self> {
         const CALL: Duration = Duration::from_secs(1);
         const SETTLE: Duration = Duration::from_millis(30);
         let deadline = tokio::time::Instant::now() + timeout;
@@ -91,6 +97,10 @@ impl Agent {
                     match tokio::time::timeout(CALL, a.guest.ready(vmlayer_proto::v1::Empty {}))
                         .await
                     {
+                        Ok(Ok(r)) if !settle => {
+                            tracing::debug!(agent = %r.get_ref().agent_version, kernel = %r.get_ref().kernel, "guest agent ready");
+                            return Ok(a);
+                        }
                         Ok(Ok(r)) => {
                             tokio::time::sleep(SETTLE).await;
                             match tokio::time::timeout(
@@ -120,7 +130,7 @@ impl Agent {
                     "guest agent not ready after {timeout:?}: {last}"
                 )));
             }
-            tokio::time::sleep(Duration::from_millis(25)).await;
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
 }

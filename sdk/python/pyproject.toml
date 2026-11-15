@@ -17,10 +17,14 @@ dependencies = ["grpcio>=1.68", "protobuf>=5.26"]
 [project.optional-dependencies]
 minisweagent = ["mini-swe-agent>=2.0"]
 autogen = ["autogen-core>=0.7"]
+openhands = ["openhands-sdk>=1.62; python_version >= '3.12'"]
+deepagents = ["deepagents>=0.7.38; python_version >= '3.11'"]
 
 [dependency-groups]
 dev = ["ruff==0.17.5", "mypy==2.4.1", "pytest>=8", "types-protobuf"]
 integrations = ["mini-swe-agent>=2.0", "autogen-core>=0.7"]
+# Head-to-head benchmarks against each framework's own sandbox (bench/compare_frameworks.py).
+bench = ["mini-swe-agent>=2.0", "autogen-core>=0.7", "autogen-ext[docker]>=0.7"]
 
 [build-system]
 requires = ["hatchling"]

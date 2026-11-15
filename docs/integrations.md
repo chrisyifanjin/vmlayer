@@ -71,9 +71,10 @@ their framework lazily; install with the matching extra.
 |---|---|---|
 | `vmlayer.integrations.minisweagent.VmlayerEnvironment` | mini-swe-agent `Environment` | **working**; tested by running a real `DefaultAgent` loop to submission (`pip install "vmlayer[minisweagent]"`) |
 | `vmlayer.integrations.autogen.VmlayerCodeExecutor` | AutoGen `CodeExecutor` | **working**; tested with real `CodeBlock`s incl. timeout, cancellation, restart (`pip install "vmlayer[autogen]"`) |
+| `vmlayer.integrations.deepagents.VmlayerSandbox` | Deep Agents `BaseSandbox` | **working**; host-side agent loop, Firecracker tool calls and file transfer (`pip install "vmlayer[deepagents]"`) |
+| `vmlayer.integrations.openhands.VmlayerWorkspace` | OpenHands `RemoteWorkspace` | **experimental**; real agent-server image and command API ran in Firecracker (`pip install "vmlayer[openhands]"`, Python 3.12+) |
 | Google ADK `BaseCodeExecutor` | write + exec | planned |
 | SWE-ReX `AbstractDeployment` | boot swerex-server image, expose | planned |
-| OpenHands `BaseWorkspace` | boot agent-server image, expose | planned |
 | smolagents `RemotePythonExecutor` | boot kernel-gateway image, expose, Jupyter websocket | planned |
 
 ```python
@@ -92,6 +93,23 @@ from vmlayer.integrations.autogen import VmlayerCodeExecutor
 async with VmlayerCodeExecutor(image="python:3.12") as executor:
     result = await executor.execute_code_blocks([CodeBlock(language="python", code="print(6*7)")], token)
 ```
+
+For the host-side sandbox-as-tool pattern, Deep Agents keeps its loop and
+model credentials outside the VM:
+
+```python
+from deepagents import create_deep_agent
+from vmlayer.integrations.deepagents import VmlayerSandbox
+
+with VmlayerSandbox(backend="firecracker") as backend:
+    agent = create_deep_agent(model=my_model, backend=backend)
+    result = agent.invoke({"messages": [{"role": "user", "content": "Inspect /work"}]})
+```
+
+The OpenHands adapter is a different pattern: it boots the framework's
+agent-server image inside a VM. On the local nested-KVM host this took about
+95 seconds to become healthy. It is a compatibility proof, not a fast-create
+result; a warm snapshot of that 2 GiB VM did not fit on the 20 GiB test disk.
 
 ### What plugging in found
 

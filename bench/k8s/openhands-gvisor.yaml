@@ -1,0 +1,58 @@
+# OpenHands AgentSandboxWorkspace comparison on Minikube with runsc.
+# Based on OpenHands' agent_sandbox/deploy manifests, using one warm pod.
+# The warm claim was verified on Minikube; HTTP port-forwarding to the gVisor
+# pod failed in that local setup, so this is not an HTTP benchmark fixture yet.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: openhands-agent-server
+  namespace: default
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace-volume
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: agent-server
+          image: ghcr.io/openhands/agent-server:latest-python
+          args: [--host, 0.0.0.0, --port, '8000']
+          workingDir: /workspace
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 3
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: openhands-pool
+  namespace: default
+spec:
+  replicas: 1
+  sandboxTemplateRef:
+    name: openhands-agent-server

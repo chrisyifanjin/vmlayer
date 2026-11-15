@@ -16,6 +16,10 @@
 - [x] **3. Image pipeline.** The daemon pulls OCI images itself, applies
       layers with whiteouts, builds a cached ext4 per digest (decision 0009);
       `vmlayer pull` pre-builds. Layer sharing via EROFS is the follow-up.
+- [ ] **3a. Template snapshots for fast create.** Boot a prepared image once,
+      snapshot its ready guest agent, and restore from that snapshot on create.
+      This removes the approximately 0.8 s kernel-to-init portion of cold boot
+      observed on the nested-KVM development host. Measure on bare metal too.
 - [ ] **4. Egress allowlists and quotas** (eBPF or nftables; pids, disk,
       output size).
 - [ ] **5. libkrun backend** for macOS development.

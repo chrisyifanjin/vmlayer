@@ -79,11 +79,13 @@ impl FirecrackerSandbox {
         tokio::fs::create_dir_all(jail).await?;
         vm::link_or_clone(&config.kernel, &jail.join(vm::KERNEL)).await?;
         let root = jail.join(vm::ROOT_DISK);
-        vm::clone_file(root_src, &root).await?;
         if root_is_clone {
-            if let Some(agent) = &config.guest_agent {
-                vm::inject_agent(&root, agent).await?;
-            }
+            // Boot path: clone the image with the guest agent already in it.
+            let prepared = vm::prepared_image(config, root_src).await?;
+            vm::clone_file(&prepared, &root).await?;
+        } else {
+            // Restore path: the snapshot's disk already contains the agent.
+            vm::clone_file(root_src, &root).await?;
         }
         let mut out = Vec::new();
         for (i, m) in mounts.iter().enumerate() {
@@ -119,12 +121,31 @@ impl FirecrackerSandbox {
         Ok(out)
     }
 
+    /// Tear down what a failed boot or restore left behind, keeping its
+    /// console log under `<data>/failed/` so the failure can be diagnosed.
+    async fn discard_failed(config: &Config, id: &SandboxId, jail: &Path) {
+        // Stop the VMM if it got as far as starting.
+        if let Ok(mut vmm) = Vm::attach(config, &id.0).await {
+            let _ = vmm.kill().await;
+        }
+        let keep = config.data_dir.join("failed");
+        if tokio::fs::create_dir_all(&keep).await.is_ok() {
+            let _ = tokio::fs::copy(
+                vm::console_log_path(jail),
+                keep.join(format!("{id}.console.log")),
+            )
+            .await;
+        }
+        let _ = tokio::fs::remove_dir_all(jail.parent().unwrap_or(jail)).await;
+    }
+
     /// Connect to the guest agent; on failure include the console tail.
-    async fn agent_ready(config: &Config, jail: &Path) -> Result<Agent> {
+    async fn agent_ready(config: &Config, jail: &Path, settle: bool) -> Result<Agent> {
         match Agent::wait_ready(
             jail.join(vm::VSOCK),
             config.agent_port,
             Duration::from_secs(30),
+            settle,
         )
         .await
         {
@@ -190,12 +211,27 @@ impl FirecrackerSandbox {
         lease: Lease,
     ) -> Result<Self> {
         let jail = config.jail_root(&spec.id);
+        let spec_id = spec.id.clone();
         let result: Result<Self> = async {
+            let t0 = std::time::Instant::now();
             let mounts = Self::populate_jail(&config, &jail, &base, true, &spec.mounts).await?;
+            let t_disks = t0.elapsed();
             net::create_netns(&lease, config.jail_uid, config.jail_gid).await?;
+            let t_net = t0.elapsed();
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
+            let t_vmm = t0.elapsed();
             Self::configure_and_start(&vmm, &config, &spec, &lease, &spec.mounts).await?;
-            let mut agent = Self::agent_ready(&config, &jail).await?;
+            let t_start = t0.elapsed();
+            let mut agent = Self::agent_ready(&config, &jail, false).await?;
+            tracing::info!(
+                id = %spec.id,
+                disks_ms = t_disks.as_millis() as u64,
+                netns_ms = (t_net - t_disks).as_millis() as u64,
+                vmm_ms = (t_vmm - t_net).as_millis() as u64,
+                configure_ms = (t_start - t_vmm).as_millis() as u64,
+                guest_boot_ms = (t0.elapsed() - t_start).as_millis() as u64,
+                "microVM booted"
+            );
             for (dev, path) in &mounts {
                 let ro = spec
                     .mounts
@@ -270,9 +306,9 @@ impl FirecrackerSandbox {
         }
         .await;
         if result.is_err() {
+            Self::discard_failed(&config, &spec_id, &jail).await;
             net::delete_netns(&lease).await;
             pool.lock().await.release(lease.index);
-            let _ = tokio::fs::remove_dir_all(&jail).await;
         }
         result
     }
@@ -289,6 +325,7 @@ impl FirecrackerSandbox {
             serde_json::from_slice(&tokio::fs::read(snap_dir.join("meta.json")).await?)
                 .map_err(|e| err(format!("snapshot meta: {e}")))?;
         let jail = config.jail_root(&spec.id);
+        let spec_id = spec.id.clone();
         let result: Result<Self> = async {
             // Root disk: CoW clone of the snapshot's; no agent injection
             // (it is already inside). Volumes: the daemon's fresh clones.
@@ -332,7 +369,7 @@ impl FirecrackerSandbox {
             // The guest resumed with its old vsock connections dead; reconnect.
             // The snapshot was taken with volumes frozen; let writes flow
             // again. Must not be skipped, so retry on a fresh connection.
-            let mut agent = Self::agent_ready(&config, &jail).await?;
+            let mut agent = Self::agent_ready(&config, &jail, true).await?;
             let mut attempt = 0;
             loop {
                 let call =
@@ -341,7 +378,7 @@ impl FirecrackerSandbox {
                     Ok(Ok(_)) => break,
                     _ if attempt < 5 => {
                         attempt += 1;
-                        agent = Self::agent_ready(&config, &jail).await?;
+                        agent = Self::agent_ready(&config, &jail, true).await?;
                     }
                     Ok(Err(e)) => {
                         return Err(err(format!(
@@ -380,9 +417,9 @@ impl FirecrackerSandbox {
         }
         .await;
         if result.is_err() {
+            Self::discard_failed(&config, &spec_id, &jail).await;
             net::delete_netns(&lease).await;
             pool.lock().await.release(lease.index);
-            let _ = tokio::fs::remove_dir_all(&jail).await;
         }
         result
     }
@@ -408,6 +445,7 @@ impl FirecrackerSandbox {
             jail.join(vm::VSOCK),
             config.agent_port,
             Duration::from_secs(5),
+            true,
         )
         .await?;
         Ok(Self {
@@ -457,7 +495,7 @@ impl FirecrackerSandbox {
     /// Firecracker resets the guest's vsock connections when it takes one.
     async fn reconnect(&self) -> Result<()> {
         let jail = self.config.jail_root(&self.id);
-        let fresh = Self::agent_ready(&self.config, &jail).await?;
+        let fresh = Self::agent_ready(&self.config, &jail, true).await?;
         self.link.replace(fresh);
         Ok(())
     }
