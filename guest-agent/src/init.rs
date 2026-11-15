@@ -106,9 +106,9 @@ fn loopback_up() {
         let mut ifr: libc::ifreq = std::mem::zeroed();
         let name = CString::new("lo").unwrap();
         std::ptr::copy_nonoverlapping(name.as_ptr(), ifr.ifr_name.as_mut_ptr(), 2);
-        if libc::ioctl(sock, libc::SIOCGIFFLAGS, &mut ifr) == 0 {
+        if libc::ioctl(sock, libc::SIOCGIFFLAGS as _, &mut ifr) == 0 {
             ifr.ifr_ifru.ifru_flags |= (libc::IFF_UP | libc::IFF_RUNNING) as libc::c_short;
-            libc::ioctl(sock, libc::SIOCSIFFLAGS, &ifr);
+            libc::ioctl(sock, libc::SIOCSIFFLAGS as _, &ifr);
         }
         libc::close(sock);
     }

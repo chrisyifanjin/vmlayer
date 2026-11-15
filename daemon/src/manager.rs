@@ -197,6 +197,7 @@ impl Daemon {
     async fn resolve_mounts(
         &self,
         id: &SandboxId,
+        kind: vmlayer_core::VolumeSourceKind,
         workspace: &WorkspaceSpec,
         workdir: &str,
         extra: &[MountParam],
@@ -231,6 +232,7 @@ impl Daemon {
             }
             WorkspaceSpec::Volume(name) => {
                 let v = self.volumes.get(name)?;
+                self.volumes.check_kind(&v, kind)?;
                 if let Err(e) = self.volumes.attach(&v.id, id, false) {
                     self.rollback_attach(id, &attached).await;
                     return Err(e);
@@ -242,7 +244,11 @@ impl Daemon {
             WorkspaceSpec::None => None,
         };
         for m in extra {
-            let v = match self.volumes.get(&m.volume) {
+            let v = match self
+                .volumes
+                .get(&m.volume)
+                .and_then(|v| self.volumes.check_kind(&v, kind).map(|_| v))
+            {
                 Ok(v) => v,
                 Err(e) => {
                     self.rollback_attach(id, &attached).await;
@@ -294,7 +300,13 @@ impl Daemon {
                 .filter(|w| w != "/" && !w.is_empty()))
             .unwrap_or_else(|| self.cfg.defaults.workdir.clone());
         let (workspace_id, mounts, mount_rows) = self
-            .resolve_mounts(&id, &p.workspace, &workdir, &p.mounts)
+            .resolve_mounts(
+                &id,
+                entry.backend.volume_source_kind(),
+                &p.workspace,
+                &workdir,
+                &p.mounts,
+            )
             .await?;
         let mut env = resolved.env.clone();
         env.extend(p.env.clone());

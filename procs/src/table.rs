@@ -219,7 +219,7 @@ impl ProcessTable {
             status.timed_out = pump.timed_out.load(std::sync::atomic::Ordering::SeqCst);
             pump.buffer.lock().await.exited = Some(status);
             let _ = pump.live.send(Event::Exited(status));
-            let _ = pump.exit_tx.send(Some(status));
+            pump.exit_tx.send_replace(Some(status));
         });
 
         if let Some(t) = timeout {

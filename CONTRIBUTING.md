@@ -45,6 +45,9 @@ proto/                vmlayer.v1 .proto files and the generated Rust crate
 daemon/               vmlayerd: config, store, volumes, registry, processes,
                       manager, grpc/{sandboxes,processes,files,volumes,system}
 backends/docker/      Docker backend (connect, sandbox, process, files, expose)
+backends/firecracker/ Firecracker backend (api, vm, net, guest, process, sandbox)
+guest-agent/          PID 1 agent for microVMs (init, services, process, fs)
+procs/                process table + gRPC event plumbing shared by daemon and agent
 cli/                  vmlayer command
 core/src/backend.rs   the Backend / SandboxHandle / Process / Pty traits
 core/src/types/       value types, one module per concern (ids, capabilities,
@@ -59,8 +62,14 @@ docs/                 integrations study, research notes, diagram
 One module per concern, re-exported from one place. A new concept gets a new
 module, not a new section in an existing file.
 
-Planned, one crate or package each: `backends/{firecracker,libkrun}`,
-`guest-agent/`, `sdk/typescript/`, `integrations/<runtime>/`.
+Planned, one crate or package each: `backends/libkrun`, `sdk/typescript/`,
+`integrations/<runtime>/`.
+
+Linux-only crates (`guest-agent`, parts of `backends/firecracker`) are
+type-checked on macOS with
+`cargo clippy -p vmlayer-guest-agent -p vmlayer-backend-firecracker --target aarch64-unknown-linux-gnu`;
+`scripts/build-guest-agent.sh` builds the static agent in Docker and
+`VMLAYER_GUEST_AGENT_BIN=... uv run pytest` exercises it in a container.
 
 `make check` runs every linter; `make test-live` runs the live Docker and
 end-to-end suites; `make proto` regenerates the Python stubs after a

@@ -36,10 +36,16 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 use vmlayer_core::{
     Backend, Capabilities, Error, ImageResolver, ResolvedImage, RestoreOptions, Result, Rootfs,
-    SandboxHandle, SandboxId, SandboxInfo, SandboxSpec, SnapshotRef,
+    SandboxHandle, SandboxId, SandboxInfo, SandboxSpec, SnapshotRef, VolumeSourceKind,
 };
 
+pub use net::Subnet;
 pub use sandbox::FirecrackerSandbox;
+
+/// `firecracker --version`, for the daemon's backend listing.
+pub async fn engine_version(bin: &Path) -> Result<String> {
+    api::version(bin).await
+}
 
 pub const BACKEND_NAME: &str = "firecracker";
 
@@ -58,8 +64,7 @@ pub struct Config {
     /// uid/gid the jailer drops to.
     pub jail_uid: u32,
     pub jail_gid: u32,
-    /// Host bridge the taps attach to, and its subnet.
-    pub bridge: String,
+    /// Host-side address pool for the per-VM veth pairs (one /30 each).
     pub subnet: net::Subnet,
     /// Nameservers pushed to guests.
     pub dns: Vec<String>,
@@ -126,6 +131,10 @@ impl Backend for FirecrackerBackend {
         Capabilities::MICROVM
     }
 
+    fn volume_source_kind(&self) -> VolumeSourceKind {
+        VolumeSourceKind::BlockImage
+    }
+
     async fn probe(&self) -> Result<()> {
         self.preflight()?;
         if !Path::new("/dev/kvm").exists() {
@@ -141,11 +150,19 @@ impl Backend for FirecrackerBackend {
             .open("/dev/kvm")
             .map_err(|e| Error::Engine {
                 backend: BACKEND_NAME,
-                message: format!("/dev/kvm not accessible: {e} (run as root or add the user to the kvm group)"),
+                message: format!(
+                    "/dev/kvm not accessible: {e} (run as root or add the user to the kvm group)"
+                ),
                 source: None,
             })?;
-        net::ensure_bridge(&self.config.bridge, self.config.subnet).await?;
+        net::ensure_host(self.config.subnet).await?;
         api::version(&self.config.firecracker_bin).await?;
+        // Namespaces left by a previous daemon belong to VMs we may reattach;
+        // keep their indices out of the pool until they are released.
+        let mut pool = self.net.lock().await;
+        for index in net::existing_netns().await {
+            pool.claim(index, &SandboxId(format!("recovered-{index}")));
+        }
         Ok(())
     }
 
@@ -160,11 +177,16 @@ impl Backend for FirecrackerBackend {
             }
         };
         let lease = self.net.lock().await.allocate(&spec.id)?;
-        let sb = FirecrackerSandbox::boot(self.config.clone(), self.net.clone(), spec, base, lease).await?;
+        let sb = FirecrackerSandbox::boot(self.config.clone(), self.net.clone(), spec, base, lease)
+            .await?;
         Ok(Box::new(sb))
     }
 
-    async fn restore(&self, snapshot: &SnapshotRef, opts: RestoreOptions) -> Result<Box<dyn SandboxHandle>> {
+    async fn restore(
+        &self,
+        snapshot: &SnapshotRef,
+        opts: RestoreOptions,
+    ) -> Result<Box<dyn SandboxHandle>> {
         if snapshot.backend != BACKEND_NAME {
             return Err(Error::SnapshotIncompatible {
                 id: snapshot.id.clone(),
@@ -179,7 +201,14 @@ impl Backend for FirecrackerBackend {
         spec.mounts = opts.mounts;
         spec.labels.extend(opts.labels);
         let lease = self.net.lock().await.allocate(&spec.id)?;
-        let sb = FirecrackerSandbox::restore(self.config.clone(), self.net.clone(), spec, snapshot, lease).await?;
+        let sb = FirecrackerSandbox::restore(
+            self.config.clone(),
+            self.net.clone(),
+            spec,
+            snapshot,
+            lease,
+        )
+        .await?;
         Ok(Box::new(sb))
     }
 

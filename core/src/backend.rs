@@ -33,6 +33,10 @@ pub trait Backend: Send + Sync {
 
     fn capabilities(&self) -> Capabilities;
 
+    /// The volume representation this backend mounts: directories for
+    /// containers, block images for microVMs.
+    fn volume_source_kind(&self) -> VolumeSourceKind;
+
     /// Is this backend usable on the current host? (KVM present, dockerd
     /// reachable, Hypervisor.framework entitlement granted...). Called once at
     /// daemon start to build the `Backend::Auto` preference list.

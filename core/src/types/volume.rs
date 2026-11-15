@@ -18,6 +18,14 @@ pub enum VolumeSource {
     Dir { path: PathBuf },
 }
 
+/// Which [`VolumeSource`] representation a backend consumes. The daemon
+/// creates volumes in the representation of the backend that will use them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VolumeSourceKind {
+    Dir,
+    BlockImage,
+}
+
 /// One volume attachment. The guest agent performs the mount at handshake
 /// from a table the daemon sends; images need no `fstab`.
 #[derive(Clone, Debug, Serialize, Deserialize)]

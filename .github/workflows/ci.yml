@@ -54,7 +54,14 @@ jobs:
           cd ../.. && ./scripts/gen-proto.sh && git diff --exit-code -- sdk/python/vmlayer/v1
       - run: cargo build -p vmlayerd
         working-directory: .
-      - name: End-to-end tests against the daemon and Docker
+      - name: Static guest agent (musl)
+        working-directory: .
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get install -y musl-tools
+          cargo build --release -p vmlayer-guest-agent --target x86_64-unknown-linux-musl
+      - name: End-to-end tests against the daemon, Docker, and the guest agent in a container
         run: uv run pytest -q
         env:
           VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd
+          VMLAYER_GUEST_AGENT_BIN: ${{ github.workspace }}/target/x86_64-unknown-linux-musl/release/vmlayer-guest-agent

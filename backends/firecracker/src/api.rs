@@ -26,10 +26,17 @@ pub struct Client {
 
 impl Client {
     pub fn new(socket: impl Into<std::path::PathBuf>) -> Self {
-        Self { socket: socket.into() }
+        Self {
+            socket: socket.into(),
+        }
     }
 
-    async fn request(&self, method: hyper::Method, path: &str, body: Option<String>) -> Result<(u16, String)> {
+    async fn request(
+        &self,
+        method: hyper::Method,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<(u16, String)> {
         let stream = tokio::net::UnixStream::connect(&self.socket)
             .await
             .map_err(|e| err(format!("connecting to {}: {e}", self.socket.display())))?;
@@ -48,13 +55,26 @@ impl Client {
         let req = req
             .body(Full::new(Bytes::from(body.unwrap_or_default())))
             .map_err(|e| err(e.to_string()))?;
-        let resp = sender.send_request(req).await.map_err(|e| err(format!("api {path}: {e}")))?;
+        let resp = sender
+            .send_request(req)
+            .await
+            .map_err(|e| err(format!("api {path}: {e}")))?;
         let status = resp.status().as_u16();
-        let bytes = resp.into_body().collect().await.map_err(|e| err(e.to_string()))?.to_bytes();
+        let bytes = resp
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| err(e.to_string()))?
+            .to_bytes();
         Ok((status, String::from_utf8_lossy(&bytes).into_owned()))
     }
 
-    async fn expect_ok(&self, method: hyper::Method, path: &str, body: Option<String>) -> Result<String> {
+    async fn expect_ok(
+        &self,
+        method: hyper::Method,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<String> {
         let (status, text) = self.request(method.clone(), path, body).await?;
         if (200..300).contains(&status) {
             Ok(text)
@@ -68,12 +88,16 @@ impl Client {
 
     pub async fn put<T: Serialize>(&self, path: &str, body: &T) -> Result<()> {
         let json = serde_json::to_string(body).map_err(|e| err(e.to_string()))?;
-        self.expect_ok(hyper::Method::PUT, path, Some(json)).await.map(|_| ())
+        self.expect_ok(hyper::Method::PUT, path, Some(json))
+            .await
+            .map(|_| ())
     }
 
     pub async fn patch<T: Serialize>(&self, path: &str, body: &T) -> Result<()> {
         let json = serde_json::to_string(body).map_err(|e| err(e.to_string()))?;
-        self.expect_ok(hyper::Method::PATCH, path, Some(json)).await.map(|_| ())
+        self.expect_ok(hyper::Method::PATCH, path, Some(json))
+            .await
+            .map(|_| ())
     }
 
     pub async fn get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T> {
@@ -91,7 +115,9 @@ impl Client {
                 }
             }
             if tokio::time::Instant::now() >= deadline {
-                return Err(err(format!("firecracker API did not come up within {timeout:?}")));
+                return Err(err(format!(
+                    "firecracker API did not come up within {timeout:?}"
+                )));
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
@@ -100,33 +126,69 @@ impl Client {
     // -- typed calls --------------------------------------------------------
 
     pub async fn boot_source(&self, kernel: &str, boot_args: &str) -> Result<()> {
-        self.put("/boot-source", &BootSource { kernel_image_path: kernel, boot_args }).await
+        self.put(
+            "/boot-source",
+            &BootSource {
+                kernel_image_path: kernel,
+                boot_args,
+            },
+        )
+        .await
     }
 
     pub async fn drive(&self, d: &Drive<'_>) -> Result<()> {
         self.put(&format!("/drives/{}", d.drive_id), d).await
     }
 
-    pub async fn patch_drive(&self, drive_id: &str, path_on_host: &str) -> Result<()> {
-        self.patch(&format!("/drives/{drive_id}"), &DrivePatch { drive_id, path_on_host }).await
-    }
-
-    pub async fn network_interface(&self, iface_id: &str, host_dev_name: &str, guest_mac: &str) -> Result<()> {
-        self.put(&format!("/network-interfaces/{iface_id}"), &NetworkInterface { iface_id, host_dev_name, guest_mac })
-            .await
+    pub async fn network_interface(
+        &self,
+        iface_id: &str,
+        host_dev_name: &str,
+        guest_mac: &str,
+    ) -> Result<()> {
+        self.put(
+            &format!("/network-interfaces/{iface_id}"),
+            &NetworkInterface {
+                iface_id,
+                host_dev_name,
+                guest_mac,
+            },
+        )
+        .await
     }
 
     pub async fn machine_config(&self, vcpu_count: u32, mem_size_mib: u32) -> Result<()> {
-        self.put("/machine-config", &MachineConfig { vcpu_count, mem_size_mib, smt: false, track_dirty_pages: true })
-            .await
+        self.put(
+            "/machine-config",
+            &MachineConfig {
+                vcpu_count,
+                mem_size_mib,
+                smt: false,
+                track_dirty_pages: true,
+            },
+        )
+        .await
     }
 
     pub async fn vsock(&self, guest_cid: u32, uds_path: &str) -> Result<()> {
-        self.put("/vsock", &Vsock { guest_cid, uds_path }).await
+        self.put(
+            "/vsock",
+            &Vsock {
+                guest_cid,
+                uds_path,
+            },
+        )
+        .await
     }
 
     pub async fn start(&self) -> Result<()> {
-        self.put("/actions", &Action { action_type: "InstanceStart" }).await
+        self.put(
+            "/actions",
+            &Action {
+                action_type: "InstanceStart",
+            },
+        )
+        .await
     }
 
     pub async fn pause(&self) -> Result<()> {
@@ -137,10 +199,19 @@ impl Client {
         self.patch("/vm", &VmState { state: "Resumed" }).await
     }
 
-    pub async fn snapshot_create(&self, snapshot_path: &str, mem_file_path: &str, diff: bool) -> Result<()> {
+    pub async fn snapshot_create(
+        &self,
+        snapshot_path: &str,
+        mem_file_path: &str,
+        diff: bool,
+    ) -> Result<()> {
         self.put(
             "/snapshot/create",
-            &SnapshotCreate { snapshot_type: if diff { "Diff" } else { "Full" }, snapshot_path, mem_file_path },
+            &SnapshotCreate {
+                snapshot_type: if diff { "Diff" } else { "Full" },
+                snapshot_path,
+                mem_file_path,
+            },
         )
         .await
     }
@@ -171,12 +242,6 @@ pub struct Drive<'a> {
     pub path_on_host: &'a str,
     pub is_root_device: bool,
     pub is_read_only: bool,
-}
-
-#[derive(Serialize)]
-struct DrivePatch<'a> {
-    drive_id: &'a str,
-    path_on_host: &'a str,
 }
 
 #[derive(Serialize)]
@@ -240,7 +305,6 @@ pub struct SnapshotLoad<'a> {
 
 #[derive(Deserialize, Debug)]
 pub struct InstanceInfo {
-    pub id: String,
     pub state: String,
     pub vmm_version: String,
 }
@@ -268,7 +332,10 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// A one-request fake Firecracker API on a unix socket.
-    async fn fake(status: &'static str, body: &'static str) -> (std::path::PathBuf, tokio::task::JoinHandle<String>) {
+    async fn fake(
+        status: &'static str,
+        body: &'static str,
+    ) -> (std::path::PathBuf, tokio::task::JoinHandle<String>) {
         let dir = tempfile::tempdir().unwrap().keep();
         let sock = dir.join("api.sock");
         let listener = tokio::net::UnixListener::bind(&sock).unwrap();
@@ -307,7 +374,11 @@ mod tests {
 
     #[tokio::test]
     async fn get_decodes() {
-        let (sock, _task) = fake("200 OK", r#"{"id":"x","state":"Running","vmm_version":"1.16.1"}"#).await;
+        let (sock, _task) = fake(
+            "200 OK",
+            r#"{"id":"x","state":"Running","vmm_version":"1.16.1"}"#,
+        )
+        .await;
         let c = Client::new(&sock);
         let info = c.info().await.unwrap();
         assert_eq!(info.vmm_version, "1.16.1");
@@ -317,10 +388,16 @@ mod tests {
     fn snapshot_load_serializes_overrides() {
         let l = SnapshotLoad {
             snapshot_path: "/snap/vmstate",
-            mem_backend: MemBackend { backend_type: "File", backend_path: "/snap/mem" },
+            mem_backend: MemBackend {
+                backend_type: "File",
+                backend_path: "/snap/mem",
+            },
             enable_diff_snapshots: false,
             resume_vm: true,
-            network_overrides: vec![NetworkOverride { iface_id: "eth0", host_dev_name: "vmltap3" }],
+            network_overrides: vec![NetworkOverride {
+                iface_id: "eth0",
+                host_dev_name: "vmltap3",
+            }],
         };
         let j = serde_json::to_value(&l).unwrap();
         assert_eq!(j["mem_backend"]["backend_type"], "File");

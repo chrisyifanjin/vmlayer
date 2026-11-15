@@ -18,7 +18,48 @@ pub struct Config {
     pub default_backend: Option<String>,
     pub defaults: Defaults,
     pub docker: DockerConfig,
+    pub firecracker: FirecrackerConfig,
     pub log: LogConfig,
+}
+
+/// Firecracker backend. Disabled unless `enabled = true`; the daemon then
+/// probes for KVM, the binaries and the kernel and reports why it is
+/// unavailable if any is missing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FirecrackerConfig {
+    pub enabled: bool,
+    pub firecracker_bin: PathBuf,
+    pub jailer_bin: PathBuf,
+    /// Uncompressed `vmlinux` built with the Firecracker guest config.
+    pub kernel: PathBuf,
+    pub kernel_args: String,
+    /// Static guest agent injected into root images (`vmlayer-guest-agent`).
+    pub guest_agent: Option<PathBuf>,
+    pub jail_uid: u32,
+    pub jail_gid: u32,
+    /// Host-side pool for per-VM veth pairs, e.g. "10.200.0.0/16".
+    pub host_subnet: String,
+    pub dns: Vec<String>,
+    pub agent_port: u32,
+}
+
+impl Default for FirecrackerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            firecracker_bin: "/usr/local/bin/firecracker".into(),
+            jailer_bin: "/usr/local/bin/jailer".into(),
+            kernel: "/var/lib/vmlayer/vmlinux".into(),
+            kernel_args: String::new(),
+            guest_agent: Some("/usr/local/bin/vmlayer-guest-agent".into()),
+            jail_uid: 65534,
+            jail_gid: 65534,
+            host_subnet: "10.200.0.0/16".into(),
+            dns: vec!["1.1.1.1".into(), "8.8.8.8".into()],
+            agent_port: 5200,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -104,6 +145,7 @@ impl Default for Config {
             default_backend: None,
             defaults: Defaults::default(),
             docker: DockerConfig::default(),
+            firecracker: FirecrackerConfig::default(),
             log: LogConfig::default(),
         }
     }

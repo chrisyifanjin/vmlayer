@@ -1847,6 +1847,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "vmlayer-backend-firecracker"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "tracing",
+ "uuid",
+ "vmlayer-core",
+ "vmlayer-proto",
+]
+
+[[package]]
 name = "vmlayer-cli"
 version = "0.0.0"
 dependencies = [
@@ -1948,6 +1972,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "vmlayer-backend-docker",
+ "vmlayer-backend-firecracker",
  "vmlayer-core",
  "vmlayer-procs",
  "vmlayer-proto",

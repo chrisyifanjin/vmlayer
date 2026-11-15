@@ -1,0 +1,76 @@
+# 0008. Firecracker backend: jailed VMs with fixed drive names, one netns each, gRPC guest agent over vsock
+
+Status: accepted, 2026-11-15
+
+## Context
+
+The Firecracker backend has to deliver what the Docker backend cannot:
+memory snapshots, sub-second restore and `fork`. Three things decide how
+hard that is: where disks live (snapshots record drive paths), how guests
+get network identity (a restored guest keeps its old one), and how the host
+talks to the guest (every backend needs exec, files, pty).
+
+## Decisions
+
+**D1. The jailer, one chroot per VM, fixed file names inside.** Firecracker
+snapshots record `path_on_host` for every drive and will not load if the
+paths are missing. With the jailer each VM has its own chroot, so the
+*same* path (`/root.ext4`, `/vol0.ext4`, `/vmlinux`) names a different file
+in each jail. Restore populates a fresh jail with clones and loads the
+snapshot unchanged: no `PATCH /drives`, no path rewriting, and the jailer's
+own isolation (chroot, uid/gid drop, seccomp) comes for free. Disks are
+reflink clones (root) or hard links (volumes) so the jail costs nothing.
+
+**D2. One network namespace per VM, identical guest-side addressing.**
+Every guest is `172.16.0.2/30` with gateway `.1` and the same MAC, behind
+`tap0` inside `netns vml-N`. The namespace reaches the host over a veth pair
+on a per-VM /30 from a `10.200.0.0/16` pool; the host masquerades egress and
+the namespace DNATs its veth address to the guest. Because a restored or
+forked VM gets a *new* namespace but the *same* guest config, snapshots need
+no network rewriting and N forks of one parent never collide. `expose` is a
+loopback TCP proxy to the namespace's veth address. This is the layout E2B
+and firecracker-containerd converged on; a flat bridge would need per-guest
+IP/MAC rewriting inside the restored guest.
+
+**D3. The guest agent speaks gRPC over vsock and serves the same `Processes`
+and `Files` services the daemon does.** A backend handle is then a thin gRPC
+client, and the process table, output buffering and re-attach semantics are
+one shared crate (`procs/`) used on both sides. vsock reaches the host as a
+unix socket with a one-line `CONNECT <port>` handshake, which a tonic
+connector performs. The agent also serves a small `Guest` service: mount,
+entrypoint, wait-for-port, fsfreeze, PCI rescan, shutdown. For testing it can
+listen on TCP, so the whole agent is exercised in a container in CI.
+
+**D4. The agent is PID 1 and forks a reaper.** Tokio's child handling and a
+`waitpid(-1)` reaper cannot share a process, so PID 1 stays a tiny reaper
+that forwards SIGTERM, and the agent runs as its child. PID 1 duties (pseudo
+filesystems, loopback, hostname, DNS from the kernel command line) happen
+before the fork. The agent is injected into each root image clone with
+`debugfs`, so any ext4 root image works without rebuilding it.
+
+**D5. `fork` is snapshot plus N restores.** Firecracker has no fork. A full
+snapshot (vmstate + memory file) is taken once; each child is a fresh jail
+with reflinked disks and the memory file mapped privately, so pages are
+shared copy-on-write until written. Guests pause for the snapshot (tens of
+milliseconds) and the agent `fsfreeze`s volumes first so the disk clones are
+consistent. `pci=off` keeps the device layout stable across snapshots; hot
+attach would need PCI mode and is left off the v1 capability list.
+
+**D6. Volumes have a representation chosen by the backend.** Containers mount
+directories; microVMs attach block devices. `Backend::volume_source_kind`
+tells the daemon which to create (`mkfs.ext4` on a sparse file for block
+images), and a volume keeps its kind for life: attaching a directory volume
+to a microVM is refused with an explanatory error rather than converted.
+
+## Consequences
+
+- Host requirements: Linux with `/dev/kvm`, `firecracker` + `jailer`,
+  an uncompressed guest kernel, `ip`, `nft`, `e2fsprogs` (`mkfs.ext4`,
+  `debugfs`), and root (taps, namespaces, chroot). The daemon reports
+  precisely which is missing in `vmlayer info`.
+- Roadmap steps 1 and 2 are the first run of this code on real hardware.
+  Everything above is type-checked and unit-tested (API client against a
+  fake socket, pool arithmetic, handshake, proxy) and the guest agent is
+  tested end to end in a container; the VMM interaction itself is not yet.
+- The OCI image pipeline (roadmap step 3) will produce the ext4 root images
+  this backend consumes; until then the image reference is a path to one.
