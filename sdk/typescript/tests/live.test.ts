@@ -89,6 +89,14 @@ test("info and backends", async () => {
   assert.ok("docker" in (await client.availableBackends()));
 });
 
+test("pull image", async () => {
+  const info = await client.pullImage(PY);
+  assert.deepEqual(
+    [info.backend, info.rootfsKind, info.entrypoint],
+    ["docker", "engine", ["python3"]],
+  );
+});
+
 test("exec basics, labels, connect, kill", async () => {
   const sb = await Sandbox.create(ALPINE, { env: { GREETING: "hi" }, labels: { suite: "ts" } });
   try {

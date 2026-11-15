@@ -28,6 +28,7 @@ jobs:
       - run: cargo test --workspace
         env:
           VMLAYER_DOCKER_TESTS: "1"
+          VMLAYER_NET_TESTS: "1"
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

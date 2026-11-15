@@ -36,25 +36,31 @@ dns = ["1.1.1.1", "8.8.8.8"]
 
 ## Root images
 
-Until the OCI pipeline lands (roadmap step 3) the image reference passed to
-`Sandbox.create` is an absolute path to an ext4 root image on the host:
-
-```bash
-# A minimal Alpine root image, 1 GiB, with sh/coreutils and python:
-truncate -s 1G /var/lib/vmlayer/images/alpine.ext4
-mkfs.ext4 -q -F /var/lib/vmlayer/images/alpine.ext4
-mkdir -p /mnt/img && mount /var/lib/vmlayer/images/alpine.ext4 /mnt/img
-docker export "$(docker create python:3.12-alpine)" | tar -C /mnt/img -x
-umount /mnt/img
-```
+Any OCI image reference works, exactly as with Docker:
 
 ```python
-Sandbox.create("/var/lib/vmlayer/images/alpine.ext4", backend=Backend.FIRECRACKER)
+Sandbox.create("python:3.12", backend=Backend.FIRECRACKER)
 ```
 
-The daemon clones the image per sandbox (copy-on-write on XFS/btrfs) and
-injects the guest agent as `/vmlayer-guest-agent`, which the kernel runs as
-`init`. The image needs nothing else: no init system, no network scripts.
+The first time an image is used the daemon pulls its layers itself (no
+Docker engine needed; credentials come from `~/.docker/config.json`), applies
+them with OCI whiteout rules, and builds one ext4 image with `mkfs.ext4 -d`,
+cached under `<data>/images/<digest>/rootfs.ext4`. Every sandbox then boots
+from a copy-on-write clone of that file. Pre-pull to keep the first create
+fast:
+
+```bash
+vmlayer pull python:3.12 --backend firecracker
+```
+
+An absolute path to an existing ext4 file is also accepted and used as is,
+for hand-built images.
+
+Either way the daemon injects the guest agent into each sandbox's clone as
+`/vmlayer-guest-agent`, which the kernel runs as `init`. The image needs
+nothing else: no init system, no network scripts. The image's
+`ENTRYPOINT`/`CMD`, `ENV` and `WORKDIR` are honoured like on Docker. See
+[decision 0009](decisions/0009-image-pipeline.md).
 
 ## What happens on `create`
 

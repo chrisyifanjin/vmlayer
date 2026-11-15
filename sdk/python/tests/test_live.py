@@ -25,6 +25,14 @@ def test_info(daemon: vmlayer.Client) -> None:
     assert vmlayer.Backend.DOCKER in daemon.available_backends()
 
 
+def test_pull_image(daemon: vmlayer.Client) -> None:
+    info = daemon.pull_image(PY)
+    assert (info.backend, info.rootfs_kind) == ("docker", "engine")
+    assert info.entrypoint == ("python3",)
+    with pytest.raises(vmlayer.VmlayerError):
+        daemon.pull_image("vmlayer-test/does-not-exist:nope")
+
+
 def test_exec_basics(daemon: vmlayer.Client) -> None:
     with Sandbox.create(ALPINE, env={"GREETING": "hi"}, labels={"suite": "live"}) as sb:
         assert sb.backend == vmlayer.Backend.DOCKER

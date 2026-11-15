@@ -5,6 +5,19 @@ All notable changes are recorded here. The format follows
 [SemVer](https://semver.org/). Until 1.0 the API may change between minor
 versions; every change to the SDK surface is listed.
 
+## [Unreleased]
+
+### Added
+- Image pipeline for microVM backends: the daemon pulls OCI images itself
+  (auth from `~/.docker/config.json`), applies layers with whiteout
+  semantics, and builds one cached ext4 per digest with `mkfs.ext4 -d`.
+  `Sandbox.create("python:3.12", backend=FIRECRACKER)` no longer needs a
+  hand-built image.
+- `PullImage` RPC, `vmlayer pull`, `Client.pull_image` / `client.pullImage`
+  to resolve an image ahead of time on any backend.
+- `Backend::cleanup_dir`: volumes written as root inside containers are
+  removed through the engine when the daemon cannot delete them itself.
+
 ## [0.1.0] - 2026-11-15
 
 First release: a working sandbox runtime on Docker, and the complete (but

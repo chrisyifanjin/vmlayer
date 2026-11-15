@@ -7,6 +7,30 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class PullImageRequest(_message.Message):
+    __slots__ = ("image", "backend")
+    IMAGE_FIELD_NUMBER: _ClassVar[int]
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
+    image: str
+    backend: str
+    def __init__(self, image: _Optional[str] = ..., backend: _Optional[str] = ...) -> None: ...
+
+class ImageInfo(_message.Message):
+    __slots__ = ("image", "backend", "rootfs_kind", "rootfs_path", "entrypoint", "workdir")
+    IMAGE_FIELD_NUMBER: _ClassVar[int]
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
+    ROOTFS_KIND_FIELD_NUMBER: _ClassVar[int]
+    ROOTFS_PATH_FIELD_NUMBER: _ClassVar[int]
+    ENTRYPOINT_FIELD_NUMBER: _ClassVar[int]
+    WORKDIR_FIELD_NUMBER: _ClassVar[int]
+    image: str
+    backend: str
+    rootfs_kind: str
+    rootfs_path: str
+    entrypoint: _containers.RepeatedScalarFieldContainer[str]
+    workdir: str
+    def __init__(self, image: _Optional[str] = ..., backend: _Optional[str] = ..., rootfs_kind: _Optional[str] = ..., rootfs_path: _Optional[str] = ..., entrypoint: _Optional[_Iterable[str]] = ..., workdir: _Optional[str] = ...) -> None: ...
+
 class BackendInfo(_message.Message):
     __slots__ = ("name", "engine_version", "capabilities", "unavailable_reason")
     NAME_FIELD_NUMBER: _ClassVar[int]

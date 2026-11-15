@@ -1,7 +1,7 @@
 /** Connection to a `vmlayerd` daemon. */
 
 import { Connection, type ConnectionOptions, labels } from "./rpc.js";
-import type { Backend, BackendInfo, Capabilities, SystemInfo } from "./types.js";
+import type { Backend, BackendInfo, Capabilities, ImageInfo, SystemInfo } from "./types.js";
 
 export function capabilitiesFrom(c: any): Capabilities {
   return {
@@ -60,6 +60,24 @@ export class Client {
     for (const b of (await this.info()).backends)
       if (b.available) out[b.name as Backend] = b.engineVersion;
     return out;
+  }
+
+  /** Pull an image ahead of time (and build its root filesystem on microVM backends). */
+  async pullImage(image: string, opts: { backend?: Backend } = {}): Promise<ImageInfo> {
+    const r: any = await this.conn.call(
+      this.conn.system,
+      "PullImage",
+      { image, backend: opts.backend ?? "auto" },
+      1_800_000,
+    );
+    return {
+      image: r.image,
+      backend: r.backend,
+      rootfsKind: r.rootfs_kind,
+      rootfsPath: r.rootfs_path || null,
+      entrypoint: r.entrypoint ?? [],
+      workdir: r.workdir || null,
+    };
   }
 
   async listSandboxes(

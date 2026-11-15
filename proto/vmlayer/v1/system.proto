@@ -9,6 +9,26 @@ service System {
   rpc Health(Empty) returns (HealthResponse);
   rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
   rpc DeleteSnapshot(DeleteSnapshotRequest) returns (Empty);
+  // Resolve an image for a backend ahead of time: pull it and, for microVM
+  // backends, build the root filesystem. Idempotent; later creates are fast.
+  rpc PullImage(PullImageRequest) returns (ImageInfo);
+}
+
+message PullImageRequest {
+  string image = 1;
+  // "auto" or a backend name.
+  string backend = 2;
+}
+
+message ImageInfo {
+  string image = 1;
+  string backend = 2;
+  // "engine" (the container engine holds it), "ext4" or "dir".
+  string rootfs_kind = 3;
+  // Host path of the built root filesystem, empty for engine images.
+  string rootfs_path = 4;
+  repeated string entrypoint = 5;
+  string workdir = 6;
 }
 
 message BackendInfo {

@@ -16,3 +16,4 @@ Format: context, options considered (with evidence), decision, consequences.
 | [0006](0006-volumes.md) | Workspaces are Volumes: separate from the sandbox, anonymous by default, single writer, cloned on restore/fork | accepted |
 | [0007](0007-daemon-stack.md) | Daemon stack: tonic gRPC over unix socket, SQLite, bollard for Docker | accepted |
 | [0008](0008-firecracker-backend-design.md) | Firecracker: jailed VMs with fixed drive names, one netns each, gRPC guest agent over vsock, fork = snapshot + restores | accepted |
+| [0009](0009-image-pipeline.md) | Image pipeline: pull OCI layers in the daemon, unpack with whiteouts, one cached ext4 per digest via `mkfs.ext4 -d` | accepted |

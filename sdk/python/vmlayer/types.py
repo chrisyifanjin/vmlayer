@@ -143,3 +143,16 @@ class SystemInfo:
     backends: tuple[BackendInfo, ...]
     default_backend: str
     data_dir: str
+
+
+@dataclass(frozen=True)
+class ImageInfo:
+    """An image resolved for one backend."""
+
+    image: str
+    backend: str
+    rootfs_kind: str
+    """``engine`` (held by the container engine), ``ext4`` or ``dir``."""
+    rootfs_path: str | None
+    entrypoint: tuple[str, ...]
+    workdir: str | None

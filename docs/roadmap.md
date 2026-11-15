@@ -13,8 +13,9 @@
 - [ ] **2. Snapshot, restore, fork on Firecracker.** uffd memory backend with
       working-set prefetch, zero-page elision, volume clones via reflink.
       Measure restore latency three ways (docs/research.md).
-- [ ] **3. Image pipeline.** OCI to ext4/EROFS for microVM backends
-      (decision 0008, pending), with layer sharing.
+- [x] **3. Image pipeline.** The daemon pulls OCI images itself, applies
+      layers with whiteouts, builds a cached ext4 per digest (decision 0009);
+      `vmlayer pull` pre-builds. Layer sharing via EROFS is the follow-up.
 - [ ] **4. Egress allowlists and quotas** (eBPF or nftables; pids, disk,
       output size).
 - [ ] **5. libkrun backend** for macOS development.

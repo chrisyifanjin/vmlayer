@@ -91,11 +91,12 @@ impl Registry {
                         }
                         None => tracing::info!(backend = "firecracker", %version, "backend ready"),
                     }
+                    let images = Arc::new(crate::images::ImageStore::new(&cfg.data_dir));
                     entries.insert(
                         "firecracker".to_string(),
                         BackendEntry {
                             backend: be,
-                            resolver: Arc::new(vmlayer_backend_firecracker::Ext4PathResolver),
+                            resolver: Arc::new(crate::images::MicrovmImageResolver::new(images)),
                             engine_version: version,
                             unavailable,
                         },

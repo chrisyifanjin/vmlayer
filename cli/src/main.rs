@@ -37,6 +37,12 @@ struct Cli {
 enum Cmd {
     /// Daemon version, backends and their engine versions.
     Info,
+    /// Pull an image ahead of time (and build its root filesystem on microVM backends).
+    Pull {
+        image: String,
+        #[arg(long, default_value = "auto")]
+        backend: String,
+    },
     /// Create a sandbox and print its id.
     Create {
         image: String,
@@ -228,6 +234,29 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Info => {
             let info = c.system.info(pb::Empty {}).await?.into_inner();
             output::info(&info, json);
+        }
+        Cmd::Pull { image, backend } => {
+            let info = c
+                .system
+                .pull_image(pb::PullImageRequest { image, backend })
+                .await?
+                .into_inner();
+            if json {
+                output::json(&serde_json::json!({
+                    "image": info.image, "backend": info.backend, "rootfs_kind": info.rootfs_kind,
+                    "rootfs_path": info.rootfs_path, "entrypoint": info.entrypoint, "workdir": info.workdir,
+                }));
+            } else {
+                let place = if info.rootfs_path.is_empty() {
+                    String::new()
+                } else {
+                    format!(" at {}", info.rootfs_path)
+                };
+                println!(
+                    "{} ready for {} ({}{})",
+                    info.image, info.backend, info.rootfs_kind, place
+                );
+            }
         }
         Cmd::Create {
             image,
