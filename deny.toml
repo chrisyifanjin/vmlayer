@@ -1,0 +1,16 @@
+# cargo-deny: license and advisory policy for the Rust workspace.
+[licenses]
+allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "Zlib", "Unicode-3.0", "MPL-2.0", "OpenSSL"]
+confidence-threshold = 0.8
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

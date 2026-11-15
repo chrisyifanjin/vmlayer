@@ -1,6 +1,6 @@
 [project]
 name = "vmlayer"
-version = "0.0.0"
+version = "0.1.0"
 description = "The layer between agent runtimes and microVMs: one sandbox API over Firecracker, libkrun and Docker."
 readme = "README.md"
 license = "Apache-2.0"

@@ -1,0 +1,33 @@
+{
+  "name": "vmlayer",
+  "version": "0.1.0",
+  "description": "The layer between agent runtimes and microVMs: one sandbox API over Firecracker, libkrun and Docker.",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/chrisyifanjin/vmlayer", "directory": "sdk/typescript" },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "proto", "README.md"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "lint": "eslint src tests && prettier --check src tests",
+    "format": "prettier --write src tests",
+    "sync-proto": "rm -rf proto && cp -R ../../proto ./proto"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
