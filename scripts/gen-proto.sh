@@ -13,6 +13,7 @@ uv run --group dev python -m grpc_tools.protoc \
   ../../proto/vmlayer/v1/processes.proto \
   ../../proto/vmlayer/v1/files.proto \
   ../../proto/vmlayer/v1/volumes.proto \
-  ../../proto/vmlayer/v1/system.proto
-touch vmlayer/v1/__init__.py
+  ../../proto/vmlayer/v1/system.proto \
+  ../../proto/vmlayer/guest/v1/guest.proto
+touch vmlayer/v1/__init__.py vmlayer/guest/__init__.py vmlayer/guest/v1/__init__.py
 echo "generated into sdk/python/vmlayer/v1"

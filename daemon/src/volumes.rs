@@ -13,7 +13,7 @@ use std::time::SystemTime;
 
 use tokio::process::Command;
 use uuid::Uuid;
-use vmlayer_core::{Error, Result, VolumeId, VolumeSnapshotId, VolumeSource};
+use vmlayer_core::{Error, Result, VolumeId, VolumeSnapshotId, VolumeSource, VolumeSourceKind};
 
 use crate::store::{Store, StoreError, VolumeRow, VolumeSnapshotRow};
 
@@ -33,6 +33,38 @@ fn store_err(e: StoreError) -> Error {
             source: Some(Box::new(other)),
         },
     }
+}
+
+/// File name of the ext4 image inside a block-image volume's directory.
+pub const IMAGE_FILE: &str = "image.ext4";
+
+/// Sparse ext4 image: costs nothing until written.
+async fn make_ext4_image(path: &Path, size_mib: u64) -> Result<()> {
+    let file = tokio::fs::File::create(path).await?;
+    file.set_len(size_mib * 1024 * 1024).await?;
+    drop(file);
+    let out = Command::new("mkfs.ext4")
+        .args(["-q", "-F", "-E", "lazy_itable_init=1,lazy_journal_init=1"])
+        .arg(path)
+        .output()
+        .await
+        .map_err(|e| Error::Engine {
+            backend: "daemon",
+            message: format!("mkfs.ext4: {e} (install e2fsprogs for block-image volumes)"),
+            source: None,
+        })?;
+    if !out.status.success() {
+        return Err(Error::Engine {
+            backend: "daemon",
+            message: format!(
+                "mkfs.ext4 {}: {}",
+                path.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+            source: None,
+        });
+    }
+    Ok(())
 }
 
 pub fn new_id(prefix: &str) -> String {
@@ -105,8 +137,13 @@ impl VolumeStore {
         self.root.join("volume-snapshots").join(&id.0)
     }
 
-    pub async fn create(
+    /// Create a volume in the representation `kind` asks for. A directory
+    /// volume is just a directory; a block-image volume holds a sparse ext4
+    /// image (`image.ext4`) formatted with `mkfs.ext4`, which microVM
+    /// backends attach as a virtio-blk device.
+    pub async fn create_kind(
         &self,
+        kind: VolumeSourceKind,
         name: Option<String>,
         size_mib: Option<u64>,
         labels: BTreeMap<String, String>,
@@ -115,10 +152,17 @@ impl VolumeStore {
         let id = VolumeId(new_id("vol"));
         let path = self.volume_dir(&id);
         tokio::fs::create_dir_all(&path).await?;
+        let size = size_mib.unwrap_or(self.default_size_mib);
+        if kind == VolumeSourceKind::BlockImage {
+            if let Err(e) = make_ext4_image(&path.join(IMAGE_FILE), size).await {
+                let _ = tokio::fs::remove_dir_all(&path).await;
+                return Err(e);
+            }
+        }
         let row = VolumeRow {
             id,
             name,
-            size_mib: size_mib.unwrap_or(self.default_size_mib),
+            size_mib: size,
             labels,
             anonymous,
             attached_to: None,
@@ -136,6 +180,18 @@ impl VolumeStore {
         Ok(row)
     }
 
+    /// Directory volume (the Docker backend's representation).
+    pub async fn create(
+        &self,
+        name: Option<String>,
+        size_mib: Option<u64>,
+        labels: BTreeMap<String, String>,
+        anonymous: bool,
+    ) -> Result<VolumeRow> {
+        self.create_kind(VolumeSourceKind::Dir, name, size_mib, labels, anonymous)
+            .await
+    }
+
     pub fn get(&self, id_or_name: &str) -> Result<VolumeRow> {
         self.store.get_volume(id_or_name).map_err(|e| match e {
             StoreError::NotFound => Error::VolumeNotFound(VolumeId(id_or_name.to_string())),
@@ -147,9 +203,37 @@ impl VolumeStore {
         self.store.list_volumes().map_err(store_err)
     }
 
+    /// The representation a volume has: block image if it holds one, else a
+    /// directory. Fixed at creation.
+    pub fn kind(&self, row: &VolumeRow) -> VolumeSourceKind {
+        if row.path.join(IMAGE_FILE).is_file() {
+            VolumeSourceKind::BlockImage
+        } else {
+            VolumeSourceKind::Dir
+        }
+    }
+
     pub fn source(&self, row: &VolumeRow) -> VolumeSource {
-        VolumeSource::Dir {
-            path: row.path.clone(),
+        match self.kind(row) {
+            VolumeSourceKind::BlockImage => VolumeSource::BlockImage {
+                path: row.path.join(IMAGE_FILE),
+            },
+            VolumeSourceKind::Dir => VolumeSource::Dir {
+                path: row.path.clone(),
+            },
+        }
+    }
+
+    /// Refuse to hand a volume to a backend that cannot mount its representation.
+    pub fn check_kind(&self, row: &VolumeRow, wanted: VolumeSourceKind) -> Result<()> {
+        let have = self.kind(row);
+        if have == wanted {
+            Ok(())
+        } else {
+            Err(Error::Guest(format!(
+                "volume {} is a {:?} volume but this backend needs {:?} volumes; create it with the right backend",
+                row.id, have, wanted
+            )))
         }
     }
 

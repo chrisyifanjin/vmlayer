@@ -18,4 +18,4 @@ pub use process::{
 };
 pub use snapshot::{RestoreOptions, SnapshotOptions, SnapshotRef, VolumeSnapshotRef};
 pub use spec::{Endpoint, NetworkMode, Rootfs, SandboxInfo, SandboxSpec, SandboxState};
-pub use volume::{Mount, VolumeSource};
+pub use volume::{Mount, VolumeSource, VolumeSourceKind};

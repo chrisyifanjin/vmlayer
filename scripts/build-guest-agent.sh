@@ -15,7 +15,7 @@ docker run --rm --platform "$platform" \
   -w /src \
   rust:1-alpine sh -c "
     apk add --no-cache musl-dev protobuf-dev >/dev/null &&
-    CARGO_TARGET_DIR=/build cargo build --release -p vmlayer-guest-agent --target $arch-unknown-linux-musl 2>&1 | tail -3 &&
+    CARGO_TARGET_DIR=/build cargo build --release -p vmlayer-guest-agent --target $arch-unknown-linux-musl >&2 &&
     cp /build/$arch-unknown-linux-musl/release/vmlayer-guest-agent /src/$out/ 2>/dev/null || cat /build/$arch-unknown-linux-musl/release/vmlayer-guest-agent > /dev/stdout" > "$out/vmlayer-guest-agent.tmp" || true
 # The source mount is read-only; the binary came through stdout.
 if [ -s "$out/vmlayer-guest-agent.tmp" ] && head -c4 "$out/vmlayer-guest-agent.tmp" | grep -q ELF; then

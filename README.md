@@ -32,8 +32,9 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 |---|---|
 | `vmlayerd` daemon, gRPC API, Python SDK, `vmlayer` CLI | working, tested end to end |
 | Docker backend (Linux, macOS, CI) | working: exec, pty, files, volumes, filesystem snapshots, restore, expose, TTLs |
-| Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working |
-| Firecracker backend (memory snapshots, fork) | in progress, needs a Linux host with KVM |
+| Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working (directory and ext4 block-image kinds) |
+| Guest agent (PID 1 in the VM; exec, files, pty, mounts over vsock) | working, tested end to end in a container |
+| Firecracker backend (memory snapshots, fork) | implemented and unit-tested; first run on a KVM host pending ([setup](docs/firecracker.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | S3-compatible blob store for durable snapshots | planned |
 | TypeScript SDK, E2B-compatible facade | planned |
@@ -145,7 +146,7 @@ backend implements). Every non-obvious choice has a record in
 | Isolation | microVM, own kernel | microVM, own kernel | container |
 | Memory snapshot | yes | yes | no (filesystem only) |
 | Fork | yes | planned | no |
-| Status | in progress | planned | **working** |
+| Status | code complete, untested on KVM | planned | **working** |
 
 `Backend.AUTO` picks the strongest one the host supports.
 
@@ -174,6 +175,9 @@ proto/              vmlayer.v1 gRPC contract (the wire API)
 core/               Backend trait, shared types, errors; no implementation
 daemon/             vmlayerd
 backends/docker/    Docker backend
+backends/firecracker/  Firecracker backend (jailer, netns, vsock)
+guest-agent/        static PID 1 agent for microVMs
+procs/              process table shared by daemon and agent
 cli/                vmlayer command
 sdk/python/         Python SDK and end-to-end tests
 docs/decisions/     design records     docs/research.md   papers that shaped it

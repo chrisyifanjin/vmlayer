@@ -71,6 +71,39 @@ impl Registry {
                 }
             }
         }
+        if cfg.firecracker.enabled {
+            match firecracker_config(&cfg.firecracker, &cfg.data_dir) {
+                Ok(fc) => {
+                    let be = Arc::new(vmlayer_backend_firecracker::FirecrackerBackend::new(fc));
+                    let unavailable = be.probe().await.err().map(|e| e.to_string());
+                    let version = if unavailable.is_none() {
+                        vmlayer_backend_firecracker::engine_version(
+                            &cfg.firecracker.firecracker_bin,
+                        )
+                        .await
+                        .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    match &unavailable {
+                        Some(reason) => {
+                            tracing::warn!(backend = "firecracker", %reason, "backend unavailable")
+                        }
+                        None => tracing::info!(backend = "firecracker", %version, "backend ready"),
+                    }
+                    entries.insert(
+                        "firecracker".to_string(),
+                        BackendEntry {
+                            backend: be,
+                            resolver: Arc::new(vmlayer_backend_firecracker::Ext4PathResolver),
+                            engine_version: version,
+                            unavailable,
+                        },
+                    );
+                }
+                Err(e) => tracing::warn!(backend = "firecracker", error = %e, "bad configuration"),
+            }
+        }
         Registry {
             entries,
             order,
@@ -127,4 +160,30 @@ impl Registry {
     pub fn capabilities_of(&self, name: &str) -> Option<Capabilities> {
         self.entries.get(name).map(|e| e.backend.capabilities())
     }
+}
+
+fn firecracker_config(
+    fc: &crate::config::FirecrackerConfig,
+    data_dir: &std::path::Path,
+) -> anyhow::Result<vmlayer_backend_firecracker::Config> {
+    let (net, prefix) = fc
+        .host_subnet
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("host_subnet must be CIDR, got {:?}", fc.host_subnet))?;
+    Ok(vmlayer_backend_firecracker::Config {
+        firecracker_bin: fc.firecracker_bin.clone(),
+        jailer_bin: fc.jailer_bin.clone(),
+        kernel: fc.kernel.clone(),
+        kernel_args: fc.kernel_args.clone(),
+        data_dir: data_dir.join("firecracker"),
+        jail_uid: fc.jail_uid,
+        jail_gid: fc.jail_gid,
+        subnet: vmlayer_backend_firecracker::Subnet {
+            network: net.parse()?,
+            prefix: prefix.parse()?,
+        },
+        dns: fc.dns.clone(),
+        agent_port: fc.agent_port,
+        guest_agent: fc.guest_agent.clone(),
+    })
 }

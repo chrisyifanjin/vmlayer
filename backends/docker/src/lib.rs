@@ -35,6 +35,7 @@ use futures::StreamExt;
 use vmlayer_core::{
     Backend, Capabilities, Error, ImageResolver, ResolvedImage, RestoreOptions, Result, Rootfs,
     SandboxHandle, SandboxId, SandboxInfo, SandboxSpec, SandboxState, SnapshotRef, VolumeSource,
+    VolumeSourceKind,
 };
 
 pub use sandbox::DockerSandbox;
@@ -278,6 +279,10 @@ impl Backend for DockerBackend {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities::CONTAINER
+    }
+
+    fn volume_source_kind(&self) -> VolumeSourceKind {
+        VolumeSourceKind::Dir
     }
 
     async fn probe(&self) -> Result<()> {

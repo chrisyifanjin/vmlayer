@@ -20,6 +20,9 @@ message CreateVolumeRequest {
   string name = 1;
   optional uint64 size_mib = 2;
   map<string, string> labels = 3;
+  // Backend that will mount it ("auto" or a name); decides the on-disk
+  // representation (directory for containers, block image for microVMs).
+  string backend = 4;
 }
 
 message VolumeFromSnapshotRequest {

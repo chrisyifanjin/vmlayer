@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "proto", "procs", "backends/docker", "daemon", "cli", "guest-agent"]
+members = ["core", "proto", "procs", "backends/docker", "backends/firecracker", "daemon", "cli", "guest-agent"]
 
 [workspace.package]
 version = "0.0.0"
@@ -12,6 +12,7 @@ repository = "https://github.com/chrisyifanjin/vmlayer"
 vmlayer-core = { path = "core" }
 vmlayer-proto = { path = "proto" }
 vmlayer-backend-docker = { path = "backends/docker" }
+vmlayer-backend-firecracker = { path = "backends/firecracker" }
 vmlayer-procs = { path = "procs" }
 
 anyhow = "1"

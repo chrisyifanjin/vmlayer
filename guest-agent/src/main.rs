@@ -9,6 +9,7 @@
 mod fs;
 #[cfg(target_os = "linux")]
 mod init;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod netstat;
 #[cfg(target_os = "linux")]
 mod process;

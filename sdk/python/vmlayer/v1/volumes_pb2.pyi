@@ -8,7 +8,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class CreateVolumeRequest(_message.Message):
-    __slots__ = ("name", "size_mib", "labels")
+    __slots__ = ("name", "size_mib", "labels", "backend")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -19,10 +19,12 @@ class CreateVolumeRequest(_message.Message):
     NAME_FIELD_NUMBER: _ClassVar[int]
     SIZE_MIB_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
     name: str
     size_mib: int
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, name: _Optional[str] = ..., size_mib: _Optional[int] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    backend: str
+    def __init__(self, name: _Optional[str] = ..., size_mib: _Optional[int] = ..., labels: _Optional[_Mapping[str, str]] = ..., backend: _Optional[str] = ...) -> None: ...
 
 class VolumeFromSnapshotRequest(_message.Message):
     __slots__ = ("snapshot_id", "name", "labels")

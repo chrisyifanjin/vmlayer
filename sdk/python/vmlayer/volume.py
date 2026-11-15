@@ -193,12 +193,19 @@ class Volume:
         name: str | None = None,
         size_mb: int | None = None,
         labels: Mapping[str, str] | None = None,
+        backend: Backend = Backend.AUTO,
         client: Client | None = None,
     ) -> Volume:
         """Create an empty volume. ``size_mb`` defaults to the daemon's setting.
-        Storage is sparse, so a large size costs nothing until used."""
+        Storage is sparse, so a large size costs nothing until used.
+
+        ``backend`` decides the on-disk representation (a directory for
+        Docker, an ext4 image for microVMs); a volume can only be attached to
+        sandboxes of a backend with the same representation."""
         c = _client(client)
-        req = volumes_pb2.CreateVolumeRequest(name=name or "", labels=_rpc.labels_arg(labels))
+        req = volumes_pb2.CreateVolumeRequest(
+            name=name or "", labels=_rpc.labels_arg(labels), backend=backend.value
+        )
         if size_mb is not None:
             req.size_mib = size_mb
         return cls(c, c._conn.call(c._conn.volumes.Create, req))
