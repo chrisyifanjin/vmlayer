@@ -43,7 +43,7 @@ jobs:
         working-directory: sdk/python
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv build
       - uses: softprops/action-gh-release@v2
         with:
