@@ -8,6 +8,7 @@ check:
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets -- -D warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+	@command -v cargo-deny >/dev/null && cargo deny check licenses advisories sources || echo "cargo-deny not installed; CI will run it"
 	cd sdk/python && uv run ruff check . && uv run ruff format --check . && uv run mypy vmlayer
 	cd sdk/typescript && npm run build && npm run lint
 
