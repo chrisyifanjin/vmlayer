@@ -57,6 +57,9 @@ pub struct Config {
     pub host: Option<String>,
     /// Small image used by `verify_shared_path`.
     pub probe_image: String,
+    /// Maximum number of processes per sandbox (cgroup pids limit); stops
+    /// fork bombs from taking the host down. `0` disables the limit.
+    pub pids_limit: i64,
 }
 
 impl Default for Config {
@@ -66,6 +69,7 @@ impl Default for Config {
             network: "bridge".into(),
             host: None,
             probe_image: "alpine:3.20".into(),
+            pids_limit: 4096,
         }
     }
 }
@@ -232,6 +236,7 @@ impl DockerBackend {
             nano_cpus: Some(i64::from(spec.vcpus) * 1_000_000_000),
             network_mode: Some(network_mode),
             init: Some(true),
+            pids_limit: (self.config.pids_limit > 0).then_some(self.config.pids_limit),
             ..Default::default()
         };
         let body = bollard::models::ContainerCreateBody {

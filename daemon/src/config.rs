@@ -84,6 +84,8 @@ pub struct DockerConfig {
     /// Check at startup that the data dir is visible inside containers
     /// (matters for VM-based engines on macOS and Windows).
     pub verify_mounts: bool,
+    /// Maximum processes per sandbox; 0 disables the limit.
+    pub pids_limit: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -172,6 +174,7 @@ impl Default for DockerConfig {
             socat_image: "alpine/socat:1.8.0.0".into(),
             probe_image: "alpine:3.20".into(),
             verify_mounts: true,
+            pids_limit: 4096,
         }
     }
 }

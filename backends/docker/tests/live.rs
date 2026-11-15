@@ -134,6 +134,10 @@ async fn exec_files_and_lifecycle() {
     sb.remove("/work/sub", true).await.unwrap();
     assert!(sb.list_dir("/work/sub").await.is_err());
 
+    // the default pids limit is applied (fork bombs stay inside the sandbox)
+    let (_, pids_max, _) = run(sb.as_ref(), &["cat", "/sys/fs/cgroup/pids.max"]).await;
+    assert_eq!(pids_max.trim(), "4096");
+
     // kill a long-running process
     let mut p = sb.exec(req(&["sleep", "30"])).await.unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;

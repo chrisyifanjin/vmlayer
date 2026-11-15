@@ -18,6 +18,8 @@ versions; every change to the SDK surface is listed.
 - Framework adapters in `vmlayer.integrations`: a mini-swe-agent
   `Environment` and an AutoGen `CodeExecutor`, as extras
   (`vmlayer[minisweagent]`, `vmlayer[autogen]`).
+- Docker sandboxes get a process limit (`[docker] pids_limit`, default 4096)
+  so a fork bomb stays inside its sandbox.
 - `Backend::cleanup_dir`: volumes written as root inside containers are
   removed through the engine when the daemon cannot delete them itself.
 

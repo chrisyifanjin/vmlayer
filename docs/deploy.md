@@ -53,6 +53,7 @@ network = "bridge"
 socat_image = "alpine/socat:1.8.0.0"
 probe_image = "alpine:3.20"
 verify_mounts = true                   # check the data dir is visible in containers
+pids_limit = 4096                      # max processes per sandbox; 0 disables
 
 [log]
 format = "json"

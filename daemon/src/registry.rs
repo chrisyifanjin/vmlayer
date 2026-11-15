@@ -36,6 +36,7 @@ impl Registry {
                 network: cfg.docker.network.clone(),
                 socat_image: cfg.docker.socat_image.clone(),
                 probe_image: cfg.docker.probe_image.clone(),
+                pids_limit: cfg.docker.pids_limit,
             };
             match vmlayer_backend_docker::DockerBackend::connect(dc) {
                 Ok(be) => {
