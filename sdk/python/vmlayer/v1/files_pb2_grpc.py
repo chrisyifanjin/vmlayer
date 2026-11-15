@@ -6,7 +6,7 @@ import warnings
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 from vmlayer.v1 import files_pb2 as vmlayer_dot_v1_dot_files__pb2
 
-GRPC_GENERATED_VERSION = '1.85.1'
+GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -19,14 +19,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in vmlayer/v1/files_pb2_grpc.py depends on'
+        + f' but the generated code in vmlayer/v1/files_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class FilesStub:
+class FilesStub(object):
     """Files inside a sandbox, through the guest agent (or the engine's archive
     API for containers). Paths are absolute guest paths.
     """
@@ -69,7 +69,7 @@ class FilesStub:
                 _registered_method=True)
 
 
-class FilesServicer:
+class FilesServicer(object):
     """Files inside a sandbox, through the guest agent (or the engine's archive
     API for containers). Paths are absolute guest paths.
     """
@@ -151,7 +151,7 @@ def add_FilesServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Files:
+class Files(object):
     """Files inside a sandbox, through the guest agent (or the engine's archive
     API for containers). Paths are absolute guest paths.
     """

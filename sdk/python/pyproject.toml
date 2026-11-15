@@ -12,10 +12,15 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: System :: Emulators",
 ]
-dependencies = ["grpcio>=1.60", "protobuf>=5"]
+dependencies = ["grpcio>=1.68", "protobuf>=5.26"]
+
+[project.optional-dependencies]
+minisweagent = ["mini-swe-agent>=2.0"]
+autogen = ["autogen-core>=0.7"]
 
 [dependency-groups]
-dev = ["ruff==0.17.5", "mypy==2.4.1", "grpcio-tools>=1.60", "pytest>=8", "types-protobuf"]
+dev = ["ruff==0.17.5", "mypy==2.4.1", "pytest>=8", "types-protobuf"]
+integrations = ["mini-swe-agent>=2.0", "autogen-core>=0.7"]
 
 [build-system]
 requires = ["hatchling"]
@@ -40,6 +45,11 @@ exclude = ["vmlayer/v1/", "vmlayer/guest/"]
 module = ["vmlayer.v1.*", "vmlayer.guest.*", "grpc", "grpc.*"]
 ignore_missing_imports = true
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["minisweagent", "minisweagent.*", "autogen_core", "autogen_core.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

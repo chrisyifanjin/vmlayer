@@ -2,8 +2,7 @@ from vmlayer.v1 import common_pb2 as _common_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -89,7 +88,7 @@ class SnapshotVolumeRequest(_message.Message):
     id: str
     durable: bool
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., durable: _Optional[bool] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., durable: bool = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class CloneVolumeRequest(_message.Message):
     __slots__ = ("id", "name")

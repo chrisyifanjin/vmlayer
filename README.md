@@ -41,7 +41,8 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Firecracker backend (memory snapshots, fork) | implemented and unit-tested; first run on a KVM host pending ([setup](docs/firecracker.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | S3-compatible blob store for durable snapshots | planned |
-| E2B-compatible facade, asyncio client | planned |
+| Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
+| E2B-compatible facade, asyncio client, more adapters (ADK, SWE-ReX, OpenHands, smolagents) | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says

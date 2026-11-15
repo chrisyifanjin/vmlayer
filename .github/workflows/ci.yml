@@ -49,13 +49,19 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.10
-      - run: uv sync --group dev --python 3.10
+      - run: uv sync --group dev --group integrations --python 3.10
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy vmlayer
       - name: Generated stubs are current
         run: |
-          cd ../.. && ./scripts/gen-proto.sh && git diff --exit-code -- sdk/python/vmlayer/v1
+          cd ../.. && ./scripts/gen-proto.sh && git diff --exit-code -- sdk/python/vmlayer/v1 sdk/python/vmlayer/guest
+      - name: SDK imports under protobuf 5, 6 and 7
+        run: |
+          for pb in "protobuf>=5.26,<5.27" "protobuf>=6,<7" "protobuf>=7"; do
+            uv run --no-project --python 3.12 --with "$pb" --with "grpcio>=1.68" \
+              python -c "import sys; sys.path.insert(0, '.'); import google.protobuf, vmlayer; from vmlayer.v1 import sandboxes_pb2 as s; assert s.CreateSandboxRequest.FromString(s.CreateSandboxRequest(image='x').SerializeToString()).image == 'x'; print('protobuf', google.protobuf.__version__, 'ok')"
+          done
       - run: cargo build -p vmlayerd
         working-directory: .
       - name: Static guest agent (musl)

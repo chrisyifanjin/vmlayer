@@ -15,8 +15,16 @@ versions; every change to the SDK surface is listed.
   hand-built image.
 - `PullImage` RPC, `vmlayer pull`, `Client.pull_image` / `client.pullImage`
   to resolve an image ahead of time on any backend.
+- Framework adapters in `vmlayer.integrations`: a mini-swe-agent
+  `Environment` and an AutoGen `CodeExecutor`, as extras
+  (`vmlayer[minisweagent]`, `vmlayer[autogen]`).
 - `Backend::cleanup_dir`: volumes written as root inside containers are
   removed through the engine when the daemon cannot delete them itself.
+
+### Changed
+- Python SDK now requires `protobuf>=5.26` and `grpcio>=1.68` (was
+  effectively protobuf 7.35+) and imports under protobuf 5, 6 and 7, so it
+  installs next to frameworks that pin protobuf (decision 0010).
 
 ## [0.1.0] - 2026-11-15
 

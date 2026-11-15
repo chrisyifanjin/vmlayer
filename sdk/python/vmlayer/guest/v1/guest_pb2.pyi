@@ -1,13 +1,10 @@
-import datetime
-
 from google.protobuf import duration_pb2 as _duration_pb2
 from vmlayer.v1 import common_pb2 as _common_pb2
 from vmlayer.v1 import processes_pb2 as _processes_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -31,7 +28,7 @@ class MountRequest(_message.Message):
     path: str
     fstype: str
     read_only: bool
-    def __init__(self, source: _Optional[str] = ..., path: _Optional[str] = ..., fstype: _Optional[str] = ..., read_only: _Optional[bool] = ...) -> None: ...
+    def __init__(self, source: _Optional[str] = ..., path: _Optional[str] = ..., fstype: _Optional[str] = ..., read_only: bool = ...) -> None: ...
 
 class UnmountRequest(_message.Message):
     __slots__ = ("path",)
@@ -62,4 +59,4 @@ class WaitForPortRequest(_message.Message):
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     port: int
     timeout: _duration_pb2.Duration
-    def __init__(self, port: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, port: _Optional[int] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...

@@ -6,7 +6,7 @@ import warnings
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 from vmlayer.v1 import system_pb2 as vmlayer_dot_v1_dot_system__pb2
 
-GRPC_GENERATED_VERSION = '1.85.1'
+GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -19,14 +19,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in vmlayer/v1/system_pb2_grpc.py depends on'
+        + f' but the generated code in vmlayer/v1/system_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class SystemStub:
+class SystemStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -62,7 +62,7 @@ class SystemStub:
                 _registered_method=True)
 
 
-class SystemServicer:
+class SystemServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Info(self, request, context):
@@ -133,7 +133,7 @@ def add_SystemServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class System:
+class System(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
