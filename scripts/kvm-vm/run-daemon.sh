@@ -17,6 +17,8 @@ firecracker_bin = "$PREFIX/bin/firecracker"
 jailer_bin = "$PREFIX/bin/jailer"
 kernel = "$PREFIX/kernel/vmlinux"
 guest_agent = "$PREFIX/bin/vmlayer-guest-agent"
+template_snapshots = true
+template_warmup_argv = ["python3", "-c", "pass"]
 TOML
 sudo pkill -x vmlayerd 2>/dev/null || true
 sleep 0.5

@@ -539,6 +539,10 @@ impl Guest for Agent {
         req: Request<guest::ConfigureRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
         let r = req.into_inner();
+        if !r.hostname.is_empty() {
+            nix::unistd::sethostname(&r.hostname)
+                .map_err(|e| Status::failed_precondition(format!("hostname: {e}")))?;
+        }
         if !r.cwd.is_empty() {
             tokio::fs::create_dir_all(&r.cwd)
                 .await

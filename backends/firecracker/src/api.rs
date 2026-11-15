@@ -164,7 +164,10 @@ impl Client {
                 vcpu_count,
                 mem_size_mib,
                 smt: false,
-                track_dirty_pages: true,
+                // Full snapshots do not use dirty-page tracking. Keeping it
+                // enabled makes every guest write pay KVM logging overhead,
+                // including the cold boot that dominates sandbox creation.
+                track_dirty_pages: false,
             },
         )
         .await

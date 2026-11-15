@@ -42,6 +42,10 @@ pub struct FirecrackerConfig {
     pub host_subnet: String,
     pub dns: Vec<String>,
     pub agent_port: u32,
+    /// Restore eligible sandboxes from an on-disk, data-free VM template.
+    pub template_snapshots: bool,
+    /// Admin-controlled, data-free command to populate guest page cache.
+    pub template_warmup_argv: Vec<String>,
 }
 
 impl Default for FirecrackerConfig {
@@ -58,6 +62,8 @@ impl Default for FirecrackerConfig {
             host_subnet: "10.200.0.0/16".into(),
             dns: vec!["1.1.1.1".into(), "8.8.8.8".into()],
             agent_port: 5200,
+            template_snapshots: false,
+            template_warmup_argv: Vec::new(),
         }
     }
 }

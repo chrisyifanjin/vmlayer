@@ -1,9 +1,7 @@
 //! Firecracker backend: one jailed microVM per sandbox.
 //!
-//! Status: written against the Firecracker 1.16 API and type-checked, but
-//! **not yet exercised on a KVM host**. Roadmap steps 1 and 2 are exactly
-//! that exercise. Everything host-specific is isolated so the first run on
-//! real hardware changes `vm.rs` and `net.rs`, not the contract.
+//! Exercised with Firecracker 1.18 on aarch64 nested KVM. The backend keeps
+//! one jailed microVM per sandbox and can restore from memory snapshots.
 //!
 //! Layout on the host (`<data_dir>/firecracker/`):
 //!
@@ -27,6 +25,7 @@ mod guest;
 mod net;
 mod process;
 mod sandbox;
+mod template;
 mod vm;
 
 use std::path::{Path, PathBuf};
@@ -72,6 +71,10 @@ pub struct Config {
     pub agent_port: u32,
     /// Static guest agent binary to inject into root images that lack one.
     pub guest_agent: Option<PathBuf>,
+    /// Keep a data-free snapshot on disk for eligible cold creates.
+    pub template_snapshots: bool,
+    /// Optional command run before freezing the data-free template.
+    pub template_warmup_argv: Vec<String>,
 }
 
 impl Config {
@@ -91,6 +94,7 @@ impl Config {
 pub struct FirecrackerBackend {
     config: Arc<Config>,
     net: Arc<Mutex<net::Pool>>,
+    template_lock: Arc<Mutex<()>>,
 }
 
 impl FirecrackerBackend {
@@ -99,6 +103,7 @@ impl FirecrackerBackend {
         Self {
             config: Arc::new(config),
             net: Arc::new(Mutex::new(pool)),
+            template_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -157,6 +162,41 @@ impl Backend for FirecrackerBackend {
             })?;
         net::ensure_host(self.config.subnet).await?;
         api::version(&self.config.firecracker_bin).await?;
+        // A daemon restart can interrupt a background template build. These
+        // VMs are never registered as user sandboxes, so recover and remove
+        // them before reserving surviving network namespaces.
+        let template_jails = self.config.data_dir.join("jail/firecracker");
+        if let Ok(mut entries) = tokio::fs::read_dir(&template_jails).await {
+            while let Some(entry) = entries.next_entry().await? {
+                let id = entry.file_name();
+                let id = id.to_string_lossy();
+                if !id.starts_with("template-") {
+                    continue;
+                }
+                let jail_root = self.config.jail_root(&SandboxId(id.to_string()));
+                let index = vm::Vm::lease_index(&jail_root);
+                match vm::Vm::attach(&self.config, &id).await {
+                    Ok(mut vmm) => {
+                        vmm.kill().await?;
+                    }
+                    Err(error) => {
+                        let pid = tokio::fs::read_to_string(jail_root.join(vm::PID_FILE))
+                            .await
+                            .ok()
+                            .and_then(|text| text.trim().parse::<u32>().ok());
+                        if pid.is_some_and(|pid| Path::new(&format!("/proc/{pid}")).exists()) {
+                            tracing::warn!(%id, %error, "template VM may still be running; retaining its network lease");
+                            continue;
+                        }
+                    }
+                }
+                if let Some(index) = index {
+                    let lease = self.net.lock().await.lease_for(index);
+                    net::delete_netns(&lease).await;
+                }
+                let _ = tokio::fs::remove_dir_all(entry.path()).await;
+            }
+        }
         // Namespaces left by a previous daemon belong to VMs we may reattach;
         // keep their indices out of the pool until they are released.
         let mut pool = self.net.lock().await;
@@ -176,9 +216,51 @@ impl Backend for FirecrackerBackend {
                 })
             }
         };
+        let eligible = self.config.template_snapshots && spec.mounts.is_empty();
+        if eligible {
+            let path = self.template_ref_path(&spec, &base);
+            if let Some(snapshot) = self.cached_template(&path).await {
+                let lease = self.net.lock().await.allocate(&spec.id)?;
+                match FirecrackerSandbox::restore_template(
+                    self.config.clone(),
+                    self.net.clone(),
+                    spec.clone(),
+                    &snapshot,
+                    lease,
+                )
+                .await
+                {
+                    Ok(sb) => return Ok(Box::new(sb)),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "template restore failed; cold booting");
+                        let _ = tokio::fs::remove_file(path).await;
+                    }
+                }
+            }
+        }
+        let template_spec = eligible.then(|| spec.clone());
+        let template_base = base.clone();
         let lease = self.net.lock().await.allocate(&spec.id)?;
         let sb = FirecrackerSandbox::boot(self.config.clone(), self.net.clone(), spec, base, lease)
             .await?;
+        if let Some(template_spec) = template_spec {
+            let config = self.config.clone();
+            let net = self.net.clone();
+            let template_lock = self.template_lock.clone();
+            tokio::spawn(async move {
+                // Let the first caller run an initial command before the
+                // one-time template build competes for CPU on this host.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                let backend = FirecrackerBackend {
+                    config,
+                    net,
+                    template_lock,
+                };
+                if let Err(e) = backend.template_for(&template_spec, &template_base).await {
+                    tracing::warn!(error = %e, "background template build failed");
+                }
+            });
+        }
         Ok(Box::new(sb))
     }
 

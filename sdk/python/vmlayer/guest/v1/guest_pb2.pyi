@@ -19,7 +19,7 @@ class ReadyResponse(_message.Message):
     def __init__(self, agent_version: _Optional[str] = ..., kernel: _Optional[str] = ..., uptime: _Optional[float] = ...) -> None: ...
 
 class ConfigureRequest(_message.Message):
-    __slots__ = ("env", "cwd")
+    __slots__ = ("env", "cwd", "hostname")
     class EnvEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -29,9 +29,11 @@ class ConfigureRequest(_message.Message):
         def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     ENV_FIELD_NUMBER: _ClassVar[int]
     CWD_FIELD_NUMBER: _ClassVar[int]
+    HOSTNAME_FIELD_NUMBER: _ClassVar[int]
     env: _containers.ScalarMap[str, str]
     cwd: str
-    def __init__(self, env: _Optional[_Mapping[str, str]] = ..., cwd: _Optional[str] = ...) -> None: ...
+    hostname: str
+    def __init__(self, env: _Optional[_Mapping[str, str]] = ..., cwd: _Optional[str] = ..., hostname: _Optional[str] = ...) -> None: ...
 
 class MountRequest(_message.Message):
     __slots__ = ("source", "path", "fstype", "read_only")

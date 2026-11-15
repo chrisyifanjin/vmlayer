@@ -119,6 +119,11 @@ the pod-per-sandbox alternative. Kubernetes can use VM-backed RuntimeClasses
 such as Kata; the distinction here is the sandbox request path and lifecycle,
 not a claim that Kubernetes cannot run VMs.
 
+For tools that need no mounted workspace volume, the Firecracker backend can
+restore each new VM from an on-disk, data-free boot template. This is optional
+(`firecracker.template_snapshots = true`) and keeps no idle VM alive. See the
+[cold-path benchmarks and limits](docs/benchmarks.md#on-demand-vms-from-an-on-disk-boot-template).
+
 ```
   Python SDK / CLI / (TypeScript)        your agent runtime links one of these
               │  gRPC (unix socket, or TCP + token)

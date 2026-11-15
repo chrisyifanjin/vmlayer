@@ -296,6 +296,8 @@ mod tests {
             dns: vec!["1.1.1.1".into()],
             agent_port: 5200,
             guest_agent: None,
+            template_snapshots: false,
+            template_warmup_argv: Vec::new(),
         };
         let a = boot_args(&cfg, "sb-1");
         for needle in [

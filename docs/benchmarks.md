@@ -74,9 +74,8 @@ establish throughput or behavior at scale.
 The first Python process in the new Firecracker VM incurs guest cold-page
 costs that disappear on the second call. This explains why the 9.3 ms
 steady-state Python median in the earlier table must not be compared with
-the 80 ms first-call gVisor number. Automatic template snapshots are planned
-but have not been integrated into `Sandbox.create`. The data do not justify a
-faster-create claim today.
+the 80 ms first-call gVisor number. These rows measure ordinary cold boot;
+the optional template path is measured separately below.
 
 The full samples are in
 [`bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-2026-11-15.json`](../bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-2026-11-15.json).
@@ -111,7 +110,53 @@ The rounded client samples, in milliseconds, were:
 | Agent Sandbox warm claim + Python | 267, 249, 243, 237, 253 |
 | Firecracker restore + Python | 706, 678, 661, 672, 693 |
 
-We need a repeatable benchmark with the Agent Sandbox Python SDK or direct
-Kubernetes API, resource use, and concurrent requests before claiming a
-scalability or cost advantage. The existing controller's warm-pool path is
-already faster on this local latency test.
+The existing controller's warm-pool path is faster in this local latency
+probe, at the cost of keeping a pod running. The on-demand template comparison
+below uses the direct Kubernetes API, without a warm pool.
+
+### On-demand VMs from an on-disk boot template
+
+An optional Firecracker backend setting, `template_snapshots = true`, now
+builds a data-free template after the first cold create for an image and VM
+shape. The build runs in the background. It boots a separate VM, optionally
+runs an administrator-specified `template_warmup_argv`, snapshots it, and kills
+it. Later creates restore a **new** microVM from that disk snapshot and apply
+their own hostname, environment, workdir, and entrypoint. Sandboxes with
+mounted volumes use the ordinary cold boot path. The default setting is off;
+the Lima development script enables it with a Python warmup command. A
+template is a prepared *disk image of memory*, not a pool of idle VMs.
+
+The same Minikube gVisor and Lima Firecracker hosts were measured again with
+the direct Kubernetes API and vmlayer Python SDK. Both images were cached.
+Each trial created a new sandbox, ran Python, then deleted it. The Firecracker
+side used no workspace volume so it could use the template. The gVisor side
+used no warm pool. Ten sequential trials followed one warmup per side.
+
+| Operation, p50 / p95 | Agent Sandbox + gVisor | vmlayer + Firecracker template |
+|---|---:|---:|
+| Create until ready | 1,161 / 1,443 ms | 327 / 381 ms |
+| Create through first Python | 1,207 / 1,492 ms | 642 / 718 ms |
+| First Python after create | 43 / 51 ms | 322 / 348 ms |
+| Delete until gone | 1,947 / 2,918 ms | 21 / 35 ms |
+
+Four simultaneous creates per batch (three batches, 12 trials per backend)
+gave a **batch completion** median of 3,338 ms for gVisor and 3,187 ms for
+Firecracker. Individual create-through-Python p50 was 1,814 ms for gVisor and
+2,806 ms for Firecracker. The 4-vCPU nested-KVM host is saturated here: this
+small experiment does not establish greater throughput or better p95 latency.
+
+The idle template uses no VMM process or guest RAM. Its memory file occupied
+about 257 MiB on this host for the 256-MiB test shape, plus root disk and VM
+state; template files currently need manual pruning as image versions and
+settings change. A running daemon, KVM host, and Kubernetes or host scheduler
+still cost resources. The first cold request also pays the normal boot cost,
+while a background template build briefly consumes an extra VM's resources.
+These local results compare full request paths on different Linux hosts, so
+they are directional rather than an isolation-adjusted cost benchmark.
+
+Samples and settings:
+[`serial`](../bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-template-python-warm-2026-11-15.json),
+[`four-way`](../bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-template-python-warm-parallel4-2026-11-15.json).
+Reproduce with `bench/compare_agent_sandbox.py --transport api --no-workspace`
+and, for bursts, `--parallel 4`. The script uses the Kubernetes Python client
+for create, watch, exec, and delete, avoiding `kubectl` subprocess overhead.

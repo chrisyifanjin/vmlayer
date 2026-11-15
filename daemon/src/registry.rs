@@ -187,5 +187,7 @@ fn firecracker_config(
         dns: fc.dns.clone(),
         agent_port: fc.agent_port,
         guest_agent: fc.guest_agent.clone(),
+        template_snapshots: fc.template_snapshots,
+        template_warmup_argv: fc.template_warmup_argv.clone(),
     })
 }

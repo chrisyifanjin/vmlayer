@@ -203,6 +203,63 @@ impl FirecrackerSandbox {
         Ok(())
     }
 
+    async fn configure_guest(
+        agent: &mut Agent,
+        spec: &SandboxSpec,
+        mounts: &[(String, String)],
+    ) -> Result<()> {
+        for (dev, path) in mounts {
+            let ro = spec
+                .mounts
+                .iter()
+                .find(|m| &m.guest_path == path)
+                .map(|m| m.read_only)
+                .unwrap_or(false);
+            agent
+                .guest
+                .mount(guest::MountRequest {
+                    source: dev.clone(),
+                    path: path.clone(),
+                    fstype: "ext4".into(),
+                    read_only: ro,
+                })
+                .await
+                .map_err(|e| err(format!("mounting {dev} at {path}: {e}")))?;
+        }
+        let mut env: std::collections::HashMap<String, String> = spec
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        env.entry("PATH".into())
+            .or_insert_with(|| DEFAULT_PATH.into());
+        agent
+            .guest
+            .configure(guest::ConfigureRequest {
+                env,
+                cwd: spec.workdir.clone(),
+                hostname: spec.id.0.clone(),
+            })
+            .await
+            .map_err(|e| err(format!("configuring guest: {e}")))?;
+        if let Some(entry) = &spec.entrypoint {
+            agent
+                .guest
+                .start_entrypoint(guest::EntrypointRequest {
+                    argv: entry.argv.clone(),
+                    cwd: entry.cwd.clone().unwrap_or_default(),
+                    env: entry
+                        .env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                })
+                .await
+                .map_err(|e| err(format!("starting entrypoint: {e}")))?;
+        }
+        Ok(())
+    }
+
     pub async fn boot(
         config: Arc<Config>,
         pool: Arc<Mutex<Pool>>,
@@ -232,56 +289,7 @@ impl FirecrackerSandbox {
                 guest_boot_ms = (t0.elapsed() - t_start).as_millis() as u64,
                 "microVM booted"
             );
-            for (dev, path) in &mounts {
-                let ro = spec
-                    .mounts
-                    .iter()
-                    .find(|m| &m.guest_path == path)
-                    .map(|m| m.read_only)
-                    .unwrap_or(false);
-                agent
-                    .guest
-                    .mount(guest::MountRequest {
-                        source: dev.clone(),
-                        path: path.clone(),
-                        fstype: "ext4".into(),
-                        read_only: ro,
-                    })
-                    .await
-                    .map_err(|e| err(format!("mounting {dev} at {path}: {e}")))?;
-            }
-            // Sandbox-wide defaults: the image's and caller's environment and
-            // the working directory apply to every process, as on Docker.
-            let mut env: std::collections::HashMap<String, String> = spec
-                .env
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            env.entry("PATH".into())
-                .or_insert_with(|| DEFAULT_PATH.into());
-            agent
-                .guest
-                .configure(guest::ConfigureRequest {
-                    env,
-                    cwd: spec.workdir.clone(),
-                })
-                .await
-                .map_err(|e| err(format!("configuring guest: {e}")))?;
-            if let Some(entry) = &spec.entrypoint {
-                agent
-                    .guest
-                    .start_entrypoint(guest::EntrypointRequest {
-                        argv: entry.argv.clone(),
-                        cwd: entry.cwd.clone().unwrap_or_default(),
-                        env: entry
-                            .env
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect(),
-                    })
-                    .await
-                    .map_err(|e| err(format!("starting entrypoint: {e}")))?;
-            }
+            Self::configure_guest(&mut agent, &spec, &mounts).await?;
             let created_at = SystemTime::now();
             Self::write_jail_meta(
                 &jail,
@@ -422,6 +430,25 @@ impl FirecrackerSandbox {
             pool.lock().await.release(lease.index);
         }
         result
+    }
+
+    /// Resume the data-free template, then apply this sandbox's own defaults
+    /// and entrypoint. A normal user snapshot resumes its existing processes
+    /// and must never start the entrypoint a second time.
+    pub async fn restore_template(
+        config: Arc<Config>,
+        pool: Arc<Mutex<Pool>>,
+        spec: SandboxSpec,
+        snapshot: &SnapshotRef,
+        lease: Lease,
+    ) -> Result<Self> {
+        let sandbox = Self::restore(config, pool, spec, snapshot, lease).await?;
+        let mut agent = sandbox.link.agent();
+        if let Err(error) = Self::configure_guest(&mut agent, &sandbox.spec, &[]).await {
+            let _ = sandbox.kill().await;
+            return Err(error);
+        }
+        Ok(sandbox)
     }
 
     pub async fn attach(
@@ -876,7 +903,7 @@ impl SandboxHandle for FirecrackerSandbox {
 
 /// Host CPU model, recorded with memory snapshots (they do not restore on a
 /// different microarchitecture).
-fn cpu_model() -> Option<String> {
+pub(crate) fn cpu_model() -> Option<String> {
     let text = std::fs::read_to_string("/proc/cpuinfo").ok()?;
     text.lines()
         .find(|l| l.starts_with("model name") || l.starts_with("CPU part"))

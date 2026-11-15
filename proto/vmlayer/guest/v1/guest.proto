@@ -40,6 +40,8 @@ message ReadyResponse {
 message ConfigureRequest {
   map<string, string> env = 1;
   string cwd = 2;
+  // Rebind the guest identity after restoring a shared boot template.
+  string hostname = 3;
 }
 
 message MountRequest {

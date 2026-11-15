@@ -44,6 +44,7 @@ class VmlayerSandbox(BaseSandbox):
                 image,
                 backend=Backend(backend),
                 memory_mb=memory_mb,
+                workspace=None,
                 entrypoint=None,
                 labels={"created-by": "deepagents"},
                 client=client,
