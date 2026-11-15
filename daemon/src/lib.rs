@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod grpc;
+pub mod images;
 pub mod manager;
 pub mod registry;
 pub mod server;

@@ -55,6 +55,11 @@ class SystemStub:
                 request_serializer=vmlayer_dot_v1_dot_system__pb2.DeleteSnapshotRequest.SerializeToString,
                 response_deserializer=vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
                 _registered_method=True)
+        self.PullImage = channel.unary_unary(
+                '/vmlayer.v1.System/PullImage',
+                request_serializer=vmlayer_dot_v1_dot_system__pb2.PullImageRequest.SerializeToString,
+                response_deserializer=vmlayer_dot_v1_dot_system__pb2.ImageInfo.FromString,
+                _registered_method=True)
 
 
 class SystemServicer:
@@ -84,6 +89,14 @@ class SystemServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PullImage(self, request, context):
+        """Resolve an image for a backend ahead of time: pull it and, for microVM
+        backends, build the root filesystem. Idempotent; later creates are fast.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -106,6 +119,11 @@ def add_SystemServicer_to_server(servicer, server):
                     servicer.DeleteSnapshot,
                     request_deserializer=vmlayer_dot_v1_dot_system__pb2.DeleteSnapshotRequest.FromString,
                     response_serializer=vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            ),
+            'PullImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.PullImage,
+                    request_deserializer=vmlayer_dot_v1_dot_system__pb2.PullImageRequest.FromString,
+                    response_serializer=vmlayer_dot_v1_dot_system__pb2.ImageInfo.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -216,6 +234,33 @@ class System:
             '/vmlayer.v1.System/DeleteSnapshot',
             vmlayer_dot_v1_dot_system__pb2.DeleteSnapshotRequest.SerializeToString,
             vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PullImage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vmlayer.v1.System/PullImage',
+            vmlayer_dot_v1_dot_system__pb2.PullImageRequest.SerializeToString,
+            vmlayer_dot_v1_dot_system__pb2.ImageInfo.FromString,
             options,
             channel_credentials,
             insecure,

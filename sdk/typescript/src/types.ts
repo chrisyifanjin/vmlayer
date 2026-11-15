@@ -97,3 +97,14 @@ export interface Snapshot {
   volumes: VolumeSnapshot[];
   labels: Record<string, string>;
 }
+
+/** An image resolved for one backend. */
+export interface ImageInfo {
+  image: string;
+  backend: string;
+  /** "engine" (held by the container engine), "ext4" or "dir". */
+  rootfsKind: string;
+  rootfsPath: string | null;
+  entrypoint: string[];
+  workdir: string | null;
+}

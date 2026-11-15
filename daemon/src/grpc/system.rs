@@ -46,6 +46,29 @@ impl System for Services {
         }))
     }
 
+    async fn pull_image(
+        &self,
+        req: Request<pb::PullImageRequest>,
+    ) -> Result<Response<pb::ImageInfo>, Status> {
+        let r = req.into_inner();
+        convert::require_id(&r.image, "image")?;
+        let (backend, entry) = self.daemon.registry.pick(&r.backend).map_err(status)?;
+        let resolved = entry.resolver.resolve(&r.image).await.map_err(status)?;
+        let (rootfs_kind, rootfs_path) = match &resolved.rootfs {
+            vmlayer_core::Rootfs::EngineImage { .. } => ("engine", String::new()),
+            vmlayer_core::Rootfs::Ext4 { path } => ("ext4", path.display().to_string()),
+            vmlayer_core::Rootfs::Dir { path } => ("dir", path.display().to_string()),
+        };
+        Ok(Response::new(pb::ImageInfo {
+            image: r.image,
+            backend,
+            rootfs_kind: rootfs_kind.to_string(),
+            rootfs_path,
+            entrypoint: resolved.entrypoint.unwrap_or_default(),
+            workdir: resolved.workdir.unwrap_or_default(),
+        }))
+    }
+
     async fn delete_snapshot(
         &self,
         req: Request<pb::DeleteSnapshotRequest>,

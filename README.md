@@ -37,6 +37,7 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Docker backend (Linux, macOS, CI) | working: exec, pty, files, volumes, filesystem snapshots, restore, expose, TTLs |
 | Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working (directory and ext4 block-image kinds) |
 | Guest agent (PID 1 in the VM; exec, files, pty, mounts over vsock) | working, tested end to end in a container |
+| Image pipeline for microVMs (OCI pull → cached ext4, no Docker needed) | working, tested on Linux with a real pull |
 | Firecracker backend (memory snapshots, fork) | implemented and unit-tested; first run on a KVM host pending ([setup](docs/firecracker.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | S3-compatible blob store for durable snapshots | planned |

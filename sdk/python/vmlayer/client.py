@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from . import _rpc
-from .types import Backend, BackendInfo, Capabilities, SystemInfo
+from .types import Backend, BackendInfo, Capabilities, ImageInfo, SystemInfo
 from .v1 import common_pb2, sandboxes_pb2, system_pb2, volumes_pb2
 
 if TYPE_CHECKING:
@@ -82,6 +82,23 @@ class Client:
                 except ValueError:
                     continue
         return out
+
+    def pull_image(self, image: str, *, backend: Backend = Backend.AUTO) -> ImageInfo:
+        """Resolve an image for a backend ahead of time: pull it and, on
+        microVM backends, build its root filesystem. Later creates are fast."""
+        r = self._conn.call(
+            self._conn.system.PullImage,
+            system_pb2.PullImageRequest(image=image, backend=backend.value),
+            timeout=1800,
+        )
+        return ImageInfo(
+            image=r.image,
+            backend=r.backend,
+            rootfs_kind=r.rootfs_kind,
+            rootfs_path=r.rootfs_path or None,
+            entrypoint=tuple(r.entrypoint),
+            workdir=r.workdir or None,
+        )
 
     def list_sandboxes(self, *, labels: Mapping[str, str] | None = None) -> list[Sandbox]:
         from .sandbox import Sandbox

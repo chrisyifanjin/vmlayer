@@ -23,6 +23,13 @@ client.available_backends()   # {Backend.DOCKER: "29.5.2"}
 
 `VMLAYER_ENDPOINT` sets the default endpoint without code changes.
 
+Pulling an image ahead of time makes the first `create` fast (on microVM
+backends it also builds the root filesystem):
+
+```python
+client.pull_image("python:3.12")          # or: vmlayer pull python:3.12
+```
+
 ## Sandboxes
 
 ```python

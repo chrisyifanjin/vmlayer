@@ -70,6 +70,8 @@ type-checked on macOS with
 `cargo clippy -p vmlayer-guest-agent -p vmlayer-backend-firecracker --target aarch64-unknown-linux-gnu`;
 `scripts/build-guest-agent.sh` builds the static agent in Docker and
 `VMLAYER_GUEST_AGENT_BIN=... uv run pytest` exercises it in a container.
+`scripts/test-linux.sh` runs the Rust tests that need Linux tools (`mkfs.ext4`,
+`debugfs`) in a container; pass cargo test arguments to narrow it.
 
 `make check` runs every linter; `make test-live` runs the live Docker and
 end-to-end suites; `make proto` regenerates the Python stubs after a
