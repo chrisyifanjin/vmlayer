@@ -62,25 +62,55 @@ vmlayer's first draft had no way to run something at boot other than
 | Cancellation token | AutoGen | `Process.kill()`. |
 | Output-based (idle) timeout instead of wall clock | SWE-ReX | Not added. Adapters implement idle timeouts on the `spawn` stream. |
 
-## Planned adapters
+## Adapters
 
-Each is a small package under `integrations/`, with its own tests against a
-live daemon. Estimated size is after the daemon exists; none can be written
-before roadmap step 4.
+Adapters live in the Python SDK under `vmlayer.integrations` and import
+their framework lazily; install with the matching extra.
 
-| Adapter | Implements | Pattern | Size |
-|---|---|---|---|
-| `vmlayer-minisweagent` | `Environment` | exec | ~30 lines |
-| `vmlayer-autogen` | `CodeExecutor` | write + exec + kill | ~80 lines |
-| `vmlayer-adk` | `BaseCodeExecutor` | write + exec | ~80 lines |
-| `vmlayer-swerex` | `AbstractDeployment` | boot swerex-server image, expose, point `RemoteRuntime` at it | ~120 lines |
-| `vmlayer-openhands` | `BaseWorkspace` | boot agent-server image, expose, delegate to `RemoteWorkspace` | ~150 lines |
-| `vmlayer-smolagents` | `RemotePythonExecutor` | boot kernel-gateway image, expose, Jupyter websocket | ~150 lines |
+| Adapter | Implements | Status |
+|---|---|---|
+| `vmlayer.integrations.minisweagent.VmlayerEnvironment` | mini-swe-agent `Environment` | **working**; tested by running a real `DefaultAgent` loop to submission (`pip install "vmlayer[minisweagent]"`) |
+| `vmlayer.integrations.autogen.VmlayerCodeExecutor` | AutoGen `CodeExecutor` | **working**; tested with real `CodeBlock`s incl. timeout, cancellation, restart (`pip install "vmlayer[autogen]"`) |
+| Google ADK `BaseCodeExecutor` | write + exec | planned |
+| SWE-ReX `AbstractDeployment` | boot swerex-server image, expose | planned |
+| OpenHands `BaseWorkspace` | boot agent-server image, expose | planned |
+| smolagents `RemotePythonExecutor` | boot kernel-gateway image, expose, Jupyter websocket | planned |
 
-The order above is also the validation order: the exec-shaped ones first,
-because they exercise the basic path, then the server-shaped ones, because
-they exercise `entrypoint` + `expose` + `wait_for_port` + snapshots of a
-warmed-up server (the thing that makes agent cold starts fast).
+```python
+from minisweagent.agents.default import DefaultAgent
+from vmlayer.integrations.minisweagent import VmlayerEnvironment
+
+env = VmlayerEnvironment(image="python:3.12", workspace="repo-42")   # volume survives the run
+agent = DefaultAgent(model, env, **agent_config)
+agent.run("Fix the failing test")
+env.sandbox.snapshot()          # the vmlayer sandbox is right there
+```
+
+```python
+from vmlayer.integrations.autogen import VmlayerCodeExecutor
+
+async with VmlayerCodeExecutor(image="python:3.12") as executor:
+    result = await executor.execute_code_blocks([CodeBlock(language="python", code="print(6*7)")], token)
+```
+
+### What plugging in found
+
+Writing the first two adapters against the real packages changed the SDK
+twice more:
+
+- **Protobuf pinning.** `autogen-core` pins `protobuf~=5.29`; the SDK's
+  checked-in stubs demanded 7.x and `import vmlayer` failed beside AutoGen.
+  The stubs are now generated with an old pinned toolchain and the version
+  pin is stripped ([decision 0010](decisions/0010-python-stub-compatibility.md));
+  one wheel imports under protobuf 5, 6 and 7.
+- **Cancellation needs `spawn`, not `exec`.** AutoGen cancels a running
+  block through a token. A blocking `exec` cannot be interrupted from
+  another task, so the adapter spawns, waits in a thread, and kills the
+  process on cancel. `Process.kill` on a handle whose `wait` is in flight
+  had to work, and does.
+- **Both frameworks want stdout and stderr merged** in arrival order;
+  `ExecResult.output` (added after the first survey) is what both adapters
+  return.
 
 ## What this changes about priorities
 

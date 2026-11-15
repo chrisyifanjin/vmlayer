@@ -6,7 +6,7 @@ import warnings
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 from vmlayer.v1 import processes_pb2 as vmlayer_dot_v1_dot_processes__pb2
 
-GRPC_GENERATED_VERSION = '1.85.1'
+GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -19,14 +19,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in vmlayer/v1/processes_pb2_grpc.py depends on'
+        + f' but the generated code in vmlayer/v1/processes_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class ProcessesStub:
+class ProcessesStub(object):
     """Processes inside a sandbox. `Exec` is the one RPC the SDK's exec, spawn
     and pty are all built on; the rest attach to running processes.
     """
@@ -74,7 +74,7 @@ class ProcessesStub:
                 _registered_method=True)
 
 
-class ProcessesServicer:
+class ProcessesServicer(object):
     """Processes inside a sandbox. `Exec` is the one RPC the SDK's exec, spawn
     and pty are all built on; the rest attach to running processes.
     """
@@ -174,7 +174,7 @@ def add_ProcessesServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Processes:
+class Processes(object):
     """Processes inside a sandbox. `Exec` is the one RPC the SDK's exec, spawn
     and pty are all built on; the rest attach to running processes.
     """

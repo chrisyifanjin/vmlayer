@@ -1,13 +1,10 @@
-import datetime
-
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from google.protobuf import duration_pb2 as _duration_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -64,7 +61,7 @@ class Capabilities(_message.Message):
     expose_port: bool
     volumes: bool
     hot_attach: bool
-    def __init__(self, snapshot: _Optional[bool] = ..., memory_snapshot: _Optional[bool] = ..., fork: _Optional[bool] = ..., pause: _Optional[bool] = ..., pty: _Optional[bool] = ..., expose_port: _Optional[bool] = ..., volumes: _Optional[bool] = ..., hot_attach: _Optional[bool] = ...) -> None: ...
+    def __init__(self, snapshot: bool = ..., memory_snapshot: bool = ..., fork: bool = ..., pause: bool = ..., pty: bool = ..., expose_port: bool = ..., volumes: bool = ..., hot_attach: bool = ...) -> None: ...
 
 class Endpoint(_message.Message):
     __slots__ = ("host", "port")
@@ -82,7 +79,7 @@ class Mount(_message.Message):
     volume_id: str
     guest_path: str
     read_only: bool
-    def __init__(self, volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., read_only: _Optional[bool] = ...) -> None: ...
+    def __init__(self, volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., read_only: bool = ...) -> None: ...
 
 class Sandbox(_message.Message):
     __slots__ = ("id", "backend", "state", "capabilities", "image", "workdir", "workspace_volume_id", "mounts", "created_at", "labels", "exposed")
@@ -122,7 +119,7 @@ class Sandbox(_message.Message):
     created_at: _timestamp_pb2.Timestamp
     labels: _containers.ScalarMap[str, str]
     exposed: _containers.MessageMap[int, Endpoint]
-    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., state: _Optional[_Union[SandboxState, str]] = ..., capabilities: _Optional[_Union[Capabilities, _Mapping]] = ..., image: _Optional[str] = ..., workdir: _Optional[str] = ..., workspace_volume_id: _Optional[str] = ..., mounts: _Optional[_Iterable[_Union[Mount, _Mapping]]] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., labels: _Optional[_Mapping[str, str]] = ..., exposed: _Optional[_Mapping[int, Endpoint]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., state: _Optional[_Union[SandboxState, str]] = ..., capabilities: _Optional[_Union[Capabilities, _Mapping]] = ..., image: _Optional[str] = ..., workdir: _Optional[str] = ..., workspace_volume_id: _Optional[str] = ..., mounts: _Optional[_Iterable[_Union[Mount, _Mapping]]] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., labels: _Optional[_Mapping[str, str]] = ..., exposed: _Optional[_Mapping[int, Endpoint]] = ...) -> None: ...
 
 class Volume(_message.Message):
     __slots__ = ("id", "name", "size_mib", "labels", "attached_to", "anonymous", "created_at")
@@ -147,7 +144,7 @@ class Volume(_message.Message):
     attached_to: str
     anonymous: bool
     created_at: _timestamp_pb2.Timestamp
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., size_mib: _Optional[int] = ..., labels: _Optional[_Mapping[str, str]] = ..., attached_to: _Optional[str] = ..., anonymous: _Optional[bool] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., size_mib: _Optional[int] = ..., labels: _Optional[_Mapping[str, str]] = ..., attached_to: _Optional[str] = ..., anonymous: bool = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class VolumeSnapshot(_message.Message):
     __slots__ = ("id", "volume_id", "guest_path", "created_at", "size_bytes", "durable", "labels")
@@ -172,7 +169,7 @@ class VolumeSnapshot(_message.Message):
     size_bytes: int
     durable: bool
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., durable: _Optional[bool] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., durable: bool = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class Snapshot(_message.Message):
     __slots__ = ("id", "backend", "engine_version", "cpu_model", "created_at", "size_bytes", "includes_memory", "volumes", "labels")
@@ -201,7 +198,7 @@ class Snapshot(_message.Message):
     includes_memory: bool
     volumes: _containers.RepeatedCompositeFieldContainer[VolumeSnapshot]
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., engine_version: _Optional[str] = ..., cpu_model: _Optional[str] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., includes_memory: _Optional[bool] = ..., volumes: _Optional[_Iterable[_Union[VolumeSnapshot, _Mapping]]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., engine_version: _Optional[str] = ..., cpu_model: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., includes_memory: bool = ..., volumes: _Optional[_Iterable[_Union[VolumeSnapshot, _Mapping]]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ExitStatus(_message.Message):
     __slots__ = ("code", "signal", "duration", "timed_out")
@@ -213,7 +210,7 @@ class ExitStatus(_message.Message):
     signal: int
     duration: _duration_pb2.Duration
     timed_out: bool
-    def __init__(self, code: _Optional[int] = ..., signal: _Optional[int] = ..., duration: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., timed_out: _Optional[bool] = ...) -> None: ...
+    def __init__(self, code: _Optional[int] = ..., signal: _Optional[int] = ..., duration: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., timed_out: bool = ...) -> None: ...
 
 class OutputChunk(_message.Message):
     __slots__ = ("stream", "data")
@@ -233,7 +230,7 @@ class ProcessInfo(_message.Message):
     argv: _containers.RepeatedScalarFieldContainer[str]
     started_at: _timestamp_pb2.Timestamp
     is_entrypoint: bool
-    def __init__(self, pid: _Optional[int] = ..., argv: _Optional[_Iterable[str]] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., is_entrypoint: _Optional[bool] = ...) -> None: ...
+    def __init__(self, pid: _Optional[int] = ..., argv: _Optional[_Iterable[str]] = ..., started_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., is_entrypoint: bool = ...) -> None: ...
 
 class FileInfo(_message.Message):
     __slots__ = ("path", "size", "is_dir", "mode", "modified_at")
@@ -247,7 +244,7 @@ class FileInfo(_message.Message):
     is_dir: bool
     mode: int
     modified_at: _timestamp_pb2.Timestamp
-    def __init__(self, path: _Optional[str] = ..., size: _Optional[int] = ..., is_dir: _Optional[bool] = ..., mode: _Optional[int] = ..., modified_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    def __init__(self, path: _Optional[str] = ..., size: _Optional[int] = ..., is_dir: bool = ..., mode: _Optional[int] = ..., modified_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class Empty(_message.Message):
     __slots__ = ()

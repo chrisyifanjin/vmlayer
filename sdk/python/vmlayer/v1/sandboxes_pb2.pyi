@@ -1,12 +1,9 @@
-import datetime
-
 from google.protobuf import duration_pb2 as _duration_pb2
 from vmlayer.v1 import common_pb2 as _common_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -78,7 +75,7 @@ class CreateSandboxRequest(_message.Message):
     backend: str
     network: _common_pb2.NetworkMode
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, image: _Optional[str] = ..., vcpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., disk_mib: _Optional[int] = ..., env: _Optional[_Mapping[str, str]] = ..., workdir: _Optional[str] = ..., workspace: _Optional[_Union[WorkspaceSpec, _Mapping]] = ..., mounts: _Optional[_Iterable[_Union[_common_pb2.Mount, _Mapping]]] = ..., entrypoint: _Optional[_Union[EntrypointSpec, _Mapping]] = ..., ttl: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., backend: _Optional[str] = ..., network: _Optional[_Union[_common_pb2.NetworkMode, str]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, image: _Optional[str] = ..., vcpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., disk_mib: _Optional[int] = ..., env: _Optional[_Mapping[str, str]] = ..., workdir: _Optional[str] = ..., workspace: _Optional[_Union[WorkspaceSpec, _Mapping]] = ..., mounts: _Optional[_Iterable[_Union[_common_pb2.Mount, _Mapping]]] = ..., entrypoint: _Optional[_Union[EntrypointSpec, _Mapping]] = ..., ttl: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., backend: _Optional[str] = ..., network: _Optional[_Union[_common_pb2.NetworkMode, str]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class RestoreSandboxRequest(_message.Message):
     __slots__ = ("snapshot_id", "ttl", "labels")
@@ -95,7 +92,7 @@ class RestoreSandboxRequest(_message.Message):
     snapshot_id: str
     ttl: _duration_pb2.Duration
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, snapshot_id: _Optional[str] = ..., ttl: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, snapshot_id: _Optional[str] = ..., ttl: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class GetSandboxRequest(_message.Message):
     __slots__ = ("id",)
@@ -155,7 +152,7 @@ class SnapshotSandboxRequest(_message.Message):
     id: str
     labels: _containers.ScalarMap[str, str]
     stay_paused: bool
-    def __init__(self, id: _Optional[str] = ..., labels: _Optional[_Mapping[str, str]] = ..., stay_paused: _Optional[bool] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., labels: _Optional[_Mapping[str, str]] = ..., stay_paused: bool = ...) -> None: ...
 
 class ForkSandboxRequest(_message.Message):
     __slots__ = ("id", "count")
@@ -195,7 +192,7 @@ class WaitForPortRequest(_message.Message):
     id: str
     port: int
     timeout: _duration_pb2.Duration
-    def __init__(self, id: _Optional[str] = ..., port: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., port: _Optional[int] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class AttachRequest(_message.Message):
     __slots__ = ("id", "mount")

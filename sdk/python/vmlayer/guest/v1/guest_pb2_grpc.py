@@ -7,7 +7,7 @@ from vmlayer.guest.v1 import guest_pb2 as vmlayer_dot_guest_dot_v1_dot_guest__pb
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 from vmlayer.v1 import processes_pb2 as vmlayer_dot_v1_dot_processes__pb2
 
-GRPC_GENERATED_VERSION = '1.85.1'
+GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -20,14 +20,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in vmlayer/guest/v1/guest_pb2_grpc.py depends on'
+        + f' but the generated code in vmlayer/guest/v1/guest_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class GuestStub:
+class GuestStub(object):
     """Served by the guest agent inside a microVM, over vsock. The agent also
     serves vmlayer.v1.Processes and vmlayer.v1.Files unchanged (sandbox_id is
     ignored), so a backend handle is just a gRPC client. This service holds
@@ -87,7 +87,7 @@ class GuestStub:
                 _registered_method=True)
 
 
-class GuestServicer:
+class GuestServicer(object):
     """Served by the guest agent inside a microVM, over vsock. The agent also
     serves vmlayer.v1.Processes and vmlayer.v1.Files unchanged (sandbox_id is
     ignored), so a backend handle is just a gRPC client. This service holds
@@ -209,7 +209,7 @@ def add_GuestServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Guest:
+class Guest(object):
     """Served by the guest agent inside a microVM, over vsock. The agent also
     serves vmlayer.v1.Processes and vmlayer.v1.Files unchanged (sandbox_id is
     ignored), so a backend handle is just a gRPC client. This service holds

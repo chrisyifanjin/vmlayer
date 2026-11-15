@@ -1,12 +1,9 @@
-import datetime
-
 from google.protobuf import duration_pb2 as _duration_pb2
 from vmlayer.v1 import common_pb2 as _common_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -41,7 +38,7 @@ class ExecRequest(_message.Message):
     timeout: _duration_pb2.Duration
     stdin: bytes
     detach: bool
-    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., stdin: _Optional[bytes] = ..., detach: _Optional[bool] = ...) -> None: ...
+    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., stdin: _Optional[bytes] = ..., detach: bool = ...) -> None: ...
 
 class ExecEvent(_message.Message):
     __slots__ = ("started", "output", "exited", "dropped_bytes")
@@ -87,7 +84,7 @@ class WaitRequest(_message.Message):
     sandbox_id: str
     pid: int
     timeout: _duration_pb2.Duration
-    def __init__(self, sandbox_id: _Optional[str] = ..., pid: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, sandbox_id: _Optional[str] = ..., pid: _Optional[int] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class KillProcessRequest(_message.Message):
     __slots__ = ("sandbox_id", "pid", "signal")
