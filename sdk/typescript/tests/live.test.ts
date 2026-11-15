@@ -74,7 +74,13 @@ after(async () => {
   client.close();
   daemon?.kill("SIGTERM");
   await sleep(300);
-  if (process.env.VMLAYER_KEEP_TEST_DATA !== "1") fs.rmSync(tmp, { recursive: true, force: true });
+  if (process.env.VMLAYER_KEEP_TEST_DATA !== "1") {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    } catch {
+      /* files created as root inside containers may be undeletable here */
+    }
+  }
 });
 
 test("info and backends", async () => {

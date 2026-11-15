@@ -22,6 +22,9 @@ pub struct VolumeStore {
     root: PathBuf,
     store: Store,
     default_size_mib: u64,
+    /// Backends that can scrub directories the daemon cannot delete itself
+    /// (containers write as root into bind-mounted volume directories).
+    cleaners: std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<dyn vmlayer_core::Backend>>>>,
 }
 
 fn store_err(e: StoreError) -> Error {
@@ -126,6 +129,36 @@ impl VolumeStore {
             root: data_dir.to_path_buf(),
             store,
             default_size_mib,
+            cleaners: Default::default(),
+        }
+    }
+
+    pub fn set_cleaners(&self, backends: Vec<std::sync::Arc<dyn vmlayer_core::Backend>>) {
+        *self.cleaners.lock().unwrap() = backends;
+    }
+
+    /// Delete a directory under the data dir; when permission is denied,
+    /// let a backend scrub it first.
+    async fn remove_tree(&self, path: &Path) {
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => {
+                tracing::debug!(path = %path.display(), error = %e, "direct removal failed; asking backends")
+            }
+        }
+        let cleaners = self.cleaners.lock().unwrap().clone();
+        for be in cleaners {
+            match be.cleanup_dir(path).await {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(e) => tracing::warn!(backend = be.name(), error = %e, "cleanup failed"),
+            }
+        }
+        if let Err(e) = tokio::fs::remove_dir_all(path).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(path = %path.display(), error = %e, "could not remove directory");
+            }
         }
     }
 
@@ -282,7 +315,7 @@ impl VolumeStore {
         }
         self.store.delete_volume(id).map_err(store_err)?;
         if row.path.starts_with(&self.root) {
-            let _ = tokio::fs::remove_dir_all(&row.path).await;
+            self.remove_tree(&row.path).await;
         }
         Ok(())
     }
@@ -330,7 +363,7 @@ impl VolumeStore {
         let row = self.get_snapshot(id)?;
         self.store.delete_volume_snapshot(id).map_err(store_err)?;
         if row.path.starts_with(&self.root) {
-            let _ = tokio::fs::remove_dir_all(&row.path).await;
+            self.remove_tree(&row.path).await;
         }
         Ok(())
     }
