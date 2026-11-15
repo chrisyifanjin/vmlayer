@@ -3,7 +3,7 @@ resolver = "2"
 members = ["core", "proto", "procs", "backends/docker", "backends/firecracker", "daemon", "cli", "guest-agent"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/chrisyifanjin/vmlayer"

@@ -1,6 +1,9 @@
 # Using vmlayer
 
-This is the Python SDK guide. The CLI mirrors it one to one (`vmlayer --help`).
+This is the Python SDK guide. The TypeScript SDK (`sdk/typescript`) has the
+same methods in camelCase and returns promises; `await using sb = await
+Sandbox.create(...)` kills the sandbox at the end of the block. The CLI
+mirrors both (`vmlayer --help`).
 
 ## Connecting
 

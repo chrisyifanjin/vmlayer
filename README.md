@@ -1,5 +1,8 @@
 # vmlayer
 
+[![CI](https://github.com/chrisyifanjin/vmlayer/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisyifanjin/vmlayer/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **The layer between agent runtimes and microVMs.**
 
 One sandbox API for running untrusted agent code: Firecracker in production,
@@ -30,14 +33,14 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 
 | Piece | State |
 |---|---|
-| `vmlayerd` daemon, gRPC API, Python SDK, `vmlayer` CLI | working, tested end to end |
+| `vmlayerd` daemon, gRPC API, Python SDK, TypeScript SDK, `vmlayer` CLI | working, tested end to end |
 | Docker backend (Linux, macOS, CI) | working: exec, pty, files, volumes, filesystem snapshots, restore, expose, TTLs |
 | Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working (directory and ext4 block-image kinds) |
 | Guest agent (PID 1 in the VM; exec, files, pty, mounts over vsock) | working, tested end to end in a container |
 | Firecracker backend (memory snapshots, fork) | implemented and unit-tested; first run on a KVM host pending ([setup](docs/firecracker.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | S3-compatible blob store for durable snapshots | planned |
-| TypeScript SDK, E2B-compatible facade | planned |
+| E2B-compatible facade, asyncio client | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says
@@ -66,8 +69,17 @@ with vmlayer.Sandbox.create('alpine:3.20') as sb:
 "
 ```
 
-See [docs/usage.md](docs/usage.md) for the SDK guide and
-[docs/deploy.md](docs/deploy.md) for running the daemon as a service.
+TypeScript (same API, `await using` cleans up):
+
+```ts
+import { Sandbox } from "vmlayer";
+await using sb = await Sandbox.create("python:3.12-alpine");
+console.log((await sb.exec("python -c 'print(6*7)'")).stdout);
+```
+
+See [docs/usage.md](docs/usage.md) for the SDK guide, [examples/](examples/)
+for runnable programs, and [docs/deploy.md](docs/deploy.md) for running the
+daemon as a service.
 
 ## Why this exists
 
@@ -180,6 +192,8 @@ guest-agent/        static PID 1 agent for microVMs
 procs/              process table shared by daemon and agent
 cli/                vmlayer command
 sdk/python/         Python SDK and end-to-end tests
+sdk/typescript/     TypeScript SDK and end-to-end tests
+examples/           runnable examples
 docs/decisions/     design records     docs/research.md   papers that shaped it
 docs/integrations.md  six agent runtimes mapped onto the API
 ```
@@ -188,6 +202,12 @@ docs/integrations.md  six agent runtimes mapped onto the API
 
 Billing, multi-tenant user management, a web UI, service mesh. Those make a
 product. vmlayer is a library.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md)
+and the [security policy](SECURITY.md). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -1,0 +1,7 @@
+{
+  "name": "vmlayer-examples",
+  "private": true,
+  "type": "module",
+  "dependencies": { "vmlayer": "file:../sdk/typescript" },
+  "devDependencies": { "tsx": "^4.19.0" }
+}

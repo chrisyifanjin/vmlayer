@@ -31,6 +31,9 @@ jobs:
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories sources
 
   python:
     name: Python (ruff, mypy, e2e)
@@ -65,3 +68,29 @@ jobs:
         env:
           VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd
           VMLAYER_GUEST_AGENT_BIN: ${{ github.workspace }}/target/x86_64-unknown-linux-musl/release/vmlayer-guest-agent
+
+  typescript:
+    name: TypeScript (build, lint, e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - run: npm ci
+      - run: npm run sync-proto
+      - run: npm run build
+      - run: npm run lint
+      - run: cargo build -p vmlayerd
+        working-directory: .
+      - run: npm test
+        env:
+          VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd

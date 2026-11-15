@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/chrisyifanjin/vmlayer/blob/main/SECURITY.md
+    about: Please report sandbox escapes privately, not as issues.
