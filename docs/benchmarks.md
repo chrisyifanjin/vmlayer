@@ -74,10 +74,9 @@ establish throughput or behavior at scale.
 The first Python process in the new Firecracker VM incurs guest cold-page
 costs that disappear on the second call. This explains why the 9.3 ms
 steady-state Python median in the earlier table must not be compared with
-the 80 ms first-call gVisor number. A template snapshot is the planned way
-to remove cold boot and page initialization from sandbox creation; it has not
-been implemented or benchmarked. The data do not justify a faster-create
-claim today.
+the 80 ms first-call gVisor number. Automatic template snapshots are planned
+but have not been integrated into `Sandbox.create`. The data do not justify a
+faster-create claim today.
 
 The full samples are in
 [`bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-2026-11-15.json`](../bench/results/agent-sandbox-gvisor-vs-vmlayer-firecracker-2026-11-15.json).
@@ -85,3 +84,34 @@ Reproduce with `bench/compare_agent_sandbox.py`; it requires a running
 Minikube Agent Sandbox controller, a `gvisor` RuntimeClass, and a vmlayer
 daemon on a KVM host. The script uses a new Kubernetes Sandbox custom
 resource and a new vmlayer sandbox on each trial, then cleans both up.
+
+### Follow-up: pre-warmed paths
+
+A separate five-run probe on the same Minikube and Lima environments measured
+the two available pre-warmed mechanisms. For vmlayer, we booted one VM, ran
+Python once, saved a memory snapshot, then restored a new VM and ran Python
+once in each trial. For Agent Sandbox, we kept one ready gVisor pod in a
+`SandboxWarmPool`, created a `SandboxClaim` to adopt it, then ran Python once
+through `kubectl exec`. We waited for the pool to refill before each claim.
+
+| Warm path, median of 5 | Allocate / restore | First Python | Total |
+|---|---:|---:|---:|
+| Agent Sandbox + gVisor warm-pool claim | 177 ms | 72 ms | 249 ms |
+| vmlayer + Firecracker memory-snapshot restore | 192 ms | 486 ms | 678 ms |
+
+These are exploratory results, not a matched resource-cost comparison. The
+Agent Sandbox pool keeps a pod running while idle; the vmlayer snapshot is a
+disk artifact. A vmlayer pool of running VMs has not been implemented. The
+vmlayer template was warmed by one Python call, but the first process after
+restore still incurred memory page faults as the VM resumed from its snapshot.
+The rounded client samples, in milliseconds, were:
+
+| Path | Per-trial total |
+|---|---|
+| Agent Sandbox warm claim + Python | 267, 249, 243, 237, 253 |
+| Firecracker restore + Python | 706, 678, 661, 672, 693 |
+
+We need a repeatable benchmark with the Agent Sandbox Python SDK or direct
+Kubernetes API, resource use, and concurrent requests before claiming a
+scalability or cost advantage. The existing controller's warm-pool path is
+already faster on this local latency test.

@@ -26,4 +26,8 @@
 - [ ] **6. S3-compatible blob store** for durable snapshots.
 - [ ] **7. TypeScript SDK, asyncio client, E2B-compatible facade.**
 - [ ] **8. Adapters** for the six runtimes in docs/integrations.md.
+- [ ] **8a. Agent Sandbox API compatibility.** Define and test a supported
+      subset of its Sandbox lifecycle against the direct-VM host daemon.
+      The upstream controller remains Pod-backed; reusing it unchanged means
+      a Kata RuntimeClass and one Pod per sandbox.
 - [ ] Later: optional multi-host scheduler.

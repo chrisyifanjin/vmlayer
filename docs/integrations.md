@@ -141,6 +141,33 @@ twice more:
   (search over agent trajectories, RL rollouts); it stays first-class but is
   not what the first adapters will test.
 
+## Agent Sandbox controller compatibility
+
+There are two distinct integration targets:
+
+| Target | Feasible path | Request path |
+|---|---|---|
+| Use the upstream controller and SDK unchanged | Choose a VM-backed `RuntimeClass` such as Kata in `Sandbox.spec.podTemplate.spec.runtimeClassName` | `SandboxClaim` → `Sandbox` → Pod → Kata VM |
+| Use vmlayer's direct VM lifecycle while retaining a Kubernetes-facing Sandbox API | Write a separate reconciler or API adapter that maps Sandbox identity, readiness, termination, and commands to `vmlayerd` | API request → vmlayer host daemon → Firecracker VM |
+
+The upstream core `SandboxReconciler` owns a Pod for every Sandbox; its create
+path calls `reconcilePod`. Changing only `runtimeClassName` changes the Pod's
+isolation engine, not the per-sandbox Kubernetes request path. A vmlayer
+containerd runtime shim could also preserve the upstream controller, but it
+would still create a Pod per sandbox and would require an OCI runtime shim.
+
+The direct-VM option is **not implemented**. It cannot transparently promise
+all upstream semantics: `podTemplate`, Pod IPs, Services, `kubectl exec`, PVCs,
+and warm-pool claim adoption are Pod-oriented. A compatibility adapter should
+declare which fields and operations it supports and reject the others. The
+first useful subset would be create, Ready, exec/files through a gateway,
+delete, and a stable sandbox ID. It would need explicit conflict avoidance
+with the upstream controller if both watched the same CRD.
+
+Upstream references: [core reconciler](https://github.com/kubernetes-sigs/agent-sandbox/blob/main/controllers/sandbox_controller.go),
+[Kata example](https://github.com/kubernetes-sigs/agent-sandbox/blob/main/examples/kata-aks-sandbox/README.md),
+[Python SDK](https://github.com/kubernetes-sigs/agent-sandbox/blob/main/clients/python/agentic-sandbox-client/README.md).
+
 Sources read: OpenHands `software-agent-sdk` `workspace/base.py`,
 `workspace/models.py`, `workspace/remote/base.py`; SWE-ReX
 `runtime/abstract.py`; mini-swe-agent `__init__.py`; smolagents
