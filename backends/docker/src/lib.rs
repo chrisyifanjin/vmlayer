@@ -401,6 +401,56 @@ impl Backend for DockerBackend {
             .collect())
     }
 
+    async fn cleanup_dir(&self, path: &std::path::Path) -> Result<bool> {
+        use bollard::query_parameters::RemoveContainerOptionsBuilder;
+        self.ensure_image(&self.config.probe_image).await?;
+        let body = bollard::models::ContainerCreateBody {
+            image: Some(self.config.probe_image.clone()),
+            cmd: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                "rm -rf /scrub/* /scrub/.[!.]* /scrub/..?* 2>/dev/null; true".into(),
+            ]),
+            host_config: Some(bollard::models::HostConfig {
+                binds: Some(vec![format!("{}:/scrub", path.display())]),
+                network_mode: Some("none".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let created = self
+            .docker
+            .create_container(
+                None::<bollard::query_parameters::CreateContainerOptions>,
+                body,
+            )
+            .await
+            .map_err(engine_err)?;
+        let result = async {
+            self.docker
+                .start_container(&created.id, None)
+                .await
+                .map_err(engine_err)?;
+            let mut wait = self.docker.wait_container(
+                &created.id,
+                None::<bollard::query_parameters::WaitContainerOptions>,
+            );
+            while let Some(w) = wait.next().await {
+                let _ = w;
+            }
+            Ok::<(), Error>(())
+        }
+        .await;
+        let _ = self
+            .docker
+            .remove_container(
+                &created.id,
+                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+            )
+            .await;
+        result.map(|_| true)
+    }
+
     async fn delete_snapshot(&self, snapshot: &SnapshotRef) -> Result<()> {
         match self
             .docker

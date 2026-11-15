@@ -61,6 +61,14 @@ pub trait Backend: Send + Sync {
     async fn list(&self) -> Result<Vec<SandboxInfo>>;
 
     async fn delete_snapshot(&self, snapshot: &SnapshotRef) -> Result<()>;
+
+    /// Remove the contents of a host directory the engine wrote into (for
+    /// example, root-owned files a container created in a volume) when the
+    /// daemon itself lacks permission. Returns `Ok(false)` if this backend
+    /// has no way to do that; the default.
+    async fn cleanup_dir(&self, _path: &std::path::Path) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 /// Turns an image reference into something a backend can boot.

@@ -101,6 +101,7 @@ impl Daemon {
         let store = Store::open(&cfg.data_dir.join("state.db"))?;
         let volumes = VolumeStore::new(&cfg.data_dir, store.clone(), cfg.defaults.volume_size_mib);
         let registry = Registry::from_config(&cfg).await;
+        volumes.set_cleaners(registry.entries().map(|(_, e)| e.backend.clone()).collect());
         let d = Arc::new(Self {
             cfg,
             registry,
