@@ -1,6 +1,19 @@
 # cargo-deny: license and advisory policy for the Rust workspace.
 [licenses]
-allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "Zlib", "Unicode-3.0", "MPL-2.0", "OpenSSL"]
+# Permissive licenses only. CDLA-Permissive-2.0 covers the Mozilla root
+# certificate data bundled by webpki-roots (used when pulling images).
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
 confidence-threshold = 0.8
 
 [advisories]
