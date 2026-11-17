@@ -131,6 +131,32 @@ client.list_snapshots(labels={"stage": "deps-installed"})
 
 `fork(n)` is the same idea for running sandboxes (microVM backends only).
 
+### Network policy and resource limits
+
+On the Firecracker backend every sandbox is cut off from the host, from
+other sandboxes and from cloud metadata services (`169.254.169.254`).
+Outbound traffic is open unless you give an allowlist:
+
+```python
+sb = Sandbox.create(
+    "python:3.12",
+    egress=["pypi.org", "*.pythonhosted.org:443", "github.com:22,443", "10.0.0.0/8:5432"],
+    limits=vmlayer.IoLimits(network_mbps=100, disk_mbps=200, disk_iops=5000),
+)
+sb.exec("pip install requests")        # allowed
+sb.exec("curl https://example.com")    # fails at once: name does not resolve
+```
+
+Rules are IPv4 addresses or networks, exact DNS names, or `*.domain` for
+every name under a domain, each with optional ports. `egress=[]` blocks all
+outbound traffic; `network=False` removes the network device entirely.
+DNS from the sandbox goes through a resolver that answers only allowed
+names, whichever server the guest asks, and opens each answer's addresses
+for the record's lifetime. The Docker backend cannot enforce `egress` or
+`limits` and raises `BackendUnsupported`; check
+`sandbox.capabilities.egress_policy` and `io_limits`. Details are in
+[decision 0012](decisions/0012-network-isolation-egress-and-io-limits.md).
+
 ## Volumes: workspaces that outlive sandboxes
 
 Every sandbox gets an anonymous volume at its `workdir` (`/work` by default)
@@ -184,6 +210,11 @@ can only be restored as a Firecracker volume and a Docker volume as a
 Docker volume. Restore currently downloads the whole snapshot before the
 volume is attached. Design and limits are in
 [decision 0011](decisions/0011-durable-snapshots-in-object-storage.md).
+
+On Linux, a daemon that does not run as root can snapshot a Docker volume
+only if it can read every file in it. A container running as root that
+creates files readable only by root makes the snapshot fail with a
+permission error; run the daemon as root, or the container as a user.
 
 On macOS with Docker Desktop or colima, the daemon's data directory must be
 under a path shared with the engine (the default `~/.vmlayer` is). The daemon

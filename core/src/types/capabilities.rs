@@ -18,6 +18,12 @@ pub struct Capabilities {
     pub volumes: bool,
     /// Can attach/detach volumes on a running sandbox. No v1 backend.
     pub hot_attach: bool,
+    /// Enforces [`crate::EgressPolicy`] allowlists.
+    #[serde(default)]
+    pub egress_policy: bool,
+    /// Enforces [`crate::IoLimits`] (network and disk rate limits).
+    #[serde(default)]
+    pub io_limits: bool,
 }
 
 impl Capabilities {
@@ -31,6 +37,8 @@ impl Capabilities {
         expose_port: true,
         volumes: true,
         hot_attach: false,
+        egress_policy: true,
+        io_limits: true,
     };
 
     /// What a container backend offers: good enough for local dev and CI.
@@ -43,5 +51,7 @@ impl Capabilities {
         expose_port: true,
         volumes: true,
         hot_attach: false,
+        egress_policy: false,
+        io_limits: false,
     };
 }

@@ -120,6 +120,106 @@ def test_egress(fc: vmlayer.Client) -> None:
         assert result.stdout == "ok\n", result.output
 
 
+def reachable(sb: Sandbox, host: str, port: int) -> str:
+    """'ok', or why a TCP connection from the guest failed."""
+    probe = (
+        "import socket, sys\n"
+        "try:\n"
+        f"    socket.create_connection(({host!r}, {port}), 5).close(); print('ok')\n"
+        "except Exception as e:\n"
+        "    print(type(e).__name__)\n"
+    )
+    return sb.exec(["python3", "-c", probe], timeout=timedelta(seconds=30)).stdout.strip()
+
+
+def test_metadata_endpoint_is_always_blocked(fc: vmlayer.Client) -> None:
+    with create(fc) as sb:
+        assert reachable(sb, "1.1.1.1", 443) == "ok"
+        assert reachable(sb, "169.254.169.254", 80) != "ok"
+
+
+def test_egress_allowlist(fc: vmlayer.Client) -> None:
+    rules = ["1.1.1.1:443", "pypi.org", "*.pythonhosted.org:443"]
+    with create(fc, egress=rules) as sb:
+        assert reachable(sb, "1.1.1.1", 443) == "ok"
+        # Not allowed: a different address, and an allowed address on another port.
+        assert reachable(sb, "8.8.8.8", 443) == "ConnectionRefusedError"
+        assert reachable(sb, "1.1.1.1", 80) == "ConnectionRefusedError"
+        # Names resolve only if allowed, and their addresses open with them.
+        assert reachable(sb, "pypi.org", 443) == "ok"
+        assert reachable(sb, "files.pythonhosted.org", 443) == "ok"
+        assert reachable(sb, "example.com", 443) == "gaierror"
+        # Pointing at another resolver does not get around the policy.
+        out = sb.exec("nslookup example.com 8.8.8.8 || true").stdout
+        assert "NXDOMAIN" in out or "can't find" in out, out
+    with create(fc, egress=[]) as sb:
+        assert reachable(sb, "1.1.1.1", 443) == "ConnectionRefusedError"
+
+
+def test_sandboxes_cannot_reach_the_host_or_each_other(fc: vmlayer.Client) -> None:
+    serve = "mkdir -p /srv && cd /srv && echo hi > i && exec python3 -m http.server 8080"
+    with create(fc, entrypoint=["sh", "-c", serve]) as a, create(fc) as b:
+        a.wait_for_port(8080, timeout=timedelta(seconds=30))
+        # The daemon reaches a through a's link address...
+        endpoint = a.expose(8080)
+        with connect(endpoint.host, endpoint.port):
+            pass
+        # ...but b reaches neither the host end of any VM link (sshd listens
+        # there on the CI runner and the dev VM) nor any VM's link address.
+        hosts = [f"10.200.0.{4 * i + 1}" for i in range(16)]
+        peers = [f"10.200.0.{4 * i + 2}" for i in range(16)]
+        probe = (
+            "import socket, sys, concurrent.futures as cf\n"
+            "def try_(t):\n"
+            "    try:\n"
+            "        socket.create_connection(t, 1).close(); return t\n"
+            "    except Exception:\n"
+            "        return None\n"
+            f"targets = [(h, 22) for h in {hosts!r}] + [(p, 8080) for p in {peers!r}]\n"
+            "with cf.ThreadPoolExecutor(32) as ex:\n"
+            "    print([t for t in ex.map(try_, targets) if t])\n"
+        )
+        out = b.exec(["python3", "-c", probe], timeout=timedelta(seconds=30)).stdout.strip()
+        assert out == "[]", f"b reached {out}"
+
+
+def test_io_limits(fc: vmlayer.Client) -> None:
+    caps = next(b for b in fc.info().backends if b.name == "firecracker").capabilities
+    assert caps.egress_policy and caps.io_limits
+
+    def write_seconds(limits: vmlayer.IoLimits | None) -> float:
+        cmd = "dd if=/dev/zero of=/work/f bs=1M count=24 oflag=direct"
+        with create(fc, limits=limits) as sb:
+            start = time.perf_counter()
+            assert sb.exec(cmd, timeout=timedelta(seconds=60)).ok
+            return time.perf_counter() - start
+
+    # 24 MiB at 4 MB/s: about 5 s once the first second's budget is spent.
+    limited, free = write_seconds(vmlayer.IoLimits(disk_mbps=4)), write_seconds(None)
+    assert limited > 3, limited
+    assert free < 1.5, free
+
+    def download_seconds(limits: vmlayer.IoLimits | None) -> float:
+        serve = "head -c 8000000 /dev/zero > /tmp/blob && exec python3 -m http.server -d /tmp 8080"
+        with create(fc, entrypoint=["sh", "-c", serve], limits=limits) as sb:
+            sb.wait_for_port(8080, timeout=timedelta(seconds=30))
+            endpoint = sb.expose(8080)
+            with connect(endpoint.host, endpoint.port) as conn:
+                start = time.perf_counter()
+                conn.sendall(b"GET /blob HTTP/1.0\r\n\r\n")
+                got = 0
+                while chunk := conn.recv(1 << 16):
+                    got += len(chunk)
+                elapsed = time.perf_counter() - start
+            assert got > 8_000_000
+            return elapsed
+
+    # 8 MB at 16 Mbit/s (2 MB/s): about 3 s.
+    limited, free = download_seconds(vmlayer.IoLimits(network_mbps=16)), download_seconds(None)
+    assert limited > 2, limited
+    assert free < limited / 2, (free, limited)
+
+
 def test_volume_outlives_sandboxes(fc: vmlayer.Client) -> None:
     volume = Volume.create(name=f"fc-{uuid.uuid4().hex[:8]}", size_mb=256, client=fc)
     try:

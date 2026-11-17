@@ -145,6 +145,7 @@ impl Client {
         iface_id: &str,
         host_dev_name: &str,
         guest_mac: &str,
+        limiter: Option<RateLimiter>,
     ) -> Result<()> {
         self.put(
             &format!("/network-interfaces/{iface_id}"),
@@ -152,6 +153,8 @@ impl Client {
                 iface_id,
                 host_dev_name,
                 guest_mac,
+                rx_rate_limiter: limiter,
+                tx_rate_limiter: limiter,
             },
         )
         .await
@@ -245,6 +248,53 @@ pub struct Drive<'a> {
     pub path_on_host: &'a str,
     pub is_root_device: bool,
     pub is_read_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limiter: Option<RateLimiter>,
+}
+
+/// Firecracker's token bucket: `size` tokens, refilled every `refill_time` ms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct TokenBucket {
+    pub size: u64,
+    pub refill_time: u64,
+}
+
+/// A device rate limiter: bytes per second and/or operations per second.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct RateLimiter {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bandwidth: Option<TokenBucket>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ops: Option<TokenBucket>,
+}
+
+impl RateLimiter {
+    fn per_second(n: u64) -> TokenBucket {
+        TokenBucket {
+            size: n.max(1),
+            refill_time: 1000,
+        }
+    }
+
+    /// For the NIC, applied to each direction.
+    pub fn network(limits: &vmlayer_core::IoLimits) -> Option<Self> {
+        let mbps = limits.network_mbps?;
+        Some(Self {
+            bandwidth: Some(Self::per_second(u64::from(mbps) * 1_000_000 / 8)),
+            ops: None,
+        })
+    }
+
+    /// For each disk.
+    pub fn disk(limits: &vmlayer_core::IoLimits) -> Option<Self> {
+        let limiter = Self {
+            bandwidth: limits
+                .disk_mbps
+                .map(|m| Self::per_second(u64::from(m) * 1_000_000)),
+            ops: limits.disk_iops.map(|n| Self::per_second(u64::from(n))),
+        };
+        (limiter != Self::default()).then_some(limiter)
+    }
 }
 
 #[derive(Serialize)]
@@ -252,6 +302,10 @@ struct NetworkInterface<'a> {
     iface_id: &'a str,
     host_dev_name: &'a str,
     guest_mac: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rx_rate_limiter: Option<RateLimiter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tx_rate_limiter: Option<RateLimiter>,
 }
 
 #[derive(Serialize)]

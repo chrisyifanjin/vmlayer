@@ -17,5 +17,8 @@ pub use process::{
     ExecRequest, ExitStatus, FileInfo, OutputChunk, OutputStream, ProcessInfo, PtySize,
 };
 pub use snapshot::{RestoreOptions, SnapshotOptions, SnapshotRef, VolumeSnapshotRef};
-pub use spec::{Endpoint, NetworkMode, Rootfs, SandboxInfo, SandboxSpec, SandboxState};
+pub use spec::{
+    EgressPolicy, EgressRule, Endpoint, IoLimits, NetworkMode, Rootfs, SandboxInfo, SandboxSpec,
+    SandboxState,
+};
 pub use volume::{Mount, VolumeSource, VolumeSourceKind};

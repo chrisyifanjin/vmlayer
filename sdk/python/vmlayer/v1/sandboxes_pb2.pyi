@@ -34,7 +34,7 @@ class Argv(_message.Message):
     def __init__(self, argv: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class CreateSandboxRequest(_message.Message):
-    __slots__ = ("image", "vcpus", "memory_mib", "disk_mib", "env", "workdir", "workspace", "mounts", "entrypoint", "ttl", "backend", "network", "labels")
+    __slots__ = ("image", "vcpus", "memory_mib", "disk_mib", "env", "workdir", "workspace", "mounts", "entrypoint", "ttl", "backend", "network", "labels", "egress", "limits")
     class EnvEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -62,6 +62,8 @@ class CreateSandboxRequest(_message.Message):
     BACKEND_FIELD_NUMBER: _ClassVar[int]
     NETWORK_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
+    EGRESS_FIELD_NUMBER: _ClassVar[int]
+    LIMITS_FIELD_NUMBER: _ClassVar[int]
     image: str
     vcpus: int
     memory_mib: int
@@ -75,7 +77,9 @@ class CreateSandboxRequest(_message.Message):
     backend: str
     network: _common_pb2.NetworkMode
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, image: _Optional[str] = ..., vcpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., disk_mib: _Optional[int] = ..., env: _Optional[_Mapping[str, str]] = ..., workdir: _Optional[str] = ..., workspace: _Optional[_Union[WorkspaceSpec, _Mapping]] = ..., mounts: _Optional[_Iterable[_Union[_common_pb2.Mount, _Mapping]]] = ..., entrypoint: _Optional[_Union[EntrypointSpec, _Mapping]] = ..., ttl: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., backend: _Optional[str] = ..., network: _Optional[_Union[_common_pb2.NetworkMode, str]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    egress: _common_pb2.EgressPolicy
+    limits: _common_pb2.IoLimits
+    def __init__(self, image: _Optional[str] = ..., vcpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., disk_mib: _Optional[int] = ..., env: _Optional[_Mapping[str, str]] = ..., workdir: _Optional[str] = ..., workspace: _Optional[_Union[WorkspaceSpec, _Mapping]] = ..., mounts: _Optional[_Iterable[_Union[_common_pb2.Mount, _Mapping]]] = ..., entrypoint: _Optional[_Union[EntrypointSpec, _Mapping]] = ..., ttl: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., backend: _Optional[str] = ..., network: _Optional[_Union[_common_pb2.NetworkMode, str]] = ..., labels: _Optional[_Mapping[str, str]] = ..., egress: _Optional[_Union[_common_pb2.EgressPolicy, _Mapping]] = ..., limits: _Optional[_Union[_common_pb2.IoLimits, _Mapping]] = ...) -> None: ...
 
 class RestoreSandboxRequest(_message.Message):
     __slots__ = ("snapshot_id", "ttl", "labels")

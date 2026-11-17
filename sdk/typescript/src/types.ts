@@ -14,6 +14,20 @@ export interface Capabilities {
   exposePort: boolean;
   volumes: boolean;
   hotAttach: boolean;
+  /** Enforces `egress` allowlists (microVM backends). */
+  egressPolicy: boolean;
+  /** Enforces `limits` (microVM backends). */
+  ioLimits: boolean;
+}
+
+/** Device rate limits for `Sandbox.create`. Omitted means unlimited. */
+export interface IoLimits {
+  /** Megabits per second, each direction. */
+  networkMbps?: number;
+  /** Megabytes per second, per disk. */
+  diskMbps?: number;
+  /** Operations per second, per disk. */
+  diskIops?: number;
 }
 
 export interface ExecResult {

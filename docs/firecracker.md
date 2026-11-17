@@ -36,7 +36,14 @@ host_subnet = "10.200.0.0/16"
 dns = ["1.1.1.1", "8.8.8.8"]
 max_concurrent_boots = 0      # cold boots at once; 0 = one per host CPU
 boot_timeout_secs = 30        # for the guest agent to come up after boot
+template_snapshots = false    # restore volume-less creates from a boot template
+template_limit = 4            # boot templates kept on disk, most recently used first
 ```
+
+At startup the daemon installs host rules (`sudo nft list table ip
+vmlayer`): guests cannot open connections to the host itself or to each
+other, only to the outside world through NAT. The resolvers in `dns` are
+also the upstreams of the per-VM DNS proxy used for egress allowlists.
 
 A guest kernel boot is CPU-bound. When more creates arrive than
 `max_concurrent_boots`, the extra ones wait for a slot instead of starting
@@ -81,7 +88,9 @@ nothing else: no init system, no network scripts. The image's
 1. Jail: `<data>/firecracker/jail/firecracker/<id>/root/` with `vmlinux`,
    `root.ext4` (clone), `vol0.ext4`... (hard links to the volumes).
 2. Namespace `vml-N`: `tap0` (172.16.0.1/30), veth to the host on a /30,
-   NAT out, DNAT in.
+   NAT out, DNAT in, cloud metadata dropped, and with an egress policy the
+   allowlist firewall plus a DNS proxy on the host end of the veth
+   (decision 0012). Inspect with `sudo ip netns exec vml-N nft list ruleset`.
 3. `jailer --netns ... -- --api-sock /api.sock`, then the API calls:
    machine config, boot source with `ip=172.16.0.2::172.16.0.1:... init=/vmlayer-guest-agent`,
    drives, `eth0` on `tap0`, vsock, `InstanceStart`.

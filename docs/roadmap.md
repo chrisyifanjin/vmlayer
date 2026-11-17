@@ -20,8 +20,10 @@
       snapshot its ready guest agent, and restore from that snapshot on create.
       This removes the approximately 0.8 s kernel-to-init portion of cold boot
       observed on the nested-KVM development host. Measure on bare metal too.
-- [ ] **4. Egress allowlists and quotas** (eBPF or nftables; pids, disk,
-      output size).
+- [x] **4. Egress allowlists and IO limits** (decision 0012): guests cut
+      off from the host, each other and cloud metadata; allowlists by
+      network or DNS name through a per-VM DNS proxy and nftables sets;
+      Firecracker rate limiters for network and disk. Docker refuses both.
 - [ ] **5. libkrun backend** for macOS development.
 - [x] **6. Blob store for durable snapshots** (S3 and S3-compatible, Azure
       Blob, GCS, shared directory; content-addressed chunks, incremental,

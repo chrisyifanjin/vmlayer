@@ -3,6 +3,10 @@
 //! The template guest has no caller env, entrypoint, workspace or data. It is
 //! booted once, snapshotted after the agent is ready, then killed. Restores
 //! allocate a new VMM and guest memory on demand; no idle VM is kept alive.
+//!
+//! One template exists per image and VM shape, each the size of the guest's
+//! memory plus its root disk. The most recently used `template_limit` are
+//! kept; older ones, and ones for images that changed, are deleted.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -68,6 +72,40 @@ impl FirecrackerBackend {
         c.data_dir.join("templates").join(format!("{key}.json"))
     }
 
+    /// Delete all but the `template_limit` most recently used templates.
+    pub(crate) async fn prune_templates(&self) {
+        let _guard = self.template_lock.lock().await;
+        let dir = self.config.data_dir.join("templates");
+        let Ok(mut rd) = tokio::fs::read_dir(&dir).await else {
+            return;
+        };
+        let mut refs = Vec::new();
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "json") {
+                let used = entry
+                    .metadata()
+                    .await
+                    .and_then(|m| m.modified())
+                    .unwrap_or(UNIX_EPOCH);
+                refs.push((used, path));
+            }
+        }
+        refs.sort_by_key(|r| std::cmp::Reverse(r.0));
+        for (_, path) in refs.into_iter().skip(self.config.template_limit) {
+            if let Ok(bytes) = tokio::fs::read(&path).await {
+                if let Ok(snapshot) = serde_json::from_slice::<SnapshotRef>(&bytes) {
+                    let snap_dir = Path::new(&snapshot.engine_ref);
+                    if snap_dir.starts_with(self.config.data_dir.join("snapshots")) {
+                        let _ = tokio::fs::remove_dir_all(snap_dir).await;
+                    }
+                }
+            }
+            let _ = tokio::fs::remove_file(&path).await;
+            tracing::info!(template = %path.display(), "pruned VM template");
+        }
+    }
+
     pub(crate) async fn cached_template(&self, path: &Path) -> Option<SnapshotRef> {
         let bytes = tokio::fs::read(path).await.ok()?;
         let snapshot: SnapshotRef = serde_json::from_slice(&bytes).ok()?;
@@ -82,6 +120,10 @@ impl FirecrackerBackend {
             if !dir.join(file).is_file() {
                 return None;
             }
+        }
+        // Mark as recently used, for pruning.
+        if let Ok(f) = std::fs::File::options().write(true).open(path) {
+            let _ = f.set_modified(std::time::SystemTime::now());
         }
         Some(snapshot)
     }
@@ -102,6 +144,8 @@ impl FirecrackerBackend {
         let mut blank = spec.clone();
         blank.id = SandboxId(format!("template-{}", Uuid::now_v7().simple()));
         blank.mounts.clear();
+        blank.egress = None;
+        blank.limits = Default::default();
         blank.env.clear();
         blank.workdir = "/".into();
         blank.entrypoint = None;
@@ -142,6 +186,8 @@ impl FirecrackerBackend {
         tokio::fs::write(&temp, bytes).await?;
         tokio::fs::rename(&temp, &path).await?;
         tracing::info!(snapshot = %snapshot.id, "built data-free VM template");
+        drop(_guard);
+        self.prune_templates().await;
         Ok(snapshot)
     }
 }

@@ -16,6 +16,27 @@ message Capabilities {
   bool expose_port = 6;
   bool volumes = 7;
   bool hot_attach = 8;
+  // Enforces EgressPolicy allowlists.
+  bool egress_policy = 9;
+  // Enforces IoLimits.
+  bool io_limits = 10;
+}
+
+// Where a sandbox may connect; everything else is dropped. Rules are
+// "10.0.0.0/8", "1.2.3.4:5432", "pypi.org", "*.pythonhosted.org:443" or
+// "github.com:22,443". DNS answers only allowed names.
+message EgressPolicy {
+  repeated string allow = 1;
+}
+
+// Device rate limits. Unset means unlimited.
+message IoLimits {
+  // Megabits per second, each direction.
+  optional uint32 network_mbps = 1;
+  // Megabytes per second, per disk.
+  optional uint32 disk_mbps = 2;
+  // Operations per second, per disk.
+  optional uint32 disk_iops = 3;
 }
 
 enum SandboxState {

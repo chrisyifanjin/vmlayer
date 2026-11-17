@@ -79,7 +79,36 @@ pub fn capabilities(c: Capabilities) -> pb::Capabilities {
         expose_port: c.expose_port,
         volumes: c.volumes,
         hot_attach: c.hot_attach,
+        egress_policy: c.egress_policy,
+        io_limits: c.io_limits,
     }
+}
+
+pub fn egress_from(
+    e: Option<pb::EgressPolicy>,
+) -> Result<Option<vmlayer_core::EgressPolicy>, Status> {
+    e.map(|e| vmlayer_core::EgressPolicy::parse(&e.allow).map_err(Status::invalid_argument))
+        .transpose()
+}
+
+pub fn limits_from(l: Option<pb::IoLimits>) -> Result<vmlayer_core::IoLimits, Status> {
+    let l = l.unwrap_or_default();
+    for (name, v) in [
+        ("network_mbps", l.network_mbps),
+        ("disk_mbps", l.disk_mbps),
+        ("disk_iops", l.disk_iops),
+    ] {
+        if v == Some(0) {
+            return Err(Status::invalid_argument(format!(
+                "limits.{name} must be positive; leave it unset for no limit"
+            )));
+        }
+    }
+    Ok(vmlayer_core::IoLimits {
+        network_mbps: l.network_mbps,
+        disk_mbps: l.disk_mbps,
+        disk_iops: l.disk_iops,
+    })
 }
 
 pub fn state(s: SandboxState) -> i32 {

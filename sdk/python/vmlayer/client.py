@@ -33,6 +33,8 @@ def _capabilities(c: common_pb2.Capabilities) -> Capabilities:
         memory_snapshot=c.memory_snapshot,
         volumes=c.volumes,
         hot_attach=c.hot_attach,
+        egress_policy=c.egress_policy,
+        io_limits=c.io_limits,
     )
 
 

@@ -295,6 +295,21 @@ impl Backend for DockerBackend {
     }
 
     async fn create(&self, spec: SandboxSpec) -> Result<Box<dyn SandboxHandle>> {
+        // Containers share the host kernel's network stack configuration;
+        // enforcing these needs privileges the daemon may not have. Refuse
+        // rather than pretend (Capabilities says so too).
+        if spec.egress.is_some() {
+            return Err(Error::Unsupported {
+                backend: BACKEND_NAME,
+                feature: "egress allowlists",
+            });
+        }
+        if !spec.limits.is_empty() {
+            return Err(Error::Unsupported {
+                backend: BACKEND_NAME,
+                feature: "network and disk rate limits",
+            });
+        }
         let image = match &spec.rootfs {
             Rootfs::EngineImage { digest } => digest.clone(),
             _ => {

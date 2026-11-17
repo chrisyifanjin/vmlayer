@@ -18,6 +18,7 @@ from .types import (
     Capabilities,
     Endpoint,
     ExecResult,
+    IoLimits,
     ProcessInfo,
     PtySize,
     SandboxState,
@@ -148,6 +149,8 @@ class Sandbox:
         timeout: timedelta | None = timedelta(minutes=15),
         backend: Backend = Backend.AUTO,
         network: bool = True,
+        egress: Sequence[str] | None = None,
+        limits: IoLimits | None = None,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
     ) -> Sandbox:
@@ -179,6 +182,17 @@ class Sandbox:
 
         ``timeout`` is a hard wall-clock lifetime; the sandbox is killed when
         it elapses. ``None`` disables it.
+
+        ``egress`` is an allowlist of where the sandbox may connect, e.g.
+        ``["pypi.org", "*.pythonhosted.org:443", "10.0.0.0/8:5432"]``. Anything
+        else is rejected, and DNS answers only allowed names. ``[]`` blocks all
+        egress. ``None`` (default) allows everything except cloud metadata
+        endpoints, which are always blocked.
+
+        ``limits`` caps network and disk throughput (``IoLimits``).
+
+        ``egress`` and ``limits`` need a microVM backend; a backend that cannot
+        enforce them raises ``BackendUnsupported`` (see ``capabilities``).
         """
         c = _client(client)
         req = sandboxes_pb2.CreateSandboxRequest(
@@ -196,6 +210,17 @@ class Sandbox:
         )
         if disk_mb is not None:
             req.disk_mib = disk_mb
+        if egress is not None:
+            if isinstance(egress, str):
+                raise TypeError("egress takes a list of rules, not a string")
+            req.egress.allow.extend(egress)
+            req.egress.SetInParent()
+        if limits is not None:
+            for name in ("network_mbps", "disk_mbps", "disk_iops"):
+                value = getattr(limits, name)
+                if value is not None:
+                    setattr(req.limits, name, value)
+            req.limits.SetInParent()
         if workspace is AUTO:
             req.workspace.anonymous.SetInParent()
         elif workspace is None:

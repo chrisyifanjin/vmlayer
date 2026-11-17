@@ -13,6 +13,8 @@ export function capabilitiesFrom(c: any): Capabilities {
     exposePort: !!c?.expose_port,
     volumes: !!c?.volumes,
     hotAttach: !!c?.hot_attach,
+    egressPolicy: !!c?.egress_policy,
+    ioLimits: !!c?.io_limits,
   };
 }
 

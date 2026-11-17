@@ -75,7 +75,7 @@ def test_durable_snapshot_restores_on_another_daemon(
     vol = Volume.create(size_mb=64, labels={"test": "blob"})
     try:
         with Sandbox.create(ALPINE, workspace=vol) as sb:
-            sb.exec("mkdir -p src && echo 'print(42)' > src/app.py && chmod 700 src")
+            sb.exec("mkdir -p src && echo 'print(42)' > src/app.py && chmod 755 src/app.py")
             sb.exec("ln -s src/app.py link && dd if=/dev/urandom of=big bs=1M count=6")
             checksum = sb.exec("sha256sum big").stdout.split()[0]
             snap = vol.snapshot(durable=True, labels={"test": "blob"})
@@ -89,7 +89,7 @@ def test_durable_snapshot_restores_on_another_daemon(
         assert copy.size_mb == 64
         with Sandbox.create(ALPINE, workspace=copy, client=other_host) as sb:
             assert sb.exec("cat link").stdout == "print(42)\n"
-            assert sb.exec("stat -c %a src").stdout == "700\n"
+            assert sb.exec("stat -c %a src/app.py").stdout == "755\n"
             assert sb.exec("sha256sum big").stdout.split()[0] == checksum
         copy.delete()
 

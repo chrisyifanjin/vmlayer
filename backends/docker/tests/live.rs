@@ -48,6 +48,8 @@ fn spec_with(image: &str, id: &str, entrypoint: Option<Vec<&str>>) -> SandboxSpe
             pty: None,
         }),
         network: NetworkMode::EgressAndExpose,
+        egress: None,
+        limits: Default::default(),
         ttl: None,
         labels: BTreeMap::from([("suite".to_string(), "live".to_string())]),
     }

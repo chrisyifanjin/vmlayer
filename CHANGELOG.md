@@ -50,7 +50,23 @@ versions; every change to the SDK surface is listed.
   that runs them, the snapshot stress test and the benchmark on a GitHub
   x86_64 runner with KVM.
 
+- Egress allowlists and IO limits on the Firecracker backend (decision
+  0012). `Sandbox.create(egress=["pypi.org", "*.pythonhosted.org:443",
+  "10.0.0.0/8:5432"])` rejects every other destination; a per-VM DNS proxy
+  answers only allowed names and opens their addresses in nftables sets for
+  the record's TTL, whatever resolver the guest asks.
+  `limits=IoLimits(network_mbps=..., disk_mbps=..., disk_iops=...)` uses
+  Firecracker's rate limiters. New capabilities `egress_policy` and
+  `io_limits`; the Docker backend refuses both with `BackendUnsupported`.
+- Firecracker boot templates are pruned to the most recently used
+  `template_limit` (default 4), at startup and after each build.
+
 ### Fixed
+- Security, Firecracker: guests could reach the cloud instance metadata
+  service (and with it the host's cloud credentials), any service on the
+  host through their veth link, and other guests. Metadata endpoints are
+  now always dropped, the host drops new connections from guests except DNS
+  to their proxy, and guest-to-guest forwarding is dropped.
 - Firecracker: a file written to a volume just before the sandbox was
   killed could be missing from the volume, because the guest's page cache
   died with the VM. The backend now freezes (flushes) the guest's volumes

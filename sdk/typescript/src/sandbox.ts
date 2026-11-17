@@ -10,6 +10,7 @@ import type {
   Capabilities,
   Endpoint,
   ExecResult,
+  IoLimits,
   ProcessInfo,
   PtySize,
   SandboxState,
@@ -47,6 +48,15 @@ export interface CreateOptions {
   timeoutMs?: number | null;
   backend?: Backend;
   network?: boolean;
+  /**
+   * Where the sandbox may connect, e.g. `["pypi.org", "*.pythonhosted.org:443",
+   * "10.0.0.0/8:5432"]`; everything else is rejected and DNS answers only
+   * allowed names. `[]` blocks all egress. Omitted allows everything except
+   * cloud metadata endpoints. Needs a backend with `capabilities.egressPolicy`.
+   */
+  egress?: string[];
+  /** Network and disk rate limits. Needs a backend with `capabilities.ioLimits`. */
+  limits?: IoLimits;
   labels?: Record<string, string>;
   client?: Client;
 }
@@ -135,6 +145,13 @@ export class Sandbox {
       mounts: [],
     };
     if (opts.diskMb !== undefined) req.disk_mib = opts.diskMb;
+    if (opts.egress !== undefined) req.egress = { allow: opts.egress };
+    if (opts.limits !== undefined) {
+      req.limits = {};
+      if (opts.limits.networkMbps !== undefined) req.limits.network_mbps = opts.limits.networkMbps;
+      if (opts.limits.diskMbps !== undefined) req.limits.disk_mbps = opts.limits.diskMbps;
+      if (opts.limits.diskIops !== undefined) req.limits.disk_iops = opts.limits.diskIops;
+    }
     const ws = opts.workspace ?? "auto";
     req.workspace =
       ws === "auto"

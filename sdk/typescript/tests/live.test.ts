@@ -226,6 +226,19 @@ test("workspace volume outlives sandboxes; single writer; volume snapshots", asy
   await assert.rejects(Volume.get("ts-proj"), VolumeNotFound);
 });
 
+test("egress allowlists and IO limits need a backend that enforces them", async () => {
+  const sb = await Sandbox.create(ALPINE);
+  try {
+    assert.equal(sb.capabilities.egressPolicy, false);
+    assert.equal(sb.capabilities.ioLimits, false);
+  } finally {
+    await sb.kill();
+  }
+  await assert.rejects(Sandbox.create(ALPINE, { egress: ["pypi.org"] }), BackendUnsupported);
+  await assert.rejects(Sandbox.create(ALPINE, { limits: { diskMbps: 10 } }), BackendUnsupported);
+  await assert.rejects(Sandbox.create(ALPINE, { egress: ["not a rule"] }), /egress rule/);
+});
+
 test("sandbox snapshot and restore", async () => {
   await using sb = await Sandbox.create(ALPINE, { labels: { suite: "ts" } });
   await sb.exec("echo keep > /work/w.txt; echo root > /root.txt");

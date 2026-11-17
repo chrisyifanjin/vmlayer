@@ -44,7 +44,7 @@ OUTPUT_STREAM_STDOUT: OutputStream
 OUTPUT_STREAM_STDERR: OutputStream
 
 class Capabilities(_message.Message):
-    __slots__ = ("snapshot", "memory_snapshot", "fork", "pause", "pty", "expose_port", "volumes", "hot_attach")
+    __slots__ = ("snapshot", "memory_snapshot", "fork", "pause", "pty", "expose_port", "volumes", "hot_attach", "egress_policy", "io_limits")
     SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
     MEMORY_SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
     FORK_FIELD_NUMBER: _ClassVar[int]
@@ -53,6 +53,8 @@ class Capabilities(_message.Message):
     EXPOSE_PORT_FIELD_NUMBER: _ClassVar[int]
     VOLUMES_FIELD_NUMBER: _ClassVar[int]
     HOT_ATTACH_FIELD_NUMBER: _ClassVar[int]
+    EGRESS_POLICY_FIELD_NUMBER: _ClassVar[int]
+    IO_LIMITS_FIELD_NUMBER: _ClassVar[int]
     snapshot: bool
     memory_snapshot: bool
     fork: bool
@@ -61,7 +63,25 @@ class Capabilities(_message.Message):
     expose_port: bool
     volumes: bool
     hot_attach: bool
-    def __init__(self, snapshot: bool = ..., memory_snapshot: bool = ..., fork: bool = ..., pause: bool = ..., pty: bool = ..., expose_port: bool = ..., volumes: bool = ..., hot_attach: bool = ...) -> None: ...
+    egress_policy: bool
+    io_limits: bool
+    def __init__(self, snapshot: bool = ..., memory_snapshot: bool = ..., fork: bool = ..., pause: bool = ..., pty: bool = ..., expose_port: bool = ..., volumes: bool = ..., hot_attach: bool = ..., egress_policy: bool = ..., io_limits: bool = ...) -> None: ...
+
+class EgressPolicy(_message.Message):
+    __slots__ = ("allow",)
+    ALLOW_FIELD_NUMBER: _ClassVar[int]
+    allow: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, allow: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class IoLimits(_message.Message):
+    __slots__ = ("network_mbps", "disk_mbps", "disk_iops")
+    NETWORK_MBPS_FIELD_NUMBER: _ClassVar[int]
+    DISK_MBPS_FIELD_NUMBER: _ClassVar[int]
+    DISK_IOPS_FIELD_NUMBER: _ClassVar[int]
+    network_mbps: int
+    disk_mbps: int
+    disk_iops: int
+    def __init__(self, network_mbps: _Optional[int] = ..., disk_mbps: _Optional[int] = ..., disk_iops: _Optional[int] = ...) -> None: ...
 
 class Endpoint(_message.Message):
     __slots__ = ("host", "port")

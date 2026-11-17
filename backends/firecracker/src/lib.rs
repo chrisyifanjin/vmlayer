@@ -21,6 +21,7 @@
 //! restores of one snapshot share pages copy-on-write: that is `fork`.
 
 mod api;
+mod dns;
 mod guest;
 mod net;
 mod process;
@@ -76,6 +77,8 @@ pub struct Config {
     pub template_snapshots: bool,
     /// Optional command run before freezing the data-free template.
     pub template_warmup_argv: Vec<String>,
+    /// Templates kept on disk, most recently used first.
+    pub template_limit: usize,
     /// Cold boots allowed to run at once; further creates wait their turn.
     /// A guest kernel boot is CPU-bound, so starting more of them than the
     /// host has cores only makes every one slower. 0 means one per host CPU.
@@ -244,6 +247,7 @@ impl Backend for FirecrackerBackend {
                 let _ = tokio::fs::remove_dir_all(entry.path()).await;
             }
         }
+        self.prune_templates().await;
         // Namespaces left by a previous daemon belong to VMs we may reattach;
         // keep their indices out of the pool until they are released.
         let mut pool = self.net.lock().await;
@@ -263,7 +267,10 @@ impl Backend for FirecrackerBackend {
                 })
             }
         };
-        let eligible = self.config.template_snapshots && spec.mounts.is_empty();
+        // A template carries device settings (rate limiters) in its snapshot,
+        // so only sandboxes without volumes or limits can use one.
+        let eligible =
+            self.config.template_snapshots && spec.mounts.is_empty() && spec.limits.is_empty();
         if eligible {
             let path = self.template_ref_path(&spec, &base);
             if let Some(snapshot) = self.cached_template(&path).await {
@@ -388,6 +395,7 @@ pub(crate) fn test_config() -> Config {
         guest_agent: None,
         template_snapshots: false,
         template_warmup_argv: Vec::new(),
+        template_limit: 4,
         max_concurrent_boots: 0,
         boot_timeout: Duration::from_secs(30),
     }

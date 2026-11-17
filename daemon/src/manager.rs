@@ -64,6 +64,8 @@ pub struct CreateParams {
     pub backend: String,
     pub network: Option<NetworkMode>,
     pub labels: BTreeMap<String, String>,
+    pub egress: Option<vmlayer_core::EgressPolicy>,
+    pub limits: vmlayer_core::IoLimits,
 }
 
 /// What callers see: the stored row plus live state.
@@ -292,6 +294,20 @@ impl Daemon {
 
     pub async fn create(self: &Arc<Self>, p: CreateParams) -> Result<SandboxView> {
         let (backend_name, entry) = self.registry.pick(&p.backend)?;
+        // Refuse what the backend cannot enforce before doing any work.
+        let caps = entry.backend.capabilities();
+        if p.egress.is_some() && !caps.egress_policy {
+            return Err(Error::Unsupported {
+                backend: entry.backend.name(),
+                feature: "egress allowlists",
+            });
+        }
+        if !p.limits.is_empty() && !caps.io_limits {
+            return Err(Error::Unsupported {
+                backend: entry.backend.name(),
+                feature: "network and disk rate limits",
+            });
+        }
         let resolved = entry.resolver.resolve(&p.image).await?;
         let id = SandboxId(new_id("sb"));
         // The image's WORKDIR is only a useful workspace mount point when it
@@ -340,6 +356,8 @@ impl Daemon {
             workdir: workdir.clone(),
             entrypoint,
             network: p.network.unwrap_or(NetworkMode::EgressAndExpose),
+            egress: p.egress.clone(),
+            limits: p.limits,
             ttl: p.ttl,
             labels: p.labels.clone(),
         };

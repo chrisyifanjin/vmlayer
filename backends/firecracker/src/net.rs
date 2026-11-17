@@ -13,6 +13,11 @@
 //!                                               host: vmlvethN 10.200.x.1 ── NAT ── world
 //! ```
 //!
+//! Isolation (decision 0012): the host drops everything a VM sends to the
+//! host itself except DNS to its proxy, and everything one VM sends to
+//! another. Each namespace drops traffic to cloud metadata endpoints, and
+//! with an egress policy, everything the policy does not allow.
+//!
 //! Uses the `ip` and `nft` commands rather than netlink bindings: they are
 //! on every Linux host that can run Firecracker, and the commands double as
 //! documentation of what the daemon does to the host.
@@ -21,7 +26,7 @@ use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 
 use tokio::process::Command;
-use vmlayer_core::{Error, Result, SandboxId};
+use vmlayer_core::{EgressPolicy, EgressRule, Error, Result, SandboxId};
 
 use crate::api::err;
 
@@ -31,6 +36,13 @@ pub const GUEST_GW: Ipv4Addr = Ipv4Addr::new(172, 16, 0, 1);
 pub const GUEST_MASK: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 252);
 pub const GUEST_MAC: &str = "06:00:ac:10:00:02";
 pub const TAP: &str = "tap0";
+/// Port of the per-VM DNS proxy on the host end of the veth pair.
+pub const DNS_PORT: u16 = 53;
+/// Never reachable from a guest: the link-local range that holds every major
+/// cloud's instance metadata service (169.254.169.254), and Azure's
+/// platform endpoint. Metadata hands out the host's cloud credentials.
+const METADATA: &str = "169.254.0.0/16, 168.63.129.16";
+const VETH_NS: &str = "veth0";
 
 /// Host side address space for the veth pairs: one /30 per VM.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,10 +210,7 @@ async fn nft_apply(netns: Option<&str>, rules: &str) -> Result<()> {
 /// Host-wide, idempotent: forwarding on, NAT for the whole pool.
 pub async fn ensure_host(subnet: Subnet) -> Result<()> {
     let _ = tokio::fs::write("/proc/sys/net/ipv4/ip_forward", "1").await;
-    let rules = format!(
-        "table ip vmlayer {{\n  chain postrouting {{\n    type nat hook postrouting priority srcnat; policy accept;\n    ip saddr {} masquerade\n  }}\n}}\n",
-        subnet.cidr()
-    );
+    let rules = host_rules(subnet);
     let _ = run("nft", &["delete", "table", "ip", "vmlayer"]).await;
     nft_apply(None, &rules).await?;
     allow_through_docker(&subnet.cidr()).await;
@@ -239,12 +248,149 @@ async fn allow_through_docker(cidr: &str) {
     }
 }
 
+/// Host table: NAT for the pool, and isolation of the host and of VMs from
+/// each other. Replies (to `expose` connections, to the daemon) pass as
+/// established traffic.
+fn host_rules(subnet: Subnet) -> String {
+    format!(
+        r#"table ip vmlayer {{
+  chain postrouting {{
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {pool} masquerade
+  }}
+  chain input {{
+    type filter hook input priority filter; policy accept;
+    iifname "vmlveth*" ct state established,related accept
+    iifname "vmlveth*" meta l4proto {{ tcp, udp }} th dport {DNS_PORT} accept
+    iifname "vmlveth*" counter drop
+  }}
+  chain forward {{
+    type filter hook forward priority filter; policy accept;
+    iifname "vmlveth*" oifname "vmlveth*" counter drop
+  }}
+}}
+"#,
+        pool = subnet.cidr()
+    )
+}
+
+/// Namespace table: DNAT for `expose`, NAT out, metadata blocked, and the
+/// egress policy if there is one. Addresses learned by the DNS proxy go into
+/// the `dns_any` and `dns_port` sets.
+pub(crate) fn netns_rules(lease: &Lease, egress: Option<&EgressPolicy>) -> String {
+    let mut pre = vec![format!("ip daddr {} dnat to {GUEST_IP}", lease.ns_ip)];
+    let mut fwd = vec![format!(
+        "iifname \"{TAP}\" ip daddr {{ {METADATA} }} counter drop"
+    )];
+    if let Some(policy) = egress {
+        let host = lease.host_ip;
+        pre.push(format!(
+            "iifname \"{TAP}\" meta l4proto {{ tcp, udp }} th dport 53 dnat to {host}:{DNS_PORT}"
+        ));
+        fwd.push(format!(
+            "iifname \"{TAP}\" ct state established,related accept"
+        ));
+        fwd.push(format!(
+            "iifname \"{TAP}\" ip daddr {host} meta l4proto {{ tcp, udp }} th dport {DNS_PORT} accept"
+        ));
+        for rule in &policy.allow {
+            if let EgressRule::Network {
+                addr,
+                prefix,
+                ports,
+            } = rule
+            {
+                fwd.push(match ports.as_slice() {
+                    [] => format!("iifname \"{TAP}\" ip daddr {addr}/{prefix} accept"),
+                    ports => format!(
+                        "iifname \"{TAP}\" ip daddr {addr}/{prefix} meta l4proto {{ tcp, udp }} th dport {{ {} }} accept",
+                        ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
+                    ),
+                });
+            }
+        }
+        fwd.push(format!("iifname \"{TAP}\" ip daddr @dns_any accept"));
+        fwd.push(format!(
+            "iifname \"{TAP}\" meta l4proto {{ tcp, udp }} ip daddr . th dport @dns_port accept"
+        ));
+        // Reject rather than drop: a blocked connection fails at once
+        // instead of hanging until the client's timeout.
+        fwd.push(format!(
+            "iifname \"{TAP}\" meta l4proto tcp counter reject with tcp reset"
+        ));
+        fwd.push(format!(
+            "iifname \"{TAP}\" counter reject with icmp type admin-prohibited"
+        ));
+    }
+    let indent = |lines: Vec<String>| {
+        lines
+            .into_iter()
+            .map(|l| format!("    {l}\n"))
+            .collect::<String>()
+    };
+    format!(
+        r#"table ip vmlayer {{
+  set dns_any {{
+    type ipv4_addr; flags timeout;
+  }}
+  set dns_port {{
+    type ipv4_addr . inet_service; flags timeout;
+  }}
+  chain prerouting {{
+    type nat hook prerouting priority dstnat; policy accept;
+{pre}  }}
+  chain postrouting {{
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {GUEST_IP} oifname "{VETH_NS}" masquerade
+  }}
+  chain forward {{
+    type filter hook forward priority filter; policy accept;
+{fwd}  }}
+}}
+"#,
+        pre = indent(pre),
+        fwd = indent(fwd),
+    )
+}
+
+/// Let `entries` through the namespace's firewall (from the DNS proxy).
+pub(crate) async fn allow_resolved(netns: &str, entries: &[crate::dns::Allowed]) -> Result<()> {
+    let mut any = Vec::new();
+    let mut port = Vec::new();
+    for e in entries {
+        match e.port {
+            None => any.push(format!("{} timeout {}s", e.addr, e.ttl)),
+            Some(p) => port.push(format!("{} . {p} timeout {}s", e.addr, e.ttl)),
+        }
+    }
+    let mut rules = String::new();
+    if !any.is_empty() {
+        rules.push_str(&format!(
+            "add element ip vmlayer dns_any {{ {} }}\n",
+            any.join(", ")
+        ));
+    }
+    if !port.is_empty() {
+        rules.push_str(&format!(
+            "add element ip vmlayer dns_port {{ {} }}\n",
+            port.join(", ")
+        ));
+    }
+    nft_apply(Some(netns), &rules).await
+}
+
 /// Build the VM's namespace: tap for Firecracker, veth to the host, NAT out,
-/// DNAT in for `expose`. Owned by the jail uid so Firecracker can open the tap.
-pub async fn create_netns(lease: &Lease, uid: u32, gid: u32) -> Result<()> {
+/// DNAT in for `expose`, and the firewall for `egress`. Owned by the jail uid
+/// so Firecracker can open the tap.
+pub async fn create_netns(
+    lease: &Lease,
+    uid: u32,
+    gid: u32,
+    egress: Option<&EgressPolicy>,
+) -> Result<()> {
     let _ = run("ip", &["netns", "del", &lease.netns]).await;
     run("ip", &["netns", "add", &lease.netns]).await?;
-    let veth_ns = "veth0";
+    let veth_ns = VETH_NS;
     run(
         "ip",
         &[
@@ -323,11 +469,7 @@ pub async fn create_netns(lease: &Lease, uid: u32, gid: u32) -> Result<()> {
     .await?;
     ns(&lease.netns, &["ip", "link", "set", TAP, "up"]).await?;
     ns(&lease.netns, &["sysctl", "-qw", "net.ipv4.ip_forward=1"]).await?;
-    let rules = format!(
-        "table ip vmlayer {{\n  chain prerouting {{\n    type nat hook prerouting priority dstnat; policy accept;\n    ip daddr {} dnat to {GUEST_IP}\n  }}\n  chain postrouting {{\n    type nat hook postrouting priority srcnat; policy accept;\n    ip saddr {GUEST_IP} oifname \"{veth_ns}\" masquerade\n  }}\n}}\n",
-        lease.ns_ip
-    );
-    nft_apply(Some(&lease.netns), &rules).await?;
+    nft_apply(Some(&lease.netns), &netns_rules(lease, egress)).await?;
     Ok(())
 }
 
@@ -443,5 +585,55 @@ mod tests {
         let mut out = [0u8; 4];
         c.read_exact(&mut out).await.unwrap();
         assert_eq!(&out, b"pong");
+    }
+}
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+
+    fn lease() -> Lease {
+        Pool::new(Subnet::default()).lease_for(1)
+    }
+
+    #[test]
+    fn without_a_policy_only_metadata_is_blocked() {
+        let r = netns_rules(&lease(), None);
+        assert!(r.contains("ip daddr 10.200.0.6 dnat to 172.16.0.2"), "{r}");
+        assert!(
+            r.contains("ip daddr { 169.254.0.0/16, 168.63.129.16 } counter drop"),
+            "{r}"
+        );
+        assert!(!r.contains("reject"), "{r}");
+        assert!(!r.contains("dport 53 dnat"), "{r}");
+    }
+
+    #[test]
+    fn a_policy_redirects_dns_and_rejects_the_rest() {
+        let policy = EgressPolicy::parse(&["10.0.0.0/8", "1.2.3.4:443,80", "pypi.org"]).unwrap();
+        let r = netns_rules(&lease(), Some(&policy));
+        for needle in [
+            "th dport 53 dnat to 10.200.0.5:53",
+            "ip daddr 10.200.0.5 meta l4proto { tcp, udp } th dport 53 accept",
+            "ip daddr 10.0.0.0/8 accept",
+            "ip daddr 1.2.3.4/32 meta l4proto { tcp, udp } th dport { 443, 80 } accept",
+            "ip daddr @dns_any accept",
+            "ip daddr . th dport @dns_port accept",
+            "reject with tcp reset",
+        ] {
+            assert!(r.contains(needle), "missing {needle:?} in\n{r}");
+        }
+        // Metadata is dropped before anything can accept it.
+        let metadata = r.find("168.63.129.16").unwrap();
+        let first_accept = r.find(" accept\n").unwrap();
+        assert!(metadata < first_accept, "{r}");
+    }
+
+    #[test]
+    fn host_rules_isolate_the_host_and_other_vms() {
+        let r = host_rules(Subnet::default());
+        assert!(r.contains("ip saddr 10.200.0.0/16 masquerade"));
+        assert!(r.contains("iifname \"vmlveth*\" counter drop"));
+        assert!(r.contains("iifname \"vmlveth*\" oifname \"vmlveth*\" counter drop"));
     }
 }

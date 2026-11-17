@@ -238,3 +238,16 @@ def test_no_workspace_and_image_entrypoint_default(daemon: vmlayer.Client) -> No
         assert sb.workspace is None and sb.mounts == {}
         assert sb.exec("echo ok").stdout == "ok\n"
         assert sb.processes() == []
+
+
+def test_egress_and_limits_need_an_enforcing_backend(daemon: vmlayer.Client) -> None:
+    with Sandbox.create(ALPINE) as sb:
+        assert not sb.capabilities.egress_policy and not sb.capabilities.io_limits
+    with pytest.raises(vmlayer.BackendUnsupported):
+        Sandbox.create(ALPINE, egress=["pypi.org"])
+    with pytest.raises(vmlayer.BackendUnsupported):
+        Sandbox.create(ALPINE, limits=vmlayer.IoLimits(disk_mbps=10))
+    with pytest.raises(vmlayer.InvalidArgument, match="egress rule"):
+        Sandbox.create(ALPINE, egress=["not a rule"])
+    with pytest.raises(TypeError):
+        Sandbox.create(ALPINE, egress="pypi.org")  # type: ignore[arg-type]

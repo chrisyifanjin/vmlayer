@@ -525,6 +525,8 @@ mod tests {
             workdir: "/work".into(),
             entrypoint: None,
             network: vmlayer_core::NetworkMode::Egress,
+            egress: None,
+            limits: Default::default(),
             ttl: None,
             labels: BTreeMap::new(),
         }

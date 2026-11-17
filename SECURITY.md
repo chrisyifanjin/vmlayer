@@ -17,7 +17,10 @@ you prefer otherwise.
 In scope: escaping a sandbox (container or microVM), reading or writing
 another sandbox's volumes or snapshots, reaching the daemon's data
 directory from a guest, bypassing the TCP listener's bearer token, denial
-of service of the daemon from inside a sandbox.
+of service of the daemon from inside a sandbox, and, on the Firecracker
+backend, a guest reaching the host, another guest, a cloud metadata
+endpoint, or a destination its egress allowlist does not permit
+(decision 0012).
 
 Out of scope: vulnerabilities in Docker, Firecracker or the Linux kernel
 themselves (report those upstream; we pin and track versions), and

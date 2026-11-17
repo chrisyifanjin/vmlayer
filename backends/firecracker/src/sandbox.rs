@@ -20,6 +20,7 @@ use vmlayer_proto::guest::v1 as guest;
 use vmlayer_proto::v1 as pb;
 
 use crate::api::{self, err};
+use crate::dns::{AllowSink, Allowed, DnsProxy, Resolver};
 use crate::guest::{Agent, Link};
 use crate::net::{self, Lease, Pool};
 use crate::process::{RemoteProcess, RemotePty};
@@ -56,6 +57,8 @@ pub struct FirecrackerSandbox {
     /// Mount order as given to Firecracker: (device, guest path).
     mounts: Vec<(String, String)>,
     exposed: Mutex<HashMap<u16, net::Proxy>>,
+    /// Enforces the domain rules of the egress policy; stops when dropped.
+    dns: std::sync::Mutex<Option<DnsProxy>>,
 }
 
 /// Upper bound on the volume flush that precedes a kill.
@@ -169,6 +172,33 @@ impl FirecrackerSandbox {
         }
     }
 
+    /// Start the DNS proxy that enforces `spec.egress`, if there is one.
+    async fn start_dns(
+        config: &Config,
+        spec: &SandboxSpec,
+        lease: &Lease,
+    ) -> Result<Option<DnsProxy>> {
+        let Some(policy) = spec.egress.clone() else {
+            return Ok(None);
+        };
+        if spec.network == vmlayer_core::NetworkMode::None {
+            return Ok(None);
+        }
+        let upstreams = config
+            .dns
+            .iter()
+            .map(|d| {
+                d.parse::<std::net::IpAddr>()
+                    .map(|ip| std::net::SocketAddr::new(ip, 53))
+                    .map_err(|e| err(format!("dns server {d:?}: {e}")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let sink = std::sync::Arc::new(NftSink(lease.netns.clone()));
+        let resolver = Resolver::new(policy, upstreams, sink);
+        let listen = std::net::SocketAddr::new(lease.host_ip.into(), net::DNS_PORT);
+        DnsProxy::start(listen, resolver).await.map(Some)
+    }
+
     /// Connect to the guest agent; on failure include the console tail.
     async fn agent_ready(config: &Config, jail: &Path, settle: bool) -> Result<Agent> {
         match Agent::wait_ready(
@@ -206,6 +236,7 @@ impl FirecrackerSandbox {
             path_on_host: &format!("/{}", vm::ROOT_DISK),
             is_root_device: true,
             is_read_only: false,
+            rate_limiter: api::RateLimiter::disk(&spec.limits),
         })
         .await?;
         for (i, m) in mounts.iter().enumerate() {
@@ -215,12 +246,18 @@ impl FirecrackerSandbox {
                 path_on_host: &p,
                 is_root_device: false,
                 is_read_only: m.read_only,
+                rate_limiter: api::RateLimiter::disk(&spec.limits),
             })
             .await?;
         }
         if spec.network != vmlayer_core::NetworkMode::None {
-            api.network_interface("eth0", net::TAP, net::GUEST_MAC)
-                .await?;
+            api.network_interface(
+                "eth0",
+                net::TAP,
+                net::GUEST_MAC,
+                api::RateLimiter::network(&spec.limits),
+            )
+            .await?;
         }
         api.vsock(3, &format!("/{}", vm::VSOCK)).await?;
         let _ = lease;
@@ -303,7 +340,14 @@ impl FirecrackerSandbox {
             let t0 = std::time::Instant::now();
             let mounts = Self::populate_jail(&config, &jail, &base, true, &spec.mounts).await?;
             let t_disks = t0.elapsed();
-            net::create_netns(&lease, config.jail_uid, config.jail_gid).await?;
+            net::create_netns(
+                &lease,
+                config.jail_uid,
+                config.jail_gid,
+                spec.egress.as_ref(),
+            )
+            .await?;
+            let dns = Self::start_dns(&config, &spec, &lease).await?;
             let t_net = t0.elapsed();
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
             let t_vmm = t0.elapsed();
@@ -340,6 +384,7 @@ impl FirecrackerSandbox {
                 link: Arc::new(Link::new(agent)),
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
+                dns: std::sync::Mutex::new(dns),
             })
         }
         .await;
@@ -390,7 +435,14 @@ impl FirecrackerSandbox {
             for f in ["vmstate", "mem"] {
                 vm::chown_for_jail(&jail.join(f), config.jail_uid, config.jail_gid)?;
             }
-            net::create_netns(&lease, config.jail_uid, config.jail_gid).await?;
+            net::create_netns(
+                &lease,
+                config.jail_uid,
+                config.jail_gid,
+                spec.egress.as_ref(),
+            )
+            .await?;
+            let dns = Self::start_dns(&config, &spec, &lease).await?;
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
             vmm.api
                 .snapshot_load(&api::SnapshotLoad {
@@ -451,6 +503,7 @@ impl FirecrackerSandbox {
                 link: Arc::new(Link::new(agent)),
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
+                dns: std::sync::Mutex::new(dns),
             })
         }
         .await;
@@ -505,6 +558,9 @@ impl FirecrackerSandbox {
             true,
         )
         .await?;
+        // The namespace and its learned addresses survived the restart; the
+        // DNS proxy did not.
+        let dns = Self::start_dns(&config, &meta.spec, &lease).await?;
         Ok(Self {
             config: config.clone(),
             pool,
@@ -515,6 +571,7 @@ impl FirecrackerSandbox {
             link: Arc::new(Link::new(agent)),
             mounts: meta.mounts,
             exposed: Mutex::new(HashMap::new()),
+            dns: std::sync::Mutex::new(dns),
         })
     }
 
@@ -885,6 +942,7 @@ impl SandboxHandle for FirecrackerSandbox {
 
     async fn kill(&self) -> Result<()> {
         self.flush_volumes().await;
+        drop(self.dns.lock().unwrap().take());
         self.link.mark_dead();
         self.exposed.lock().await.clear();
         let mut vmm = self.vm.lock().await;
@@ -945,4 +1003,14 @@ pub(crate) fn cpu_model() -> Option<String> {
 #[allow(dead_code)]
 fn _labels(m: &BTreeMap<String, String>) -> usize {
     m.len()
+}
+
+/// Sends addresses the DNS proxy learned to a VM namespace's nftables sets.
+struct NftSink(String);
+
+#[async_trait::async_trait]
+impl AllowSink for NftSink {
+    async fn allow(&self, entries: &[Allowed]) -> Result<()> {
+        net::allow_resolved(&self.0, entries).await
+    }
 }

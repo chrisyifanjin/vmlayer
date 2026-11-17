@@ -56,6 +56,8 @@ impl Sandboxes for Services {
             backend: r.backend,
             network: convert::network_from(r.network),
             labels: convert::labels_from(&r.labels),
+            egress: convert::egress_from(r.egress)?,
+            limits: convert::limits_from(r.limits)?,
         };
         let view = self.daemon.create(params).await.map_err(status)?;
         Ok(Response::new(convert::sandbox(&view)))

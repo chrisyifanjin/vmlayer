@@ -54,6 +54,23 @@ class Capabilities:
     """Can attach ``Volume`` objects at creation time."""
     hot_attach: bool
     """Can attach/detach volumes while running. No v1 backend sets this."""
+    egress_policy: bool = False
+    """Enforces ``egress=`` allowlists (microVM backends)."""
+    io_limits: bool = False
+    """Enforces ``limits=`` (microVM backends)."""
+
+
+@dataclass(frozen=True)
+class IoLimits:
+    """Device rate limits for ``Sandbox.create(limits=...)``. ``None`` means
+    unlimited."""
+
+    network_mbps: int | None = None
+    """Megabits per second, each direction."""
+    disk_mbps: int | None = None
+    """Megabytes per second, per disk."""
+    disk_iops: int | None = None
+    """Operations per second, per disk."""
 
 
 @dataclass(frozen=True)
