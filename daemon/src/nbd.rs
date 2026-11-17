@@ -77,7 +77,7 @@ impl Drop for NbdExport {
 impl NbdExport {
     /// Connect the first free NBD device to `image`.
     pub fn attach(image: Arc<LazyImage>) -> Result<Self> {
-        if image.size() % BLOCK != 0 {
+        if !image.size().is_multiple_of(BLOCK) {
             return Err(Error::Guest(
                 "lazy images must be a multiple of 4 KiB".into(),
             ));
