@@ -117,7 +117,9 @@ impl Daemon {
             tracing::info!(store = %r.describe(), "durable volume snapshots enabled");
         }
         let volumes = VolumeStore::new(&cfg.data_dir, store.clone(), cfg.defaults.volume_size_mib)
-            .with_remote(remote);
+            .with_remote(remote)
+            .with_lazy_restore(cfg.blob_store.lazy_restore.unwrap_or(true));
+        volumes.resume_lazy().await;
         let registry = Registry::from_config(&cfg).await;
         volumes.set_cleaners(registry.entries().map(|(_, e)| e.backend.clone()).collect());
         let d = Arc::new(Self {
@@ -280,6 +282,7 @@ impl Daemon {
             WorkspaceSpec::Volume(name) => {
                 let v = self.volumes.get(name)?;
                 self.volumes.check_kind(&v, kind)?;
+                self.volumes.prepare(&v).await?;
                 if let Err(e) = self.volumes.attach(&v.id, id, false) {
                     self.rollback_attach(id, &attached).await;
                     return Err(e);
@@ -302,6 +305,10 @@ impl Daemon {
                     return Err(e);
                 }
             };
+            if let Err(e) = self.volumes.prepare(&v).await {
+                self.rollback_attach(id, &attached).await;
+                return Err(e);
+            }
             if let Err(e) = self.volumes.attach(&v.id, id, m.read_only) {
                 self.rollback_attach(id, &attached).await;
                 return Err(e);
@@ -650,6 +657,7 @@ impl Daemon {
             self.release_lease(name, id).await;
         }
         self.volumes.detach_all(id)?;
+        self.volumes.release_unattached().await;
         self.store.delete_sandbox(id).map_err(store_err)?;
         if let Some(row) = row {
             for v in self.volumes.list().unwrap_or_default() {

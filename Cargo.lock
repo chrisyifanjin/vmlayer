@@ -3077,6 +3077,8 @@ dependencies = [
  "clap",
  "flate2",
  "futures",
+ "libc",
+ "object_store",
  "oci-client",
  "prost-types",
  "rusqlite",

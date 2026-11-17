@@ -33,7 +33,23 @@ pub struct VolumeStore {
     cleaners: std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<dyn vmlayer_core::Backend>>>>,
     /// Object storage for durable snapshots, if configured.
     remote: Option<Remote>,
+    /// Restore block-image snapshots on demand (decision 0016).
+    lazy_restore: bool,
+    /// Volumes still being downloaded.
+    lazy: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<VolumeId, std::sync::Arc<vmlayer_blob::LazyImage>>,
+        >,
+    >,
+    /// Lazy volumes served to a VM as a block device.
+    #[cfg(target_os = "linux")]
+    exports: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<VolumeId, crate::nbd::NbdExport>>,
+    >,
 }
+
+/// Marks a volume that is still being downloaded; holds the snapshot id.
+const LAZY_FILE: &str = "lazy.json";
 
 fn blob_err(e: vmlayer_blob::Error) -> Error {
     match e {
@@ -158,6 +174,156 @@ impl VolumeStore {
             default_size_mib,
             cleaners: Default::default(),
             remote: None,
+            lazy_restore: false,
+            lazy: Default::default(),
+            #[cfg(target_os = "linux")]
+            exports: Default::default(),
+        }
+    }
+
+    /// Restore block-image snapshots on demand where the host supports it.
+    pub fn with_lazy_restore(mut self, on: bool) -> Self {
+        self.lazy_restore = on;
+        self
+    }
+
+    fn can_export(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            crate::nbd::available()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+
+    /// Keep downloading `img` until it is complete or the volume is gone.
+    fn spawn_hydrate(&self, id: VolumeId, img: std::sync::Arc<vmlayer_blob::LazyImage>) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if !this.lazy.lock().unwrap().contains_key(&id) {
+                    return; // deleted
+                }
+                match img.hydrate(16).await {
+                    Ok(()) => break,
+                    Err(e) => {
+                        tracing::warn!(volume = %id, error = %e, "lazy download failed; retrying");
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    }
+                }
+            }
+            if let Ok(row) = this.get(&id.0) {
+                let _ = std::fs::remove_file(row.path.join(LAZY_FILE));
+            }
+            this.forget_lazy_if_idle(&id);
+        });
+    }
+
+    fn forget_lazy_if_idle(&self, id: &VolumeId) {
+        #[cfg(target_os = "linux")]
+        if self.exports.lock().unwrap().contains_key(id) {
+            return; // a VM still reads through the device; released on detach
+        }
+        let mut lazy = self.lazy.lock().unwrap();
+        if lazy.get(id).is_some_and(|i| i.is_complete()) {
+            lazy.remove(id);
+        }
+    }
+
+    /// Resume downloads interrupted by a daemon restart.
+    pub async fn resume_lazy(&self) {
+        let Some(remote) = self.remote.clone() else {
+            return;
+        };
+        for row in self.list().unwrap_or_default() {
+            let Ok(text) = std::fs::read_to_string(row.path.join(LAZY_FILE)) else {
+                continue;
+            };
+            let Some(snapshot) = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["snapshot"].as_str().map(String::from))
+            else {
+                continue;
+            };
+            match remote.manifest(&snapshot).await {
+                Ok(m) => match vmlayer_blob::LazyImage::open(
+                    remote.clone(),
+                    &m,
+                    &row.path.join(IMAGE_FILE),
+                ) {
+                    Ok(img) => {
+                        self.lazy
+                            .lock()
+                            .unwrap()
+                            .insert(row.id.clone(), img.clone());
+                        self.spawn_hydrate(row.id.clone(), img);
+                        tracing::info!(volume = %row.id, "resumed lazy download");
+                    }
+                    Err(e) => {
+                        tracing::warn!(volume = %row.id, error = %e, "cannot resume lazy volume")
+                    }
+                },
+                Err(e) => tracing::warn!(volume = %row.id, error = %e, "cannot resume lazy volume"),
+            }
+        }
+    }
+
+    /// Wait until a lazily restored volume is fully local.
+    pub async fn complete(&self, id: &VolumeId) -> Result<()> {
+        let img = self.lazy.lock().unwrap().get(id).cloned();
+        if let Some(img) = img {
+            img.hydrate(16).await.map_err(blob_err)?;
+            self.forget_lazy_if_idle(id);
+        }
+        Ok(())
+    }
+
+    /// Get a volume ready to be attached: a lazy volume is exported as a
+    /// block device, or downloaded first where that is not possible.
+    pub async fn prepare(&self, row: &VolumeRow) -> Result<()> {
+        let img = self.lazy.lock().unwrap().get(&row.id).cloned();
+        let Some(img) = img else { return Ok(()) };
+        if img.is_complete() || !self.can_export() {
+            return self.complete(&row.id).await;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if self.exports.lock().unwrap().contains_key(&row.id) {
+                return Ok(());
+            }
+            let export = tokio::task::spawn_blocking(move || crate::nbd::NbdExport::attach(img))
+                .await
+                .map_err(|e| Error::Guest(e.to_string()))??;
+            self.exports.lock().unwrap().insert(row.id.clone(), export);
+        }
+        Ok(())
+    }
+
+    /// Disconnect the block devices of lazy volumes no sandbox holds any more.
+    pub async fn release_unattached(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            let idle: Vec<VolumeId> = self
+                .exports
+                .lock()
+                .unwrap()
+                .keys()
+                .filter(|id| {
+                    self.get(&id.0)
+                        .map(|r| r.attached_to.is_none())
+                        .unwrap_or(true)
+                })
+                .cloned()
+                .collect();
+            for id in idle {
+                let export = self.exports.lock().unwrap().remove(&id);
+                if let Some(export) = export {
+                    let _ = tokio::task::spawn_blocking(move || drop(export)).await;
+                }
+                self.forget_lazy_if_idle(&id);
+            }
         }
     }
 
@@ -293,6 +459,12 @@ impl VolumeStore {
     }
 
     pub fn source(&self, row: &VolumeRow) -> VolumeSource {
+        #[cfg(target_os = "linux")]
+        if let Some(export) = self.exports.lock().unwrap().get(&row.id) {
+            return VolumeSource::BlockImage {
+                path: export.device.clone(),
+            };
+        }
         match self.kind(row) {
             VolumeSourceKind::BlockImage => VolumeSource::BlockImage {
                 path: row.path.join(IMAGE_FILE),
@@ -359,6 +531,7 @@ impl VolumeStore {
                 holder,
             });
         }
+        self.lazy.lock().unwrap().remove(id);
         self.store.delete_volume(id).map_err(store_err)?;
         if row.path.starts_with(&self.root) {
             self.remove_tree(&row.path).await;
@@ -375,6 +548,7 @@ impl VolumeStore {
         labels: BTreeMap<String, String>,
         durable: bool,
     ) -> Result<VolumeSnapshotRow> {
+        self.complete(id).await?;
         let row = self.get(&id.0)?;
         let remote = if durable {
             Some(self.require_remote()?)
@@ -534,6 +708,25 @@ impl VolumeStore {
             vmlayer_blob::Kind::Block => row.path.join(IMAGE_FILE),
             vmlayer_blob::Kind::Dir => row.path.clone(),
         };
+        if manifest.kind == vmlayer_blob::Kind::Block && self.lazy_restore {
+            // Usable at once; chunks arrive on first use or in the background.
+            let img = match vmlayer_blob::LazyImage::open(remote.clone(), &manifest, &dest) {
+                Ok(img) => img,
+                Err(e) => {
+                    let _ = self.delete(&row.id).await;
+                    return Err(blob_err(e));
+                }
+            };
+            let marker = serde_json::json!({ "snapshot": snapshot.0 }).to_string();
+            tokio::fs::write(row.path.join(LAZY_FILE), marker).await?;
+            self.lazy
+                .lock()
+                .unwrap()
+                .insert(row.id.clone(), img.clone());
+            self.spawn_hydrate(row.id.clone(), img);
+            tracing::info!(snapshot = %snapshot, volume = %row.id, "volume restoring lazily");
+            return Ok(row);
+        }
         let started = std::time::Instant::now();
         if let Err(e) = remote.pull(&manifest, &dest).await {
             let _ = self.delete(&row.id).await;
@@ -556,6 +749,7 @@ impl VolumeStore {
         name: Option<String>,
         anonymous: bool,
     ) -> Result<VolumeRow> {
+        self.complete(id).await?;
         let src = self.get(&id.0)?;
         let row = self
             .create(name, Some(src.size_mib), src.labels.clone(), anonymous)

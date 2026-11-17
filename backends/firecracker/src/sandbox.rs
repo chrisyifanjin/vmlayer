@@ -112,6 +112,24 @@ impl FirecrackerSandbox {
                 }
             };
             let dst = jail.join(vm::vol_disk(i));
+            // A lazily restored volume is a block device (/dev/nbdN):
+            // give the jail its own device node for it.
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::{FileTypeExt, MetadataExt};
+                let meta = std::fs::metadata(src)?;
+                if meta.file_type().is_block_device() {
+                    nix::sys::stat::mknod(
+                        &dst,
+                        nix::sys::stat::SFlag::S_IFBLK,
+                        nix::sys::stat::Mode::from_bits_truncate(0o600),
+                        meta.rdev(),
+                    )
+                    .map_err(|e| err(format!("device node for {}: {e}", src.display())))?;
+                    out.push((device_for(i), m.guest_path.clone()));
+                    continue;
+                }
+            }
             tokio::fs::hard_link(src, &dst).await.map_err(|e| {
                 err(format!(
                     "volume images must live on the same filesystem as the data dir ({}): {e}",

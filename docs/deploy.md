@@ -64,6 +64,7 @@ url = "s3://my-bucket/vmlayer"         # or az://container/prefix, gs://bucket/p
 options = { region = "eu-central-1" }  # optional; e.g. endpoint, allow_http, use_emulator
 gc_grace_hours = 24                    # unreferenced chunks younger than this survive GC
 concurrency = 16                       # requests in flight per transfer
+lazy_restore = true                    # block volumes usable at once, fetched on demand (needs `modprobe nbd`)
 
 [cluster]                              # several hosts sharing the blob store (decision 0014)
 advertise = "tcp://10.0.0.5:7070"      # publish this host in the registry

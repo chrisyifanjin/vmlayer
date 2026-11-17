@@ -234,8 +234,11 @@ A durable snapshot is stored as 4 MiB content-addressed chunks, so the next
 snapshot of the same volume sends only the blocks that changed, and
 identical blocks are stored once across all volumes. A Firecracker volume
 can only be restored as a Firecracker volume and a Docker volume as a
-Docker volume. Restore currently downloads the whole snapshot before the
-volume is attached. Design and limits are in
+Docker volume. A Firecracker volume restored from the store is usable at
+once: blocks are fetched when the VM first reads them and in the background
+([decision 0016](decisions/0016-lazy-volume-restore.md); needs
+`modprobe nbd`, otherwise it is downloaded first). Docker volumes are
+downloaded before they are attached. Design and limits are in
 [decision 0011](decisions/0011-durable-snapshots-in-object-storage.md).
 
 On Linux, a daemon that does not run as root can snapshot a Docker volume

@@ -260,6 +260,39 @@ def test_durable_block_volume_snapshot(fc: vmlayer.Client) -> None:
         volume.delete()
 
 
+def test_lazy_restore_of_a_large_volume(fc: vmlayer.Client) -> None:
+    if not fc.info().blob_store:
+        pytest.skip("the daemon has no blob store")
+    volume = Volume.create(size_mb=1024, backend=vmlayer.Backend.FIRECRACKER, client=fc)
+    restored: Volume | None = None
+    try:
+        with create(fc, workspace=volume) as sb:
+            sb.exec(
+                "head -c 300000000 /dev/urandom > /work/big && echo marker > /work/note && sync",
+                timeout=timedelta(minutes=2),
+            )
+            checksum = sb.exec("sha256sum /work/big", timeout=timedelta(minutes=2)).stdout.split()[
+                0
+            ]
+        snap = volume.snapshot(durable=True)
+        snap.delete(local_only=True)
+        start = time.perf_counter()
+        restored = Volume.from_snapshot(snap.id, client=fc)
+        returned = time.perf_counter() - start
+        with create(fc, workspace=restored) as sb:
+            first = sb.exec("cat /work/note").stdout
+            ready = time.perf_counter() - start
+            assert first == "marker\n"
+            full = sb.exec("sha256sum /work/big", timeout=timedelta(minutes=2)).stdout.split()[0]
+            assert full == checksum
+        print(f"from_snapshot {returned:.2f}s, first file read {ready:.2f}s")
+        snap.delete()
+    finally:
+        if restored is not None:
+            restored.delete()
+        volume.delete()
+
+
 def test_memory_snapshot_restore_and_fork(fc: vmlayer.Client) -> None:
     with create(fc) as sb:
         sb.files.write("/work/counter.py", COUNTER)

@@ -29,6 +29,7 @@
 mod chunk;
 mod error;
 mod gc;
+mod lazy;
 mod lease;
 mod manifest;
 mod pull;
@@ -44,6 +45,7 @@ use object_store::{ObjectStore, ObjectStoreExt};
 
 pub use error::{Error, Result};
 pub use gc::GcStats;
+pub use lazy::{present_path, LazyImage};
 pub use lease::{LeaseError, LeaseRecord};
 pub use manifest::{ChunkRef, Chunking, Kind, Manifest, SnapshotMeta, FORMAT};
 pub use push::PushStats;

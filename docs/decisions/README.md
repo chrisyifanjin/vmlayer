@@ -17,6 +17,7 @@ Format: context, options considered (with evidence), decision, consequences.
 | [0007](0007-daemon-stack.md) | Daemon stack: tonic gRPC over unix socket, SQLite, bollard for Docker | accepted |
 | [0008](0008-firecracker-backend-design.md) | Firecracker: jailed VMs with fixed drive names, one netns each, gRPC guest agent over vsock, fork = snapshot + restores | accepted |
 | [0009](0009-image-pipeline.md) | Image pipeline: pull OCI layers in the daemon, unpack with whiteouts, one cached ext4 per digest via `mkfs.ext4 -d` | accepted |
+| [0016](0016-lazy-volume-restore.md) | Lazy restore of block volumes: a sparse local image filled on demand from the blob store, served to Firecracker as `/dev/nbdN` | accepted |
 | [0015](0015-rescheduling.md) | Rescheduling: periodic durable checkpoints of the workspace and a workload record; any daemon with rescue on recreates a sandbox whose lease expired | accepted |
 | [0014](0014-hosts-placement-and-leases.md) | Several hosts: heartbeats and leases in the blob store via conditional writes, placement in the SDK, single-instance sandboxes with fencing | accepted |
 | [0013](0013-restore-memory-prefetch.md) | Restore memory snapshots over userfaultfd and copy all non-zero guest memory into place at once, zero-mapping the rest | accepted |

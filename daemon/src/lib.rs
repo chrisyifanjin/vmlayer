@@ -7,6 +7,8 @@ pub mod config;
 pub mod grpc;
 pub mod images;
 pub mod manager;
+#[cfg(target_os = "linux")]
+pub mod nbd;
 pub mod registry;
 pub mod rescue;
 pub mod server;

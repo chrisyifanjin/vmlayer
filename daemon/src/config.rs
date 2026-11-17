@@ -75,6 +75,10 @@ pub struct BlobStoreConfig {
     pub gc_grace_hours: Option<u64>,
     /// Requests in flight per transfer. Default 16.
     pub concurrency: Option<usize>,
+    /// Make block-image volumes restored from the store usable at once,
+    /// downloading on demand (decision 0016; needs the `nbd` kernel module,
+    /// else the volume is downloaded before it is attached). Default true.
+    pub lazy_restore: Option<bool>,
 }
 
 impl BlobStoreConfig {

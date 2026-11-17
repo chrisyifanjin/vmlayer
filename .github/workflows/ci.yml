@@ -124,6 +124,12 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
+      - name: Load the NBD module (lazy volume restore)
+        run: |
+          sudo modprobe nbd nbds_max=64 \
+            || (sudo apt-get update -qq && sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)" && sudo modprobe nbd nbds_max=64) \
+            || echo "nbd unavailable: lazy restore falls back to downloading first"
+          ls /dev/nbd0 || true
       - name: Install Firecracker, a guest kernel, and build vmlayer
         run: scripts/kvm-vm/provision.sh
         env:

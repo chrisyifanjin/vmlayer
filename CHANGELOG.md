@@ -65,6 +65,11 @@ versions; every change to the SDK surface is listed.
   `Sandbox.create(lease="name")` keeps at most one live sandbox per name
   across hosts, using the store's conditional writes, and a daemon that
   loses or cannot renew a lease kills its sandbox.
+- Lazy restore of Firecracker volumes (decision 0016): a volume restored
+  from the blob store is usable at once; chunks are fetched on first read
+  and in the background, and served to the VM as `/dev/nbdN`
+  (`[blob_store] lazy_restore`, default on where the `nbd` module is
+  loaded).
 - Rescheduling from dead hosts (decision 0015):
   `Sandbox.create(lease=..., reschedule=True)` checkpoints the workspace to
   the blob store every `[cluster] checkpoint_secs`, and daemons with

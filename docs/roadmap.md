@@ -30,8 +30,7 @@
       garbage-collected; decision 0011).
 - [x] **5a. Restore memory prefetch** over userfaultfd (decision 0013):
       first heavy process after a restore 2.8 s to 0.75 s on nested KVM.
-- [ ] **6a. Lazy restore**: serve a volume straight from its manifest
-      through ublk or NBD, fetching chunks on first read.
+- [x] **6a. Lazy restore** of block volumes through NBD (decision 0016).
 - [ ] **7. TypeScript SDK** (done), **E2B-shaped facade** (done for Python,
       source compatible), **asyncio client** (open).
 - [ ] **8. Adapters** for the six runtimes in docs/integrations.md.
