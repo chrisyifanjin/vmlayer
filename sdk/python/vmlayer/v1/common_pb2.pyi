@@ -194,7 +194,7 @@ class VolumeSnapshot(_message.Message):
     def __init__(self, id: _Optional[str] = ..., volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., durable: bool = ..., labels: _Optional[_Mapping[str, str]] = ..., local: bool = ...) -> None: ...
 
 class Snapshot(_message.Message):
-    __slots__ = ("id", "backend", "engine_version", "cpu_model", "created_at", "size_bytes", "includes_memory", "volumes", "labels")
+    __slots__ = ("id", "backend", "engine_version", "cpu_model", "created_at", "size_bytes", "includes_memory", "volumes", "labels", "durable")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -211,6 +211,7 @@ class Snapshot(_message.Message):
     INCLUDES_MEMORY_FIELD_NUMBER: _ClassVar[int]
     VOLUMES_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
+    DURABLE_FIELD_NUMBER: _ClassVar[int]
     id: str
     backend: str
     engine_version: str
@@ -220,7 +221,8 @@ class Snapshot(_message.Message):
     includes_memory: bool
     volumes: _containers.RepeatedCompositeFieldContainer[VolumeSnapshot]
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., engine_version: _Optional[str] = ..., cpu_model: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., includes_memory: bool = ..., volumes: _Optional[_Iterable[_Union[VolumeSnapshot, _Mapping]]] = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    durable: bool
+    def __init__(self, id: _Optional[str] = ..., backend: _Optional[str] = ..., engine_version: _Optional[str] = ..., cpu_model: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., includes_memory: bool = ..., volumes: _Optional[_Iterable[_Union[VolumeSnapshot, _Mapping]]] = ..., labels: _Optional[_Mapping[str, str]] = ..., durable: bool = ...) -> None: ...
 
 class ExitStatus(_message.Message):
     __slots__ = ("code", "signal", "duration", "timed_out")

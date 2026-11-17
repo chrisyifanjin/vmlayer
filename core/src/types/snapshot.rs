@@ -55,6 +55,9 @@ pub struct SnapshotRef {
     pub includes_memory: bool,
     pub volumes: Vec<VolumeSnapshotRef>,
     pub labels: BTreeMap<String, String>,
+    /// Also stored in the daemon's blob store (decision 0018).
+    #[serde(default)]
+    pub durable: bool,
 }
 
 /// Per-restore overrides. Identity (id, network address) is always fresh,

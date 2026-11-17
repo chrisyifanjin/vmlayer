@@ -120,12 +120,17 @@ class Client:
         )
         return [Sandbox._from_pb(self, s) for s in r.sandboxes]
 
-    def list_snapshots(self, *, labels: Mapping[str, str] | None = None) -> list[Snapshot]:
+    def list_snapshots(
+        self, *, labels: Mapping[str, str] | None = None, remote: bool = False
+    ) -> list[Snapshot]:
+        """This daemon's sandbox snapshots, or with ``remote=True`` the durable
+        ones in its blob store."""
         from .volume import Snapshot
 
         r = self._conn.call(
             self._conn.system.ListSnapshots,
-            system_pb2.ListSnapshotsRequest(labels=_rpc.labels_arg(labels)),
+            system_pb2.ListSnapshotsRequest(labels=_rpc.labels_arg(labels), remote=remote),
+            timeout=300,
         )
         return [Snapshot._from_pb(self, s) for s in r.snapshots]
 

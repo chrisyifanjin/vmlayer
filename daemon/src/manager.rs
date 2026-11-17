@@ -480,10 +480,15 @@ impl Daemon {
         ttl: Option<Duration>,
         labels: BTreeMap<String, String>,
     ) -> Result<SandboxView> {
-        let snap = self.store.get_snapshot(snapshot_id).map_err(|e| match e {
-            StoreError::NotFound => Error::SnapshotNotFound(snapshot_id.clone()),
-            e => store_err(e),
-        })?;
+        let snap = match self.store.get_snapshot(snapshot_id) {
+            Ok(s) => s,
+            // Pushed by this or another daemon and not here: download it.
+            Err(StoreError::NotFound) if self.volumes.remote().is_some() => {
+                self.import_sandbox_snapshot(snapshot_id).await?
+            }
+            Err(StoreError::NotFound) => return Err(Error::SnapshotNotFound(snapshot_id.clone())),
+            Err(e) => return Err(store_err(e)),
+        };
         let entry =
             self.registry
                 .get(&snap.backend)
@@ -693,7 +698,13 @@ impl Daemon {
         id: &SandboxId,
         labels: BTreeMap<String, String>,
         stay_paused: bool,
+        durable: bool,
     ) -> Result<SnapshotRef> {
+        if durable && self.volumes.remote().is_none() {
+            return Err(Error::Guest(
+                "no blob store is configured (set [blob_store] url or --blob-store)".into(),
+            ));
+        }
         let live = self.live(id).await?;
         let row = self.store.get_sandbox(id).map_err(store_err)?;
         let engine_version = self
@@ -719,7 +730,7 @@ impl Daemon {
                     &m.volume_id,
                     Some(m.guest_path.clone()),
                     labels.clone(),
-                    false,
+                    durable,
                 )
                 .await
             {
@@ -749,21 +760,60 @@ impl Daemon {
         }
         snap.engine_version = engine_version;
         snap.volumes = volume_refs;
+        if durable {
+            snap.durable = true;
+            if let Err(e) = self.push_sandbox_snapshot(&snap).await {
+                if let Some(entry) = self.registry.get(&snap.backend) {
+                    let _ = entry.backend.delete_snapshot(&snap).await;
+                }
+                for vs in &snap.volumes {
+                    let _ = self.volumes.delete_snapshot(&vs.id, false).await;
+                }
+                return Err(e);
+            }
+        }
         self.store.insert_snapshot(&snap).map_err(store_err)?;
         tracing::info!(%id, snapshot = %snap.id, "snapshot taken");
         Ok(snap)
     }
 
-    pub async fn delete_snapshot(&self, id: &SnapshotId) -> Result<()> {
-        let snap = self.store.get_snapshot(id).map_err(|e| match e {
-            StoreError::NotFound => Error::SnapshotNotFound(id.clone()),
-            e => store_err(e),
-        })?;
+    /// Delete a snapshot here and, if durable, in the blob store. With
+    /// `local_only`, keep the blob store's copy; `restore` downloads it.
+    pub async fn delete_snapshot(&self, id: &SnapshotId, local_only: bool) -> Result<()> {
+        let snap = match self.store.get_snapshot(id) {
+            Ok(s) => s,
+            Err(StoreError::NotFound) if !local_only && self.volumes.remote().is_some() => {
+                return match self
+                    .list_remote_snapshots()
+                    .await?
+                    .iter()
+                    .any(|s| &s.id == id)
+                {
+                    true => self.delete_remote_sandbox_snapshot(id).await,
+                    false => Err(Error::SnapshotNotFound(id.clone())),
+                };
+            }
+            Err(StoreError::NotFound) => return Err(Error::SnapshotNotFound(id.clone())),
+            Err(e) => return Err(store_err(e)),
+        };
+        if local_only && !snap.durable {
+            return Err(Error::Guest(format!(
+                "snapshot {id} is not durable; its local copy is the only one"
+            )));
+        }
         if let Some(entry) = self.registry.get(&snap.backend) {
             entry.backend.delete_snapshot(&snap).await?;
         }
-        for vs in &snap.volumes {
-            let _ = self.volumes.delete_snapshot(&vs.id, false).await;
+        if local_only {
+            for vs in &snap.volumes {
+                let _ = self.volumes.delete_snapshot(&vs.id, true).await;
+            }
+        } else if snap.durable {
+            self.delete_remote_sandbox_snapshot(id).await?;
+        } else {
+            for vs in &snap.volumes {
+                let _ = self.volumes.delete_snapshot(&vs.id, false).await;
+            }
         }
         self.store.delete_snapshot(id).map_err(store_err)
     }

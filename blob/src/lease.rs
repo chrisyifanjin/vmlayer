@@ -235,6 +235,20 @@ impl Remote {
         Ok(())
     }
 
+    /// The document `<prefix>/<dir>/<name>.json`, if it exists.
+    pub async fn get_doc(&self, dir: &str, name: &str) -> Result<Option<Vec<u8>>> {
+        manifest::check_id(name)?;
+        match self
+            .store
+            .get(&self.key(&format!("{dir}/{name}.json")))
+            .await
+        {
+            Ok(r) => Ok(Some(r.bytes().await?.to_vec())),
+            Err(object_store::Error::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub async fn delete_doc(&self, dir: &str, name: &str) -> Result<()> {
         manifest::check_id(name)?;
         match self

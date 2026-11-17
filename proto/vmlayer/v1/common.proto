@@ -119,6 +119,8 @@ message Snapshot {
   bool includes_memory = 7;
   repeated VolumeSnapshot volumes = 8;
   map<string, string> labels = 9;
+  // Stored in the blob store (decision 0018).
+  bool durable = 10;
 }
 
 message ExitStatus {

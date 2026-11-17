@@ -102,6 +102,9 @@ message SnapshotSandboxRequest {
   string id = 1;
   map<string, string> labels = 2;
   bool stay_paused = 3;
+  // Also store memory, VM state and disks in the blob store, so any daemon
+  // sharing it can restore the snapshot (same CPU model and engine release).
+  bool durable = 4;
 }
 
 message ForkSandboxRequest {

@@ -238,6 +238,7 @@ pub fn snapshot(s: &SnapshotRef) -> pb::Snapshot {
         includes_memory: s.includes_memory,
         volumes: s.volumes.iter().map(volume_snapshot_ref).collect(),
         labels: labels(&s.labels),
+        durable: s.durable,
     }
 }
 

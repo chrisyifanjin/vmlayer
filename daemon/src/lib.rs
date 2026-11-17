@@ -4,6 +4,7 @@
 
 pub mod cluster;
 pub mod config;
+pub mod durable;
 pub mod grpc;
 pub mod images;
 pub mod manager;

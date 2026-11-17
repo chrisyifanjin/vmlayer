@@ -189,7 +189,12 @@ enum SnapshotsCmd {
     #[command(alias = "ls")]
     List,
     #[command(alias = "rm")]
-    Delete { snapshot: String },
+    Delete {
+        snapshot: String,
+        /// Free only the local copy of a durable snapshot.
+        #[arg(long)]
+        local_only: bool,
+    },
 }
 
 fn kv(pairs: &[String]) -> anyhow::Result<HashMap<String, String>> {
@@ -580,9 +585,15 @@ async fn main() -> anyhow::Result<()> {
                     .into_inner();
                 output::snapshots(&r.snapshots, json);
             }
-            SnapshotsCmd::Delete { snapshot } => {
+            SnapshotsCmd::Delete {
+                snapshot,
+                local_only,
+            } => {
                 c.system
-                    .delete_snapshot(pb::DeleteSnapshotRequest { id: snapshot })
+                    .delete_snapshot(pb::DeleteSnapshotRequest {
+                        id: snapshot,
+                        local_only,
+                    })
                     .await?;
             }
         },

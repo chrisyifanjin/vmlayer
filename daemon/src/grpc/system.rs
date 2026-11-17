@@ -92,8 +92,19 @@ impl System for Services {
         &self,
         req: Request<pb::ListSnapshotsRequest>,
     ) -> Result<Response<pb::ListSnapshotsResponse>, Status> {
-        let labels = convert::labels_from(&req.into_inner().labels);
-        let snaps = self.daemon.list_snapshots(&labels).map_err(status)?;
+        let r = req.into_inner();
+        let labels = convert::labels_from(&r.labels);
+        let snaps = if r.remote {
+            self.daemon
+                .list_remote_snapshots()
+                .await
+                .map_err(status)?
+                .into_iter()
+                .filter(|s| labels.iter().all(|(k, v)| s.labels.get(k) == Some(v)))
+                .collect()
+        } else {
+            self.daemon.list_snapshots(&labels).map_err(status)?
+        };
         Ok(Response::new(pb::ListSnapshotsResponse {
             snapshots: snaps.iter().map(convert::snapshot).collect(),
         }))
@@ -128,7 +139,7 @@ impl System for Services {
     ) -> Result<Response<pb::Empty>, Status> {
         let r = req.into_inner();
         self.daemon
-            .delete_snapshot(&SnapshotId(r.id))
+            .delete_snapshot(&SnapshotId(r.id), r.local_only)
             .await
             .map_err(status)?;
         Ok(Response::new(pb::Empty {}))

@@ -30,7 +30,8 @@ impl Remote {
     pub async fn gc(&self, dry_run: bool) -> Result<GcStats> {
         // Any unreadable manifest aborts the pass: deleting on partial
         // knowledge could destroy a snapshot.
-        let manifests = self.list().await?;
+        let mut manifests = self.list_under(crate::manifest::MANIFEST_DIR).await?;
+        manifests.extend(self.list_under(crate::SANDBOX_FILES_DIR).await?);
         let referenced: HashSet<String> = manifests
             .iter()
             .flat_map(|m| m.chunks.iter().map(|c| c.hash.clone()))

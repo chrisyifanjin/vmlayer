@@ -267,3 +267,26 @@ fn open_parses_urls_and_hides_credentials() {
     assert_eq!(s3.prefix, "some/prefix");
     assert!(Remote::open("not a url", &BTreeMap::new()).is_err());
 }
+
+#[tokio::test]
+async fn sandbox_snapshot_files_live_apart_and_survive_gc() {
+    let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+    let remote = Remote::from_store(store, "").with_gc_grace(Duration::ZERO);
+    let dir = tempfile::tempdir().unwrap();
+    let image = sparse_image(dir.path());
+    let files = remote.files_of("snap-1").unwrap();
+    files.push_block(&image, &meta("mem")).await.unwrap();
+    // Not a volume snapshot...
+    assert!(remote.list().await.unwrap().is_empty());
+    assert_eq!(files.list().await.unwrap().len(), 1);
+    // ...but its chunks are referenced.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert_eq!(remote.gc(false).await.unwrap().deleted, 0);
+    let out = dir.path().join("mem.out");
+    files
+        .pull(&files.manifest("mem").await.unwrap(), &out)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(out).unwrap(), std::fs::read(&image).unwrap());
+    assert!(remote.files_of("../x").is_err());
+}

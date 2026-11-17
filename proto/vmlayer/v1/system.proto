@@ -90,6 +90,14 @@ message SystemInfo {
 
 message HealthResponse { bool ok = 1; }
 
-message ListSnapshotsRequest { map<string, string> labels = 1; }
+message ListSnapshotsRequest {
+  map<string, string> labels = 1;
+  // List the durable snapshots in the blob store instead of this daemon's.
+  bool remote = 2;
+}
 message ListSnapshotsResponse { repeated Snapshot snapshots = 1; }
-message DeleteSnapshotRequest { string id = 1; }
+message DeleteSnapshotRequest {
+  string id = 1;
+  // Free only the local copy of a durable snapshot.
+  bool local_only = 2;
+}

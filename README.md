@@ -41,6 +41,7 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Firecracker backend (memory snapshots, fork) | working; end-to-end tests in CI on x86_64 KVM and locally on aarch64 nested KVM ([setup](docs/firecracker.md), [benchmark](docs/benchmarks.md)) |
 | libkrun backend (macOS microVMs) | planned |
 | Network isolation (no access to the host, other sandboxes or cloud metadata), egress allowlists by network or DNS name, network and disk rate limits | working on Firecracker, tested end to end in CI ([usage](docs/usage.md#network-policy-and-resource-limits), [design](docs/decisions/0012-network-isolation-egress-and-io-limits.md)) |
+| Durable memory snapshots: resume a running Firecracker sandbox on another host of the same type (`snapshot(durable=True)`) | working, tested end to end on KVM ([design](docs/decisions/0018-durable-memory-snapshots.md)) |
 | Durable volume snapshots in S3, Azure Blob, GCS or a shared directory (incremental, deduplicated, move between hosts) | working; tested against MinIO and Azurite in CI ([usage](docs/usage.md#durable-snapshots-and-moving-workspaces-between-hosts), [design](docs/decisions/0011-durable-snapshots-in-object-storage.md)) |
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
 | Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |

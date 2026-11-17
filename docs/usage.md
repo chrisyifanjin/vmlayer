@@ -215,6 +215,12 @@ Rules:
 
 ### Durable snapshots and moving workspaces between hosts
 
+On the Firecracker backend a whole sandbox, memory included, can be stored
+too: `snap = sb.snapshot(durable=True)`, then `Sandbox.restore(snap.id)` on
+any daemon that shares the store and runs the same CPU model and
+Firecracker release resumes it with its processes running
+([decision 0018](decisions/0018-durable-memory-snapshots.md)).
+
 With a blob store configured (`vmlayerd --blob-store s3://bucket/prefix`, or
 `az://`, `gs://`, `file://`), a snapshot can also be kept in object storage:
 

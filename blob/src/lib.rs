@@ -61,7 +61,12 @@ pub struct Remote {
     display: String,
     concurrency: usize,
     gc_grace: Duration,
+    /// Where this handle's manifests live (see [`Remote::files_of`]).
+    manifest_dir: String,
 }
+
+/// Root of the per-file manifests of sandbox (memory) snapshots.
+pub const SANDBOX_FILES_DIR: &str = "sandbox-snapshot-files";
 
 impl std::fmt::Debug for Remote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -102,6 +107,7 @@ impl Remote {
             prefix: prefix.trim_matches('/').to_string(),
             concurrency: 16,
             gc_grace: Duration::from_secs(24 * 3600),
+            manifest_dir: manifest::MANIFEST_DIR.to_string(),
         }
     }
 
@@ -142,9 +148,19 @@ impl Remote {
         }
     }
 
+    /// A handle whose manifests are the files of sandbox snapshot `snapshot`
+    /// (`<prefix>/sandbox-snapshot-files/<snapshot>/<file>.json`), sharing
+    /// the same chunks. Push, pull, list and delete then work on those files.
+    pub fn files_of(&self, snapshot: &str) -> Result<Self> {
+        manifest::check_id(snapshot)?;
+        let mut r = self.clone();
+        r.manifest_dir = format!("{SANDBOX_FILES_DIR}/{snapshot}");
+        Ok(r)
+    }
+
     fn manifest_key(&self, id: &str) -> Result<Path> {
         manifest::check_id(id)?;
-        Ok(self.key(&format!("{}/{id}.json", manifest::MANIFEST_DIR)))
+        Ok(self.key(&format!("{}/{id}.json", self.manifest_dir)))
     }
 
     /// The manifest of snapshot `id`.
@@ -162,7 +178,11 @@ impl Remote {
 
     /// Every snapshot in the store, oldest first.
     pub async fn list(&self) -> Result<Vec<Manifest>> {
-        let prefix = self.key(manifest::MANIFEST_DIR);
+        self.list_under(&self.manifest_dir).await
+    }
+
+    pub(crate) async fn list_under(&self, dir: &str) -> Result<Vec<Manifest>> {
+        let prefix = self.key(dir);
         let metas: Vec<_> = match self.store.list(Some(&prefix)).try_collect().await {
             Ok(m) => m,
             Err(object_store::Error::NotFound { .. }) => Vec::new(),

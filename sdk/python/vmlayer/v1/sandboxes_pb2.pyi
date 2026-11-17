@@ -146,7 +146,7 @@ class ResumeSandboxRequest(_message.Message):
     def __init__(self, id: _Optional[str] = ...) -> None: ...
 
 class SnapshotSandboxRequest(_message.Message):
-    __slots__ = ("id", "labels", "stay_paused")
+    __slots__ = ("id", "labels", "stay_paused", "durable")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -157,10 +157,12 @@ class SnapshotSandboxRequest(_message.Message):
     ID_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
     STAY_PAUSED_FIELD_NUMBER: _ClassVar[int]
+    DURABLE_FIELD_NUMBER: _ClassVar[int]
     id: str
     labels: _containers.ScalarMap[str, str]
     stay_paused: bool
-    def __init__(self, id: _Optional[str] = ..., labels: _Optional[_Mapping[str, str]] = ..., stay_paused: bool = ...) -> None: ...
+    durable: bool
+    def __init__(self, id: _Optional[str] = ..., labels: _Optional[_Mapping[str, str]] = ..., stay_paused: bool = ..., durable: bool = ...) -> None: ...
 
 class ForkSandboxRequest(_message.Message):
     __slots__ = ("id", "count")

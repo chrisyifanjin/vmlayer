@@ -400,7 +400,11 @@ class Sandbox:
     # -- state ----------------------------------------------------------------
 
     def snapshot(
-        self, *, labels: Mapping[str, str] | None = None, stay_paused: bool = False
+        self,
+        *,
+        labels: Mapping[str, str] | None = None,
+        stay_paused: bool = False,
+        durable: bool = False,
     ) -> Snapshot:
         """Freeze the sandbox and persist it.
 
@@ -411,12 +415,17 @@ class Sandbox:
 
         For a cheap, portable, long-lived checkpoint of just the files, use
         ``sandbox.workspace.snapshot()`` instead.
+
+        With ``durable=True`` the snapshot (memory, VM state and every volume)
+        is also stored in the daemon's blob store, and ``Sandbox.restore(id)``
+        on any daemon sharing the store resumes it, given the same CPU model
+        and engine release. Microvm backends only.
         """
         c = self._client._conn
         req = sandboxes_pb2.SnapshotSandboxRequest(
-            id=self.id, labels=_rpc.labels_arg(labels), stay_paused=stay_paused
+            id=self.id, labels=_rpc.labels_arg(labels), stay_paused=stay_paused, durable=durable
         )
-        return Snapshot._from_pb(self._client, c.call(c.sandboxes.TakeSnapshot, req, timeout=600))
+        return Snapshot._from_pb(self._client, c.call(c.sandboxes.TakeSnapshot, req, timeout=3600))
 
     def fork(self, count: int = 1) -> list[Sandbox]:
         """Clone this sandbox ``count`` times, each copy continuing from the

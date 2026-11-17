@@ -153,6 +153,7 @@ impl Sandboxes for Services {
                 &SandboxId(r.id),
                 convert::labels_from(&r.labels),
                 r.stay_paused,
+                r.durable,
             )
             .await
             .map_err(status)?;

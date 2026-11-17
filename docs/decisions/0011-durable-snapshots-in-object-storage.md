@@ -87,9 +87,8 @@ metadata, IRSA, workload and managed identity). Chosen over three SDKs.
   user-space block device (ublk or NBD) that fetches chunks on first read
   and writes to a local copy-on-write overlay. The manifest already records
   everything that needs (fixed offsets, per-chunk hashes).
-- Memory snapshots stay local. They are tied to the CPU model and the
-  Firecracker release, so they are short-lived by nature; uploading them
-  with the same chunk store is possible later.
+- Memory snapshots stayed local at first; ADR 0018 later stored them in
+  the same chunk store for hosts of the same CPU model and release.
 - Deduplication works across every volume in a store, which also means a
   chunk's existence reveals that some snapshot contains those exact 4 MiB.
   Stores shared between tenants should use separate prefixes or buckets.

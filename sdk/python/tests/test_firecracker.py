@@ -293,6 +293,28 @@ def test_lazy_restore_of_a_large_volume(fc: vmlayer.Client) -> None:
         volume.delete()
 
 
+def test_durable_memory_snapshot(fc: vmlayer.Client) -> None:
+    if not fc.info().blob_store:
+        pytest.skip("the daemon has no blob store")
+    with create(fc) as sb:
+        sb.files.write("/work/counter.py", COUNTER)
+        sb.spawn("python3 /work/counter.py")
+        time.sleep(1)
+        snap = sb.snapshot(durable=True)
+    assert snap.durable and snap.includes_memory
+    assert snap.id in {s.id for s in fc.list_snapshots(remote=True)}
+    # Only the blob store has it now; restore downloads it and resumes.
+    snap.delete(local_only=True)
+    assert snap.id not in {s.id for s in fc.list_snapshots()}
+    restored = Sandbox.restore(snap.id, client=fc)
+    try:
+        assert advancing(restored), "the process running at snapshot time did not resume"
+    finally:
+        restored.kill()
+    snap.delete()
+    assert snap.id not in {s.id for s in fc.list_snapshots(remote=True)}
+
+
 def test_memory_snapshot_restore_and_fork(fc: vmlayer.Client) -> None:
     with create(fc) as sb:
         sb.files.write("/work/counter.py", COUNTER)

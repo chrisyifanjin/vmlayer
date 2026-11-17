@@ -102,6 +102,8 @@ class Snapshot:
     guest paths. ``Sandbox.restore`` clones these; it never reattaches the
     original volumes."""
     labels: Mapping[str, str] = field(default_factory=dict)
+    durable: bool = False
+    """Stored in the daemon's blob store; restorable by any daemon sharing it."""
     _client: Client | None = field(default=None, repr=False, compare=False)
 
     @classmethod
@@ -118,15 +120,21 @@ class Snapshot:
             created_at=_rpc.from_timestamp(s.created_at),
             size_bytes=s.size_bytes,
             includes_memory=s.includes_memory,
+            durable=s.durable,
             volumes=tuple(VolumeSnapshot._from_pb(client, v) for v in s.volumes),
             labels=dict(s.labels),
             _client=client,
         )
 
-    def delete(self) -> None:
-        """Remove the snapshot from the daemon's store."""
+    def delete(self, *, local_only: bool = False) -> None:
+        """Remove the snapshot, including its blob-store copy if durable.
+        With ``local_only=True``, free the local copy and keep the blob
+        store's; ``Sandbox.restore`` downloads it again when needed."""
         c = _client(self._client)
-        c._conn.call(c._conn.system.DeleteSnapshot, system_pb2.DeleteSnapshotRequest(id=self.id))
+        c._conn.call(
+            c._conn.system.DeleteSnapshot,
+            system_pb2.DeleteSnapshotRequest(id=self.id, local_only=local_only),
+        )
 
 
 class Volume:

@@ -948,6 +948,7 @@ impl SandboxHandle for FirecrackerSandbox {
             includes_memory: true,
             volumes: Vec::new(),
             labels: opts.labels,
+            durable: false,
         })
     }
 

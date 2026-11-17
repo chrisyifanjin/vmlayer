@@ -65,6 +65,11 @@ versions; every change to the SDK surface is listed.
   `Sandbox.create(lease="name")` keeps at most one live sandbox per name
   across hosts, using the store's conditional writes, and a daemon that
   loses or cannot renew a lease kills its sandbox.
+- Durable memory snapshots (decision 0018): `Sandbox.snapshot(durable=True)`
+  stores memory, VM state and volumes in the blob store;
+  `Sandbox.restore(id)` on another daemon of the same CPU model and
+  Firecracker release downloads and resumes it. `Snapshot.delete(local_only=
+  True)`, `Client.list_snapshots(remote=True)`, CLI `snapshots rm --local-only`.
 - E2B wire compatibility (decision 0017): `vmlayer-e2b-server` serves
   E2B's REST control plane and envd Connect services on any vmlayer
   backend, so unmodified E2B SDK code runs after setting `E2B_API_URL`,

@@ -422,6 +422,7 @@ impl SandboxHandle for DockerSandbox {
             includes_memory: false,
             volumes: Vec::new(),
             labels: opts.labels,
+            durable: false,
         })
     }
 
