@@ -32,7 +32,8 @@
       first heavy process after a restore 2.8 s to 0.75 s on nested KVM.
 - [ ] **6a. Lazy restore**: serve a volume straight from its manifest
       through ublk or NBD, fetching chunks on first read.
-- [ ] **7. TypeScript SDK, asyncio client, E2B-compatible facade.**
+- [ ] **7. TypeScript SDK** (done), **E2B-shaped facade** (done for Python,
+      source compatible), **asyncio client** (open).
 - [ ] **8. Adapters** for the six runtimes in docs/integrations.md.
 - [ ] **8a. Agent Sandbox API compatibility.** Define and test a supported
       subset of its Sandbox lifecycle against the direct-VM host daemon.

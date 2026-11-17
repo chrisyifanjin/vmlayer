@@ -112,6 +112,11 @@ class Sandbox:
         return _STATES.get(self._pb.state, SandboxState.FAILED)
 
     @property
+    def created_at(self) -> float:
+        """Unix timestamp, seconds."""
+        return _rpc.from_timestamp(self._pb.created_at)
+
+    @property
     def exposed(self) -> Mapping[int, Endpoint]:
         """Guest ports currently exposed, by guest port."""
         self.refresh()

@@ -58,6 +58,11 @@ versions; every change to the SDK surface is listed.
   `limits=IoLimits(network_mbps=..., disk_mbps=..., disk_iops=...)` uses
   Firecracker's rate limiters. New capabilities `egress_policy` and
   `io_limits`; the Docker backend refuses both with `BackendUnsupported`.
+- `vmlayer.e2b`: an E2B-shaped Python facade (`Sandbox.create / connect /
+  list`, `commands.run` with background handles, `files.*`, `get_host`,
+  E2B's exception types) so code written for the E2B SDK runs after changing
+  one import. Templates are labelled vmlayer snapshots (`create_template`).
+- `Sandbox.created_at` in the Python SDK.
 - Firecracker restores populate guest memory up front over userfaultfd
   (decision 0013, `[firecracker] prefetch_memory`, default on): all-zero
   ranges map to the shared zero page, the rest is copied in 2 MiB batches

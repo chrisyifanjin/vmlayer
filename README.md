@@ -44,7 +44,8 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Durable volume snapshots in S3, Azure Blob, GCS or a shared directory (incremental, deduplicated, move between hosts) | working; tested against MinIO and Azurite in CI ([usage](docs/usage.md#durable-snapshots-and-moving-workspaces-between-hosts), [design](docs/decisions/0011-durable-snapshots-in-object-storage.md)) |
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
 | Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |
-| E2B-compatible facade, asyncio client, more adapters (ADK, SWE-ReX, smolagents) | planned |
+| E2B-shaped Python facade (`from vmlayer.e2b import Sandbox`; source compatible, not wire compatible) | working, tested end to end ([mapping](docs/e2b-mapping.md)) |
+| Multi-host placement, lazy restore of large volumes, asyncio client, more adapters (ADK, SWE-ReX, smolagents) | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says

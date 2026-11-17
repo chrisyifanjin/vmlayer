@@ -3,8 +3,24 @@
 E2B's SDK shape is becoming the de facto interface for agent sandboxes: at
 least two other self-hosted runtimes already ship E2B-compatible facades.
 vmlayer keeps its own API (snapshot/fork and capabilities need a different
-shape) but tracks the mapping so a compatibility layer can be added later
-without redesign.
+shape) and ships an E2B-shaped Python facade, `vmlayer.e2b`, so code written
+for the E2B SDK runs on vmlayer after changing one import:
+
+```python
+# from e2b import Sandbox
+from vmlayer.e2b import Sandbox, create_template
+
+create_template("py-deps", "python:3.12-slim", setup="pip install requests")
+with Sandbox.create("py-deps", timeout=300, metadata={"user": "u1"}) as sbx:
+    print(sbx.commands.run("python3 -c 'import requests; print(requests.__version__)'").stdout)
+```
+
+It is source compatibility, not wire compatibility: the facade talks to a
+vmlayer daemon, and an unmodified E2B SDK pointed at a vmlayer address does
+not work. Templates are vmlayer snapshots labelled `e2b.template=<name>`,
+made with `create_template` and restored on `Sandbox.create(name)`; any
+other template string is used as an OCI image reference. `set_timeout`,
+`pause` and `get_metrics` raise `NotImplementedError`.
 
 | E2B (Python SDK) | vmlayer | Notes |
 |---|---|---|
