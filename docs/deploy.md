@@ -31,6 +31,7 @@ Flags and environment:
 | `--config file.toml` | `VMLAYER_CONFIG` | none |
 | `--log-format pretty\|json`, `--log-filter` | `VMLAYER_LOG_FORMAT`, `VMLAYER_LOG` | pretty, info |
 | `--default-backend` | `VMLAYER_DEFAULT_BACKEND` | strongest available |
+| `--blob-store s3://bucket/prefix` | `VMLAYER_BLOB_STORE` | none (durable snapshots off) |
 
 Config file (every key optional):
 
@@ -55,10 +56,33 @@ probe_image = "alpine:3.20"
 verify_mounts = true                   # check the data dir is visible in containers
 pids_limit = 4096                      # max processes per sandbox; 0 disables
 
+[blob_store]                           # durable volume snapshots (decision 0011)
+url = "s3://my-bucket/vmlayer"         # or az://container/prefix, gs://bucket/prefix, file:///mnt/shared
+options = { region = "eu-central-1" }  # optional; e.g. endpoint, allow_http, use_emulator
+gc_grace_hours = 24                    # unreferenced chunks younger than this survive GC
+concurrency = 16                       # requests in flight per transfer
+
 [log]
 format = "json"
 filter = "info,vmlayerd=debug"
 ```
+
+### Blob store credentials
+
+The daemon never reads credentials from its config file. It uses the
+standard sources of each provider:
+
+| Store | URL | Credentials |
+|---|---|---|
+| AWS S3 | `s3://bucket/prefix` | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`-style web identity (IRSA), or instance metadata |
+| S3-compatible (MinIO, Ceph, R2) | `s3://bucket/prefix` | as above, plus `options = { endpoint = "https://..." }` |
+| Azure Blob | `az://container/prefix` | `AZURE_STORAGE_ACCOUNT_NAME` with `AZURE_STORAGE_ACCOUNT_KEY`, a SAS token, workload identity, or managed identity |
+| Google Cloud Storage | `gs://bucket/prefix` | `GOOGLE_APPLICATION_CREDENTIALS` or the VM's service account |
+| Shared directory | `file:///mnt/shared/vmlayer` | file permissions |
+
+Give the daemon list, read, write and delete on its prefix. Run garbage
+collection (`vmlayer volume gc`) from one place on a schedule, for example
+daily; it is safe to run while snapshots are being uploaded.
 
 ## systemd
 

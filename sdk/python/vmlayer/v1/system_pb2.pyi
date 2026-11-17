@@ -6,6 +6,28 @@ from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Map
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class CollectGarbageRequest(_message.Message):
+    __slots__ = ("dry_run",)
+    DRY_RUN_FIELD_NUMBER: _ClassVar[int]
+    dry_run: bool
+    def __init__(self, dry_run: bool = ...) -> None: ...
+
+class CollectGarbageResponse(_message.Message):
+    __slots__ = ("snapshots", "chunks", "referenced_chunks", "recent_chunks", "deleted_chunks", "deleted_bytes")
+    SNAPSHOTS_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    REFERENCED_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    RECENT_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    DELETED_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    DELETED_BYTES_FIELD_NUMBER: _ClassVar[int]
+    snapshots: int
+    chunks: int
+    referenced_chunks: int
+    recent_chunks: int
+    deleted_chunks: int
+    deleted_bytes: int
+    def __init__(self, snapshots: _Optional[int] = ..., chunks: _Optional[int] = ..., referenced_chunks: _Optional[int] = ..., recent_chunks: _Optional[int] = ..., deleted_chunks: _Optional[int] = ..., deleted_bytes: _Optional[int] = ...) -> None: ...
+
 class PullImageRequest(_message.Message):
     __slots__ = ("image", "backend")
     IMAGE_FIELD_NUMBER: _ClassVar[int]
@@ -43,16 +65,18 @@ class BackendInfo(_message.Message):
     def __init__(self, name: _Optional[str] = ..., engine_version: _Optional[str] = ..., capabilities: _Optional[_Union[_common_pb2.Capabilities, _Mapping]] = ..., unavailable_reason: _Optional[str] = ...) -> None: ...
 
 class SystemInfo(_message.Message):
-    __slots__ = ("daemon_version", "backends", "default_backend", "data_dir")
+    __slots__ = ("daemon_version", "backends", "default_backend", "data_dir", "blob_store")
     DAEMON_VERSION_FIELD_NUMBER: _ClassVar[int]
     BACKENDS_FIELD_NUMBER: _ClassVar[int]
     DEFAULT_BACKEND_FIELD_NUMBER: _ClassVar[int]
     DATA_DIR_FIELD_NUMBER: _ClassVar[int]
+    BLOB_STORE_FIELD_NUMBER: _ClassVar[int]
     daemon_version: str
     backends: _containers.RepeatedCompositeFieldContainer[BackendInfo]
     default_backend: str
     data_dir: str
-    def __init__(self, daemon_version: _Optional[str] = ..., backends: _Optional[_Iterable[_Union[BackendInfo, _Mapping]]] = ..., default_backend: _Optional[str] = ..., data_dir: _Optional[str] = ...) -> None: ...
+    blob_store: str
+    def __init__(self, daemon_version: _Optional[str] = ..., backends: _Optional[_Iterable[_Union[BackendInfo, _Mapping]]] = ..., default_backend: _Optional[str] = ..., data_dir: _Optional[str] = ..., blob_store: _Optional[str] = ...) -> None: ...
 
 class HealthResponse(_message.Message):
     __slots__ = ("ok",)

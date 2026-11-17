@@ -40,11 +40,10 @@ vmlayer treats the host as "a Linux machine", full stop. Concretely:
    `Backend::Auto` falls back to Docker so the same deployment still works.
 2. **No managed services required.** State in SQLite on local disk; snapshots
    and image cache on local disk by default.
-3. **Durable storage behind a trait.** `BlobStore` with two shipped impls:
-   local filesystem, and S3-compatible (works unchanged against AWS S3, GCS
-   interop, Cloudflare R2, MinIO, Alibaba OSS, Hetzner Object Storage). Azure
-   Blob gets its own impl later if asked for; it is the one major store
-   without an S3 API.
+3. **Durable storage behind one interface.** Implemented in ADR 0011 with
+   the `object_store` crate: local or shared directory, S3 and
+   S3-compatible stores (AWS S3, Cloudflare R2, MinIO, Ceph, Alibaba OSS,
+   Hetzner Object Storage), Azure Blob, and Google Cloud Storage.
 4. **Networking uses Linux primitives only**: tap, bridge, nftables or eBPF
    for NAT and egress policy, and optionally a CNI plugin. Exposing a port
    means a host port, nothing more. Load balancers and public ingress are the

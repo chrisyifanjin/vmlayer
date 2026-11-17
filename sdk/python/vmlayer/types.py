@@ -143,6 +143,21 @@ class SystemInfo:
     backends: tuple[BackendInfo, ...]
     default_backend: str
     data_dir: str
+    blob_store: str | None = None
+    """URL of the blob store for durable snapshots, if one is configured."""
+
+
+@dataclass(frozen=True)
+class GarbageCollection:
+    """What ``Client.collect_garbage`` found and removed in the blob store."""
+
+    snapshots: int
+    chunks: int
+    referenced_chunks: int
+    recent_chunks: int
+    """Unreferenced but within the grace period, so kept."""
+    deleted_chunks: int
+    deleted_bytes: int
 
 
 @dataclass(frozen=True)

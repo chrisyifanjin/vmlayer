@@ -8,7 +8,14 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from . import _rpc
-from .types import Backend, BackendInfo, Capabilities, ImageInfo, SystemInfo
+from .types import (
+    Backend,
+    BackendInfo,
+    Capabilities,
+    GarbageCollection,
+    ImageInfo,
+    SystemInfo,
+)
 from .v1 import common_pb2, sandboxes_pb2, system_pb2, volumes_pb2
 
 if TYPE_CHECKING:
@@ -66,6 +73,7 @@ class Client:
             ),
             default_backend=r.default_backend,
             data_dir=r.data_dir,
+            blob_store=r.blob_store or None,
         )
 
     def health(self) -> bool:
@@ -127,15 +135,37 @@ class Client:
         return [Volume._from_pb(self, v) for v in r.volumes]
 
     def list_volume_snapshots(
-        self, *, labels: Mapping[str, str] | None = None
+        self, *, labels: Mapping[str, str] | None = None, remote: bool = False
     ) -> list[VolumeSnapshot]:
+        """This daemon's volume snapshots, or with ``remote=True`` every
+        snapshot in its blob store (from any daemon sharing it)."""
         from .volume import VolumeSnapshot
 
         r = self._conn.call(
             self._conn.volumes.ListSnapshots,
-            volumes_pb2.ListVolumeSnapshotsRequest(labels=_rpc.labels_arg(labels)),
+            volumes_pb2.ListVolumeSnapshotsRequest(labels=_rpc.labels_arg(labels), remote=remote),
+            timeout=300,
         )
         return [VolumeSnapshot._from_pb(self, s) for s in r.snapshots]
+
+    def collect_garbage(self, *, dry_run: bool = False) -> GarbageCollection:
+        """Delete blob-store chunks no snapshot references any more.
+
+        Chunks younger than the daemon's grace period are kept, so this is
+        safe to run while snapshots are being uploaded."""
+        r = self._conn.call(
+            self._conn.system.CollectGarbage,
+            system_pb2.CollectGarbageRequest(dry_run=dry_run),
+            timeout=3600,
+        )
+        return GarbageCollection(
+            snapshots=r.snapshots,
+            chunks=r.chunks,
+            referenced_chunks=r.referenced_chunks,
+            recent_chunks=r.recent_chunks,
+            deleted_chunks=r.deleted_chunks,
+            deleted_bytes=r.deleted_bytes,
+        )
 
     def close(self) -> None:
         self._conn.close()

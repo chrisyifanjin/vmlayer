@@ -45,7 +45,17 @@ def daemon() -> Iterator[vmlayer.Client]:
     env = dict(os.environ, VMLAYER_LOG="info,vmlayerd=debug")
     log = open(Path(tmp) / "daemon.log", "wb")
     proc = subprocess.Popen(
-        [str(_daemon_bin()), "--listen", f"unix://{sock}", "--data-dir", str(Path(tmp) / "data")],
+        [
+            str(_daemon_bin()),
+            "--listen",
+            f"unix://{sock}",
+            "--data-dir",
+            str(Path(tmp) / "data"),
+            # A shared directory stands in for S3: test_blob_store.py starts a
+            # second daemon on the same store to act as another host.
+            "--blob-store",
+            f"file://{Path(tmp) / 'blobs'}",
+        ],
         stdout=log,
         stderr=subprocess.STDOUT,
         env=env,

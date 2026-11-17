@@ -19,7 +19,41 @@ pub struct Config {
     pub defaults: Defaults,
     pub docker: DockerConfig,
     pub firecracker: FirecrackerConfig,
+    pub blob_store: BlobStoreConfig,
     pub log: LogConfig,
+}
+
+/// Object storage for durable volume snapshots (ADR 0011). Off unless `url`
+/// is set. Credentials come from the environment (`AWS_*`, `AZURE_*`,
+/// `GOOGLE_*`) or the machine's cloud identity, never from this file.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlobStoreConfig {
+    /// `s3://bucket/prefix`, `az://container/prefix`, `gs://bucket/prefix`
+    /// or `file:///shared/dir`.
+    pub url: Option<String>,
+    /// Store settings, e.g. `endpoint`, `region`, `allow_http`,
+    /// `use_emulator`. Override the environment.
+    pub options: std::collections::BTreeMap<String, String>,
+    /// Unreferenced chunks younger than this survive garbage collection.
+    /// Default 24.
+    pub gc_grace_hours: Option<u64>,
+    /// Requests in flight per transfer. Default 16.
+    pub concurrency: Option<usize>,
+}
+
+impl BlobStoreConfig {
+    pub fn open(&self) -> anyhow::Result<Option<vmlayer_blob::Remote>> {
+        let Some(url) = self.url.as_deref().filter(|u| !u.is_empty()) else {
+            return Ok(None);
+        };
+        let remote = vmlayer_blob::Remote::open(url, &self.options)?
+            .with_gc_grace(std::time::Duration::from_secs(
+                self.gc_grace_hours.unwrap_or(24) * 3600,
+            ))
+            .with_concurrency(self.concurrency.unwrap_or(16));
+        Ok(Some(remote))
+    }
 }
 
 /// Firecracker backend. Disabled unless `enabled = true`; the daemon then
@@ -160,6 +194,7 @@ impl Default for Config {
             defaults: Defaults::default(),
             docker: DockerConfig::default(),
             firecracker: FirecrackerConfig::default(),
+            blob_store: BlobStoreConfig::default(),
             log: LogConfig::default(),
         }
     }

@@ -125,7 +125,7 @@ pub fn volume_snapshots(list: &[pb::VolumeSnapshot], as_json: bool) {
     if as_json {
         let v: Vec<Value> = list
             .iter()
-            .map(|s| json!({"id": s.id, "volume_id": s.volume_id, "guest_path": s.guest_path, "size_bytes": s.size_bytes, "durable": s.durable, "labels": s.labels}))
+            .map(|s| json!({"id": s.id, "volume_id": s.volume_id, "guest_path": s.guest_path, "size_bytes": s.size_bytes, "durable": s.durable, "local": s.local, "labels": s.labels}))
             .collect();
         return json(&Value::Array(v));
     }
@@ -137,11 +137,20 @@ pub fn volume_snapshots(list: &[pb::VolumeSnapshot], as_json: bool) {
                 s.volume_id.clone(),
                 s.guest_path.clone(),
                 human(s.size_bytes),
+                match (s.local, s.durable) {
+                    (true, true) => "local+blob",
+                    (true, false) => "local",
+                    (false, _) => "blob",
+                }
+                .to_string(),
                 age(&s.created_at),
             ]
         })
         .collect();
-    table(&["ID", "VOLUME", "GUEST PATH", "SIZE", "AGE"], &rows);
+    table(
+        &["ID", "VOLUME", "GUEST PATH", "SIZE", "STORED", "AGE"],
+        &rows,
+    );
 }
 
 pub fn snapshots(list: &[pb::Snapshot], as_json: bool) {
@@ -180,13 +189,16 @@ pub fn info(i: &pb::SystemInfo, as_json: bool) {
             .map(|b| json!({"name": b.name, "engine_version": b.engine_version, "available": b.unavailable_reason.is_empty(), "unavailable_reason": b.unavailable_reason}))
             .collect();
         return json(
-            &json!({"daemon_version": i.daemon_version, "default_backend": i.default_backend, "data_dir": i.data_dir, "backends": b}),
+            &json!({"daemon_version": i.daemon_version, "default_backend": i.default_backend, "data_dir": i.data_dir, "blob_store": i.blob_store, "backends": b}),
         );
     }
     println!(
         "vmlayerd {}  default backend: {}  data dir: {}",
         i.daemon_version, i.default_backend, i.data_dir
     );
+    if !i.blob_store.is_empty() {
+        println!("blob store: {}", i.blob_store);
+    }
     let rows: Vec<Vec<String>> = i
         .backends
         .iter()

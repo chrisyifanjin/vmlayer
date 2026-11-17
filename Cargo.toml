@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "proto", "procs", "backends/docker", "backends/firecracker", "daemon", "cli", "guest-agent"]
+members = ["core", "proto", "procs", "blob", "backends/docker", "backends/firecracker", "daemon", "cli", "guest-agent"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,7 @@ vmlayer-proto = { path = "proto" }
 vmlayer-backend-docker = { path = "backends/docker" }
 vmlayer-backend-firecracker = { path = "backends/firecracker" }
 vmlayer-procs = { path = "procs" }
+vmlayer-blob = { path = "blob" }
 
 anyhow = "1"
 async-stream = "0.3"

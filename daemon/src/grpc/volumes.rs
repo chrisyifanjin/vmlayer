@@ -111,15 +111,17 @@ impl Volumes for Services {
         let result = self
             .daemon
             .volumes
-            .snapshot(&v.id, guest_path, convert::labels_from(&r.labels))
+            .snapshot(
+                &v.id,
+                guest_path,
+                convert::labels_from(&r.labels),
+                r.durable,
+            )
             .await;
         if let Some(live) = &holder {
             let _ = live.handle.thaw_fs().await;
         }
         let snap = result.map_err(status)?;
-        if r.durable {
-            tracing::warn!(snapshot = %snap.id, "durable=true requested but no blob store is configured; snapshot is local only");
-        }
         Ok(Response::new(convert::volume_snapshot_row(&snap)))
     }
 
@@ -142,7 +144,18 @@ impl Volumes for Services {
         &self,
         req: Request<pb::ListVolumeSnapshotsRequest>,
     ) -> Result<Response<pb::ListVolumeSnapshotsResponse>, Status> {
-        let labels = convert::labels_from(&req.into_inner().labels);
+        let r = req.into_inner();
+        let labels = convert::labels_from(&r.labels);
+        if r.remote {
+            let snaps = self.daemon.volumes.list_remote().await.map_err(status)?;
+            return Ok(Response::new(pb::ListVolumeSnapshotsResponse {
+                snapshots: snaps
+                    .iter()
+                    .filter(|s| labels.iter().all(|(k, val)| s.labels.get(k) == Some(val)))
+                    .map(convert::volume_snapshot_manifest)
+                    .collect(),
+            }));
+        }
         let snaps = self.daemon.volumes.list_snapshots().map_err(status)?;
         Ok(Response::new(pb::ListVolumeSnapshotsResponse {
             snapshots: snaps
@@ -160,7 +173,7 @@ impl Volumes for Services {
         let r = req.into_inner();
         self.daemon
             .volumes
-            .delete_snapshot(&VolumeSnapshotId(r.id))
+            .delete_snapshot(&VolumeSnapshotId(r.id), r.local_only)
             .await
             .map_err(status)?;
         Ok(Response::new(pb::Empty {}))

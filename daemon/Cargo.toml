@@ -20,6 +20,7 @@ vmlayer-proto = { workspace = true }
 vmlayer-backend-docker = { workspace = true }
 vmlayer-backend-firecracker = { workspace = true }
 vmlayer-procs = { workspace = true }
+vmlayer-blob = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }

@@ -19,10 +19,15 @@ kernel = "$PREFIX/kernel/vmlinux"
 guest_agent = "$PREFIX/bin/vmlayer-guest-agent"
 template_snapshots = true
 template_warmup_argv = ["python3", "-c", "pass"]
+
+# Durable volume snapshots. A local directory here; point it at
+# s3://, az:// or gs:// to share snapshots between hosts.
+[blob_store]
+url = "${VMLAYER_BLOB_STORE:-file:///var/lib/vmlayer-blobs}"
 TOML
 sudo pkill -x vmlayerd 2>/dev/null || true
 sleep 0.5
-sudo mkdir -p /run/vmlayer /var/lib/vmlayer
+sudo mkdir -p /run/vmlayer /var/lib/vmlayer /var/lib/vmlayer-blobs
 sudo sh -c "VMLAYER_LOG='${VMLAYER_LOG:-info,vmlayerd=debug,vmlayer_backend_firecracker=debug}' nohup $PREFIX/bin/vmlayerd --config $PREFIX/vmlayerd.toml > /var/log/vmlayerd.log 2>&1 &"
 for _ in $(seq 1 50); do
   sudo VMLAYER_ENDPOINT=unix:///run/vmlayer/vmlayerd.sock "$PREFIX/bin/vmlayer" info >/dev/null 2>&1 && break

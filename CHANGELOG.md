@@ -35,6 +35,17 @@ versions; every change to the SDK surface is listed.
   (`vmlayer[openhands]`, experimental).
 - Benchmarks with recorded samples in `docs/benchmarks.md`, including each
   agent framework's own sandbox against the same framework on vmlayer.
+- Durable volume snapshots in object storage (decision 0011). Configure
+  `[blob_store] url` (`s3://`, `az://`, `gs://`, `file://`) and call
+  `Volume.snapshot(durable=True)`: the snapshot is stored as
+  content-addressed 4 MiB chunks, so later snapshots upload only changed
+  blocks. `VolumeSnapshot.delete(local_only=True)` frees the local copy,
+  `Volume.from_snapshot` downloads snapshots pushed by any daemon sharing the
+  store, `Client.list_volume_snapshots(remote=True)` lists them, and
+  `Client.collect_garbage()` removes unreferenced chunks. Same in the
+  TypeScript SDK and the CLI (`vmlayer volume snapshot --durable`,
+  `ls-snapshots --remote`, `rm-snapshot --local-only`, `gc`). Tested against
+  MinIO (S3) and Azurite (Azure Blob) in CI.
 - Firecracker end-to-end tests (`tests/test_firecracker.py`) and a CI job
   that runs them, the snapshot stress test and the benchmark on a GitHub
   x86_64 runner with KVM.

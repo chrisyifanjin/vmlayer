@@ -99,7 +99,12 @@ impl Daemon {
     pub async fn new(cfg: Config) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(&cfg.data_dir)?;
         let store = Store::open(&cfg.data_dir.join("state.db"))?;
-        let volumes = VolumeStore::new(&cfg.data_dir, store.clone(), cfg.defaults.volume_size_mib);
+        let remote = cfg.blob_store.open()?;
+        if let Some(r) = &remote {
+            tracing::info!(store = %r.describe(), "durable volume snapshots enabled");
+        }
+        let volumes = VolumeStore::new(&cfg.data_dir, store.clone(), cfg.defaults.volume_size_mib)
+            .with_remote(remote);
         let registry = Registry::from_config(&cfg).await;
         volumes.set_cleaners(registry.entries().map(|(_, e)| e.backend.clone()).collect());
         let d = Arc::new(Self {
@@ -588,7 +593,12 @@ impl Daemon {
         for m in self.store.mounts_for(id).map_err(store_err)? {
             match self
                 .volumes
-                .snapshot(&m.volume_id, Some(m.guest_path.clone()), labels.clone())
+                .snapshot(
+                    &m.volume_id,
+                    Some(m.guest_path.clone()),
+                    labels.clone(),
+                    false,
+                )
                 .await
             {
                 Ok(vs) => volume_refs.push(VolumeSnapshotRef {
@@ -631,7 +641,7 @@ impl Daemon {
             entry.backend.delete_snapshot(&snap).await?;
         }
         for vs in &snap.volumes {
-            let _ = self.volumes.delete_snapshot(&vs.id).await;
+            let _ = self.volumes.delete_snapshot(&vs.id, false).await;
         }
         self.store.delete_snapshot(id).map_err(store_err)
     }

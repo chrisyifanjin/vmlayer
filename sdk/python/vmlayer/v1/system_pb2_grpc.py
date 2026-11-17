@@ -60,6 +60,11 @@ class SystemStub(object):
                 request_serializer=vmlayer_dot_v1_dot_system__pb2.PullImageRequest.SerializeToString,
                 response_deserializer=vmlayer_dot_v1_dot_system__pb2.ImageInfo.FromString,
                 _registered_method=True)
+        self.CollectGarbage = channel.unary_unary(
+                '/vmlayer.v1.System/CollectGarbage',
+                request_serializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.SerializeToString,
+                response_deserializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServicer(object):
@@ -97,6 +102,13 @@ class SystemServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CollectGarbage(self, request, context):
+        """Delete blob-store chunks that no snapshot references any more.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -124,6 +136,11 @@ def add_SystemServicer_to_server(servicer, server):
                     servicer.PullImage,
                     request_deserializer=vmlayer_dot_v1_dot_system__pb2.PullImageRequest.FromString,
                     response_serializer=vmlayer_dot_v1_dot_system__pb2.ImageInfo.SerializeToString,
+            ),
+            'CollectGarbage': grpc.unary_unary_rpc_method_handler(
+                    servicer.CollectGarbage,
+                    request_deserializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.FromString,
+                    response_serializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -261,6 +278,33 @@ class System(object):
             '/vmlayer.v1.System/PullImage',
             vmlayer_dot_v1_dot_system__pb2.PullImageRequest.SerializeToString,
             vmlayer_dot_v1_dot_system__pb2.ImageInfo.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CollectGarbage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vmlayer.v1.System/CollectGarbage',
+            vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.SerializeToString,
+            vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.FromString,
             options,
             channel_credentials,
             insecure,

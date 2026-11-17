@@ -38,9 +38,9 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Volumes: named/anonymous, single-writer rule, copy-on-write snapshots and clones | working (directory and ext4 block-image kinds) |
 | Guest agent (PID 1 in the VM; exec, files, pty, mounts over vsock) | working, tested end to end in a container |
 | Image pipeline for microVMs (OCI pull → cached ext4, no Docker needed) | working, tested on Linux with a real pull |
-| Firecracker backend (memory snapshots, fork) | working on aarch64 nested KVM ([setup](docs/firecracker.md), [benchmark](docs/benchmarks.md)) |
+| Firecracker backend (memory snapshots, fork) | working; end-to-end tests in CI on x86_64 KVM and locally on aarch64 nested KVM ([setup](docs/firecracker.md), [benchmark](docs/benchmarks.md)) |
 | libkrun backend (macOS microVMs) | planned |
-| S3-compatible blob store for durable snapshots | planned |
+| Durable volume snapshots in S3, Azure Blob, GCS or a shared directory (incremental, deduplicated, move between hosts) | working; tested against MinIO and Azurite in CI ([usage](docs/usage.md#durable-snapshots-and-moving-workspaces-between-hosts), [design](docs/decisions/0011-durable-snapshots-in-object-storage.md)) |
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
 | Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |
 | E2B-compatible facade, asyncio client, more adapters (ADK, SWE-ReX, smolagents) | planned |
@@ -190,7 +190,8 @@ backend implements). Every non-obvious choice has a record in
 
 vmlayer depends on Linux and, for microVM backends, `/dev/kvm`. Nothing
 cloud-specific: no metadata service, no VPC API, no managed database. State
-is SQLite; blobs are local disk (an S3-compatible store is planned).
+is SQLite; snapshots are on local disk, and durable volume snapshots go to
+any S3-compatible store, Azure Blob, GCS or a shared directory.
 
 | Host | Firecracker backend | Notes |
 |---|---|---|

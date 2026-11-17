@@ -147,7 +147,7 @@ class Volume(_message.Message):
     def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., size_mib: _Optional[int] = ..., labels: _Optional[_Mapping[str, str]] = ..., attached_to: _Optional[str] = ..., anonymous: bool = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class VolumeSnapshot(_message.Message):
-    __slots__ = ("id", "volume_id", "guest_path", "created_at", "size_bytes", "durable", "labels")
+    __slots__ = ("id", "volume_id", "guest_path", "created_at", "size_bytes", "durable", "labels", "local")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -162,6 +162,7 @@ class VolumeSnapshot(_message.Message):
     SIZE_BYTES_FIELD_NUMBER: _ClassVar[int]
     DURABLE_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_FIELD_NUMBER: _ClassVar[int]
     id: str
     volume_id: str
     guest_path: str
@@ -169,7 +170,8 @@ class VolumeSnapshot(_message.Message):
     size_bytes: int
     durable: bool
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., durable: bool = ..., labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    local: bool
+    def __init__(self, id: _Optional[str] = ..., volume_id: _Optional[str] = ..., guest_path: _Optional[str] = ..., created_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., size_bytes: _Optional[int] = ..., durable: bool = ..., labels: _Optional[_Mapping[str, str]] = ..., local: bool = ...) -> None: ...
 
 class Snapshot(_message.Message):
     __slots__ = ("id", "backend", "engine_version", "cpu_model", "created_at", "size_bytes", "includes_memory", "volumes", "labels")

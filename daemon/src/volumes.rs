@@ -4,8 +4,12 @@
 //! every snapshot under `<data_dir>/volume-snapshots/<id>`. Clone and
 //! snapshot are copy-on-write where the filesystem allows it (`cp
 //! --reflink=auto` on Linux, `cp -c` on APFS) and plain copies otherwise.
-//! Block-image volumes for microVM backends will add a second
-//! representation behind the same methods (ADR 0006 D11).
+//! Block-image volumes for microVM backends hold an `image.ext4` inside
+//! that directory (ADR 0006 D11).
+//!
+//! With a blob store configured, a durable snapshot is also pushed to object
+//! storage as content-addressed chunks (ADR 0011). Its local copy can then be
+//! dropped, and any daemon sharing the store can create a volume from it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,6 +18,8 @@ use std::time::SystemTime;
 use tokio::process::Command;
 use uuid::Uuid;
 use vmlayer_core::{Error, Result, VolumeId, VolumeSnapshotId, VolumeSource, VolumeSourceKind};
+
+use vmlayer_blob::{Manifest, Remote};
 
 use crate::store::{Store, StoreError, VolumeRow, VolumeSnapshotRow};
 
@@ -25,6 +31,27 @@ pub struct VolumeStore {
     /// Backends that can scrub directories the daemon cannot delete itself
     /// (containers write as root into bind-mounted volume directories).
     cleaners: std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<dyn vmlayer_core::Backend>>>>,
+    /// Object storage for durable snapshots, if configured.
+    remote: Option<Remote>,
+}
+
+fn blob_err(e: vmlayer_blob::Error) -> Error {
+    match e {
+        vmlayer_blob::Error::NotFound(id) => {
+            Error::Guest(format!("volume snapshot {id} not found"))
+        }
+        other => Error::Engine {
+            backend: "blob-store",
+            message: other.to_string(),
+            source: Some(Box::new(other)),
+        },
+    }
+}
+
+fn unix_secs(t: SystemTime) -> u64 {
+    t.duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn store_err(e: StoreError) -> Error {
@@ -130,7 +157,26 @@ impl VolumeStore {
             store,
             default_size_mib,
             cleaners: Default::default(),
+            remote: None,
         }
+    }
+
+    /// Use `remote` for durable snapshots.
+    pub fn with_remote(mut self, remote: Option<Remote>) -> Self {
+        self.remote = remote;
+        self
+    }
+
+    pub fn remote(&self) -> Option<&Remote> {
+        self.remote.as_ref()
+    }
+
+    fn require_remote(&self) -> Result<&Remote> {
+        self.remote.as_ref().ok_or_else(|| {
+            Error::Guest(
+                "no blob store is configured (set [blob_store] url or --blob-store)".into(),
+            )
+        })
     }
 
     pub fn set_cleaners(&self, backends: Vec<std::sync::Arc<dyn vmlayer_core::Backend>>) {
@@ -320,13 +366,21 @@ impl VolumeStore {
         Ok(())
     }
 
+    /// Snapshot a volume. With `durable`, also push it to the blob store;
+    /// if that fails, no snapshot is kept.
     pub async fn snapshot(
         &self,
         id: &VolumeId,
         guest_path: Option<String>,
         labels: BTreeMap<String, String>,
+        durable: bool,
     ) -> Result<VolumeSnapshotRow> {
         let row = self.get(&id.0)?;
+        let remote = if durable {
+            Some(self.require_remote()?)
+        } else {
+            None
+        };
         let snap_id = VolumeSnapshotId(new_id("vsnap"));
         let path = self.snapshot_dir(&snap_id);
         clone_tree(&row.path, &path).await?;
@@ -337,15 +391,48 @@ impl VolumeStore {
             guest_path,
             created_at: SystemTime::now(),
             size_bytes,
-            // No blob store in v1: local only.
-            durable: false,
+            durable,
             labels,
             path,
         };
+        if let Some(remote) = remote {
+            if let Err(e) = self.push(remote, &snap, row.size_mib).await {
+                self.remove_tree(&snap.path).await;
+                return Err(e);
+            }
+        }
         self.store
             .insert_volume_snapshot(&snap)
             .map_err(store_err)?;
         Ok(snap)
+    }
+
+    async fn push(&self, remote: &Remote, snap: &VolumeSnapshotRow, size_mib: u64) -> Result<()> {
+        let meta = vmlayer_blob::SnapshotMeta {
+            id: snap.id.0.clone(),
+            volume_id: snap.volume_id.0.clone(),
+            size_mib,
+            guest_path: snap.guest_path.clone(),
+            labels: snap.labels.clone(),
+            created_at: unix_secs(snap.created_at),
+        };
+        let image = snap.path.join(IMAGE_FILE);
+        let pushed = if image.is_file() {
+            remote.push_block(&image, &meta).await
+        } else {
+            remote.push_dir(&snap.path, &meta).await
+        };
+        pushed.map(|_| ()).map_err(blob_err)
+    }
+
+    /// Snapshots in the blob store, from any daemon that shares it.
+    pub async fn list_remote(&self) -> Result<Vec<Manifest>> {
+        self.require_remote()?.list().await.map_err(blob_err)
+    }
+
+    /// Delete unreferenced chunks from the blob store.
+    pub async fn collect_garbage(&self, dry_run: bool) -> Result<vmlayer_blob::GcStats> {
+        self.require_remote()?.gc(dry_run).await.map_err(blob_err)
     }
 
     pub fn get_snapshot(&self, id: &VolumeSnapshotId) -> Result<VolumeSnapshotRow> {
@@ -359,9 +446,35 @@ impl VolumeStore {
         self.store.list_volume_snapshots().map_err(store_err)
     }
 
-    pub async fn delete_snapshot(&self, id: &VolumeSnapshotId) -> Result<()> {
-        let row = self.get_snapshot(id)?;
-        self.store.delete_volume_snapshot(id).map_err(store_err)?;
+    /// Delete a snapshot, here and in the blob store. With `local_only`,
+    /// drop just the local copy of a durable snapshot and keep it in the
+    /// blob store, where `from_snapshot` will fetch it.
+    pub async fn delete_snapshot(&self, id: &VolumeSnapshotId, local_only: bool) -> Result<()> {
+        let row = match self.get_snapshot(id) {
+            Ok(row) => row,
+            // Known only to the blob store (pushed by another daemon).
+            Err(_) if !local_only && self.remote.is_some() => {
+                let remote = self.require_remote()?;
+                remote.manifest(&id.0).await.map_err(blob_err)?;
+                return remote.delete(&id.0).await.map_err(blob_err);
+            }
+            Err(e) => return Err(e),
+        };
+        if local_only {
+            if !row.durable {
+                return Err(Error::Guest(format!(
+                    "volume snapshot {id} is not durable; its local copy is the only one"
+                )));
+            }
+        } else {
+            if row.durable {
+                self.require_remote()?
+                    .delete(&id.0)
+                    .await
+                    .map_err(blob_err)?;
+            }
+            self.store.delete_volume_snapshot(id).map_err(store_err)?;
+        }
         if row.path.starts_with(&self.root) {
             self.remove_tree(&row.path).await;
         }
@@ -376,12 +489,63 @@ impl VolumeStore {
         labels: BTreeMap<String, String>,
         anonymous: bool,
     ) -> Result<VolumeRow> {
-        let snap = self.get_snapshot(snapshot)?;
+        let local = self.get_snapshot(snapshot);
+        let snap = match local {
+            Ok(snap) if snap.path.is_dir() => snap,
+            Ok(snap) if !snap.durable => {
+                return Err(Error::Guest(format!(
+                    "the data of volume snapshot {snapshot} is missing from {}",
+                    snap.path.display()
+                )))
+            }
+            // Durable with the local copy dropped, or pushed by another daemon.
+            Ok(_) | Err(_) if self.remote.is_some() => {
+                return self.pull(snapshot, name, labels, anonymous).await
+            }
+            Err(e) => return Err(e),
+            Ok(_) => unreachable!("guarded above"),
+        };
         let src_vol = self.get(&snap.volume_id.0).ok();
         let row = self
             .create(name, src_vol.map(|v| v.size_mib), labels, anonymous)
             .await?;
-        clone_tree(&snap.path, &row.path).await?;
+        if let Err(e) = clone_tree(&snap.path, &row.path).await {
+            let _ = self.delete(&row.id).await;
+            return Err(e);
+        }
+        Ok(row)
+    }
+
+    /// A new volume holding snapshot `snapshot`, downloaded from the blob store.
+    async fn pull(
+        &self,
+        snapshot: &VolumeSnapshotId,
+        name: Option<String>,
+        labels: BTreeMap<String, String>,
+        anonymous: bool,
+    ) -> Result<VolumeRow> {
+        let remote = self.require_remote()?;
+        let manifest = remote.manifest(&snapshot.0).await.map_err(blob_err)?;
+        // An empty directory; the snapshot brings the image for block volumes.
+        let row = self
+            .create(name, Some(manifest.size_mib), labels, anonymous)
+            .await?;
+        let dest = match manifest.kind {
+            vmlayer_blob::Kind::Block => row.path.join(IMAGE_FILE),
+            vmlayer_blob::Kind::Dir => row.path.clone(),
+        };
+        let started = std::time::Instant::now();
+        if let Err(e) = remote.pull(&manifest, &dest).await {
+            let _ = self.delete(&row.id).await;
+            return Err(blob_err(e));
+        }
+        tracing::info!(
+            snapshot = %snapshot,
+            volume = %row.id,
+            bytes = manifest.stored_bytes(),
+            ms = started.elapsed().as_millis() as u64,
+            "volume restored from the blob store"
+        );
         Ok(row)
     }
 
@@ -420,7 +584,7 @@ mod tests {
             .unwrap();
 
         let snap = vs
-            .snapshot(&v.id, Some("/work".into()), BTreeMap::new())
+            .snapshot(&v.id, Some("/work".into()), BTreeMap::new(), false)
             .await
             .unwrap();
         assert_eq!(snap.size_bytes, 3);
@@ -469,7 +633,81 @@ mod tests {
             .create(Some("b".into()), None, BTreeMap::new(), false)
             .await
             .is_err());
-        vs.delete_snapshot(&snap.id).await.unwrap();
+        vs.delete_snapshot(&snap.id, false).await.unwrap();
         assert!(!snap.path.exists());
+    }
+
+    #[tokio::test]
+    async fn durable_snapshots_move_between_daemons() {
+        let blobs = tempfile::tempdir().unwrap();
+        let url = format!("file://{}", blobs.path().display());
+        let open = || Remote::open(&url, &BTreeMap::new()).unwrap();
+        let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let a = VolumeStore::new(dir_a.path(), Store::open_in_memory().unwrap(), 100)
+            .with_remote(Some(open()));
+        let b = VolumeStore::new(dir_b.path(), Store::open_in_memory().unwrap(), 100)
+            .with_remote(Some(open()));
+
+        let v = a
+            .create(None, Some(64), BTreeMap::new(), false)
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(v.path.join("src")).await.unwrap();
+        tokio::fs::write(v.path.join("src/app.py"), b"print(1)\n")
+            .await
+            .unwrap();
+        let snap = a
+            .snapshot(&v.id, None, BTreeMap::new(), true)
+            .await
+            .unwrap();
+        assert!(snap.durable);
+
+        // Another daemon sees it and restores it.
+        let listed = b.list_remote().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            (listed[0].id.as_str(), listed[0].size_mib),
+            (snap.id.0.as_str(), 64)
+        );
+        let restored = b
+            .from_snapshot(&snap.id, Some("copy".into()), BTreeMap::new(), false)
+            .await
+            .unwrap();
+        assert_eq!(restored.size_mib, 64);
+        assert_eq!(
+            tokio::fs::read(restored.path.join("src/app.py"))
+                .await
+                .unwrap(),
+            b"print(1)\n"
+        );
+
+        // Dropping the local copy keeps it restorable on the first daemon.
+        a.delete_snapshot(&snap.id, true).await.unwrap();
+        assert!(!snap.path.exists());
+        let again = a
+            .from_snapshot(&snap.id, None, BTreeMap::new(), true)
+            .await
+            .unwrap();
+        assert!(again.path.join("src/app.py").is_file());
+
+        // A full delete removes it from the blob store for everyone.
+        a.delete_snapshot(&snap.id, false).await.unwrap();
+        assert!(b.list_remote().await.unwrap().is_empty());
+        assert!(b
+            .from_snapshot(&snap.id, None, BTreeMap::new(), true)
+            .await
+            .is_err());
+
+        // Without a blob store, durable snapshots are refused up front.
+        let plain = VolumeStore::new(dir_b.path(), Store::open_in_memory().unwrap(), 100);
+        let w = plain
+            .create(None, None, BTreeMap::new(), false)
+            .await
+            .unwrap();
+        let err = plain
+            .snapshot(&w.id, None, BTreeMap::new(), true)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("no blob store"), "{err}");
     }
 }

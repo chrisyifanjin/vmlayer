@@ -25,6 +25,8 @@ message CreateVolumeRequest {
   string backend = 4;
 }
 
+// The snapshot may be local or, with a blob store configured, in object
+// storage (pushed by this or any other daemon sharing the store).
 message VolumeFromSnapshotRequest {
   string snapshot_id = 1;
   string name = 2;
@@ -41,6 +43,8 @@ message DeleteVolumeRequest { string id = 1; }
 
 message SnapshotVolumeRequest {
   string id = 1;
+  // Also push the snapshot to the daemon's blob store. Fails if none is
+  // configured or the upload fails; no snapshot is kept in that case.
   bool durable = 2;
   map<string, string> labels = 3;
 }
@@ -50,7 +54,15 @@ message CloneVolumeRequest {
   string name = 2;
 }
 
-message ListVolumeSnapshotsRequest { map<string, string> labels = 1; }
+message ListVolumeSnapshotsRequest {
+  map<string, string> labels = 1;
+  // List the snapshots in the blob store instead of this daemon's.
+  bool remote = 2;
+}
 message ListVolumeSnapshotsResponse { repeated VolumeSnapshot snapshots = 1; }
 
-message DeleteVolumeSnapshotRequest { string id = 1; }
+message DeleteVolumeSnapshotRequest {
+  string id = 1;
+  // Drop only the local copy of a durable snapshot; keep it in the blob store.
+  bool local_only = 2;
+}

@@ -13,6 +13,7 @@ export function volumeSnapshotFrom(s: any): VolumeSnapshot {
     sizeBytes: Number(s.size_bytes ?? 0),
     durable: !!s.durable,
     labels: labels(s.labels),
+    local: !!s.local,
   };
 }
 
@@ -89,7 +90,11 @@ export class Volume {
     return new Volume(c, await c.conn.call(c.conn.volumes, "Create", req));
   }
 
-  /** A volume whose contents are a copy-on-write clone of a snapshot (templates). */
+  /**
+   * A volume whose contents are a copy-on-write clone of a snapshot (templates).
+   * A durable snapshot without a local copy, including one pushed by another
+   * daemon sharing the blob store, is downloaded first.
+   */
   static async fromSnapshot(
     snapshot: VolumeSnapshot | string,
     opts: { name?: string; labels?: Record<string, string>; client?: Client } = {},
@@ -97,7 +102,7 @@ export class Volume {
     const c = opts.client ?? getDefaultClient();
     const id = typeof snapshot === "string" ? snapshot : snapshot.id;
     const req = { snapshot_id: id, name: opts.name ?? "", labels: labels(opts.labels) };
-    return new Volume(c, await c.conn.call(c.conn.volumes, "FromSnapshot", req));
+    return new Volume(c, await c.conn.call(c.conn.volumes, "FromSnapshot", req, 3_600_000));
   }
 
   static async get(nameOrId: string, client?: Client): Promise<Volume> {
@@ -105,7 +110,11 @@ export class Volume {
     return new Volume(c, await c.conn.call(c.conn.volumes, "Get", { volume: nameOrId }));
   }
 
-  /** Filesystem snapshot: cheap, copy-on-write, portable. */
+  /**
+   * Filesystem snapshot: cheap and copy-on-write. With `durable`, also upload
+   * it to the daemon's blob store (only blocks not already there are sent);
+   * fails, keeping nothing, if there is no blob store or the upload fails.
+   */
   async snapshot(
     opts: { durable?: boolean; labels?: Record<string, string> } = {},
   ): Promise<VolumeSnapshot> {
@@ -113,7 +122,7 @@ export class Volume {
       this.client.conn.volumes,
       "TakeSnapshot",
       { id: this.id, durable: !!opts.durable, labels: labels(opts.labels) },
-      600_000,
+      3_600_000,
     );
     return volumeSnapshotFrom(r);
   }
@@ -133,8 +142,18 @@ export class Volume {
     await this.client.conn.call(this.client.conn.volumes, "Delete", { id: this.id });
   }
 
-  async deleteSnapshot(snapshot: VolumeSnapshot | string): Promise<void> {
+  /**
+   * Delete a volume snapshot, including its blob-store copy. With `localOnly`,
+   * free only the local copy of a durable snapshot.
+   */
+  async deleteSnapshot(
+    snapshot: VolumeSnapshot | string,
+    opts: { localOnly?: boolean } = {},
+  ): Promise<void> {
     const id = typeof snapshot === "string" ? snapshot : snapshot.id;
-    await this.client.conn.call(this.client.conn.volumes, "DeleteSnapshot", { id });
+    await this.client.conn.call(this.client.conn.volumes, "DeleteSnapshot", {
+      id,
+      local_only: !!opts.localOnly,
+    });
   }
 }

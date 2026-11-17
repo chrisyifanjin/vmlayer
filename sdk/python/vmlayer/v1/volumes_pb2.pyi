@@ -99,7 +99,7 @@ class CloneVolumeRequest(_message.Message):
     def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
 
 class ListVolumeSnapshotsRequest(_message.Message):
-    __slots__ = ("labels",)
+    __slots__ = ("labels", "remote")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -108,8 +108,10 @@ class ListVolumeSnapshotsRequest(_message.Message):
         value: str
         def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     LABELS_FIELD_NUMBER: _ClassVar[int]
+    REMOTE_FIELD_NUMBER: _ClassVar[int]
     labels: _containers.ScalarMap[str, str]
-    def __init__(self, labels: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    remote: bool
+    def __init__(self, labels: _Optional[_Mapping[str, str]] = ..., remote: bool = ...) -> None: ...
 
 class ListVolumeSnapshotsResponse(_message.Message):
     __slots__ = ("snapshots",)
@@ -118,7 +120,9 @@ class ListVolumeSnapshotsResponse(_message.Message):
     def __init__(self, snapshots: _Optional[_Iterable[_Union[_common_pb2.VolumeSnapshot, _Mapping]]] = ...) -> None: ...
 
 class DeleteVolumeSnapshotRequest(_message.Message):
-    __slots__ = ("id",)
+    __slots__ = ("id", "local_only")
     ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_ONLY_FIELD_NUMBER: _ClassVar[int]
     id: str
-    def __init__(self, id: _Optional[str] = ...) -> None: ...
+    local_only: bool
+    def __init__(self, id: _Optional[str] = ..., local_only: bool = ...) -> None: ...

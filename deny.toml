@@ -18,7 +18,15 @@ confidence-threshold = 0.8
 
 [advisories]
 yanked = "deny"
-ignore = []
+ignore = [
+    # chrono is unmaintained (no known vulnerability). It reaches us only
+    # through object_store and oci-client, which use it for timestamps in
+    # HTTP metadata. Revisit when either drops it.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, transitive via object_store and oci-client" },
+    # humantime is flagged for the same reason (it wraps chrono). object_store
+    # uses it to parse duration settings.
+    { id = "RUSTSEC-2026-0542", reason = "unmaintained, transitive via object_store" },
+]
 
 [bans]
 multiple-versions = "allow"

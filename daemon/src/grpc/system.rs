@@ -25,6 +25,32 @@ impl System for Services {
             backends,
             default_backend: self.daemon.registry.default_name(),
             data_dir: self.daemon.cfg.data_dir.display().to_string(),
+            blob_store: self
+                .daemon
+                .volumes
+                .remote()
+                .map(|r| r.describe().to_string())
+                .unwrap_or_default(),
+        }))
+    }
+
+    async fn collect_garbage(
+        &self,
+        req: Request<pb::CollectGarbageRequest>,
+    ) -> Result<Response<pb::CollectGarbageResponse>, Status> {
+        let s = self
+            .daemon
+            .volumes
+            .collect_garbage(req.into_inner().dry_run)
+            .await
+            .map_err(status)?;
+        Ok(Response::new(pb::CollectGarbageResponse {
+            snapshots: s.manifests as u64,
+            chunks: s.chunks as u64,
+            referenced_chunks: s.referenced as u64,
+            recent_chunks: s.recent as u64,
+            deleted_chunks: s.deleted as u64,
+            deleted_bytes: s.deleted_bytes,
         }))
     }
 

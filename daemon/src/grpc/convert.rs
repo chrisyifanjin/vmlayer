@@ -167,6 +167,21 @@ pub fn volume_snapshot_row(v: &VolumeSnapshotRow) -> pb::VolumeSnapshot {
         size_bytes: v.size_bytes,
         durable: v.durable,
         labels: labels(&v.labels),
+        local: v.path.is_dir(),
+    }
+}
+
+/// A snapshot as the blob store describes it.
+pub fn volume_snapshot_manifest(m: &vmlayer_blob::Manifest) -> pb::VolumeSnapshot {
+    pb::VolumeSnapshot {
+        id: m.id.clone(),
+        volume_id: m.volume_id.clone(),
+        guest_path: m.guest_path.clone().unwrap_or_default(),
+        created_at: ts(SystemTime::UNIX_EPOCH + Duration::from_secs(m.created_at)),
+        size_bytes: m.stored_bytes(),
+        durable: true,
+        labels: labels(&m.labels),
+        local: false,
     }
 }
 
@@ -179,6 +194,7 @@ pub fn volume_snapshot_ref(v: &VolumeSnapshotRef) -> pb::VolumeSnapshot {
         size_bytes: v.size_bytes,
         durable: v.durable,
         labels: labels(&v.labels),
+        local: true,
     }
 }
 

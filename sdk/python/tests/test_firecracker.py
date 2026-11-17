@@ -136,6 +136,30 @@ def test_volume_outlives_sandboxes(fc: vmlayer.Client) -> None:
         volume.delete()
 
 
+def test_durable_block_volume_snapshot(fc: vmlayer.Client) -> None:
+    if not fc.info().blob_store:
+        pytest.skip("the daemon has no blob store")
+    volume = Volume.create(size_mb=256, backend=vmlayer.Backend.FIRECRACKER, client=fc)
+    restored: Volume | None = None
+    try:
+        with create(fc, workspace=volume) as sb:
+            sb.exec("head -c 5000000 /dev/urandom > /work/data && echo hi > /work/note")
+            checksum = sb.exec("sha256sum /work/data").stdout.split()[0]
+        snap = volume.snapshot(durable=True)
+        assert snap.durable
+        # Only the blob store has it now: restoring downloads the image.
+        snap.delete(local_only=True)
+        restored = Volume.from_snapshot(snap.id, client=fc)
+        with create(fc, workspace=restored) as sb:
+            assert sb.exec("cat /work/note").stdout == "hi\n"
+            assert sb.exec("sha256sum /work/data").stdout.split()[0] == checksum
+        snap.delete()
+    finally:
+        if restored is not None:
+            restored.delete()
+        volume.delete()
+
+
 def test_memory_snapshot_restore_and_fork(fc: vmlayer.Client) -> None:
     with create(fc) as sb:
         sb.files.write("/work/counter.py", COUNTER)
@@ -217,7 +241,8 @@ def test_sandboxes_without_a_volume_keep_their_own_identity(fc: vmlayer.Client) 
 
 
 def test_burst_of_creates_beyond_the_cpu_count(fc: vmlayer.Client) -> None:
-    count = 2 * (os.cpu_count() or 2)
+    # Twice the vCPUs of the CI runner and the scripts/kvm-vm VM (4 each).
+    count = int(os.environ.get("VMLAYER_BURST", "8"))
 
     def boot(i: int) -> Sandbox:
         sb = create(fc, memory_mb=128)

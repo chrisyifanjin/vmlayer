@@ -29,9 +29,11 @@ def _client(c: Client | None) -> Client:
 class VolumeSnapshot:
     """A filesystem-only snapshot of a ``Volume``.
 
-    Cheap (copy-on-write, milliseconds), portable across hosts and backends,
-    and the thing to keep long-term. Turn it back into a volume with
-    ``Volume.from_snapshot``; use it as a template by doing that many times.
+    Cheap (copy-on-write, milliseconds) and the thing to keep long-term. Turn
+    it back into a volume with ``Volume.from_snapshot``; use it as a template
+    by doing that many times. A *durable* snapshot is also stored in the
+    daemon's blob store (S3, Azure Blob, GCS or a shared directory), where any
+    daemon sharing that store can restore it.
     """
 
     id: str
@@ -43,6 +45,10 @@ class VolumeSnapshot:
     durable: bool
     """True once the snapshot has been uploaded to the configured blob store."""
     labels: Mapping[str, str] = field(default_factory=dict)
+    local: bool = True
+    """A copy is on this daemon's disk. False after ``delete(local_only=True)``
+    and for snapshots listed from the blob store that another daemon pushed;
+    restoring those downloads them."""
     _client: Client | None = field(default=None, repr=False, compare=False)
 
     @classmethod
@@ -55,13 +61,20 @@ class VolumeSnapshot:
             size_bytes=s.size_bytes,
             durable=s.durable,
             labels=dict(s.labels),
+            local=s.local,
             _client=client,
         )
 
-    def delete(self) -> None:
+    def delete(self, *, local_only: bool = False) -> None:
+        """Delete the snapshot, including its copy in the blob store.
+
+        With ``local_only=True``, free the local disk space of a durable
+        snapshot and keep it in the blob store; ``Volume.from_snapshot`` will
+        download it when needed."""
         c = _client(self._client)
         c._conn.call(
-            c._conn.volumes.DeleteSnapshot, volumes_pb2.DeleteVolumeSnapshotRequest(id=self.id)
+            c._conn.volumes.DeleteSnapshot,
+            volumes_pb2.DeleteVolumeSnapshotRequest(id=self.id, local_only=local_only),
         )
 
 
@@ -220,13 +233,16 @@ class Volume:
         client: Client | None = None,
     ) -> Volume:
         """Create a volume whose contents are a copy-on-write clone of a
-        snapshot. This is how templates work: snapshot once, instantiate many."""
+        snapshot. This is how templates work: snapshot once, instantiate many.
+
+        A durable snapshot without a local copy, including one pushed by
+        another daemon that shares the blob store, is downloaded first."""
         c = _client(client)
         sid = snapshot if isinstance(snapshot, str) else snapshot.id
         req = volumes_pb2.VolumeFromSnapshotRequest(
             snapshot_id=sid, name=name or "", labels=_rpc.labels_arg(labels)
         )
-        return cls(c, c._conn.call(c._conn.volumes.FromSnapshot, req))
+        return cls(c, c._conn.call(c._conn.volumes.FromSnapshot, req, timeout=3600))
 
     @classmethod
     def get(cls, name_or_id: str, *, client: Client | None = None) -> Volume:
@@ -246,16 +262,20 @@ class Volume:
         """Take a filesystem snapshot.
 
         Returns as soon as the local copy-on-write snapshot exists. With
-        ``durable=True`` it also waits for upload to the blob store. A volume
-        attached read-write is quiesced for the duration, typically
-        milliseconds.
+        ``durable=True`` it also uploads it to the daemon's blob store and
+        returns when the upload is complete; only blocks that are not already
+        in the store are sent. A volume attached read-write is quiesced while
+        the local copy is taken, typically milliseconds.
+
+        Raises if ``durable=True`` and the daemon has no blob store or the
+        upload fails; no snapshot is kept then.
         """
         c = self._client._conn
         req = volumes_pb2.SnapshotVolumeRequest(
             id=self.id, durable=durable, labels=_rpc.labels_arg(labels)
         )
         return VolumeSnapshot._from_pb(
-            self._client, c.call(c.volumes.TakeSnapshot, req, timeout=600)
+            self._client, c.call(c.volumes.TakeSnapshot, req, timeout=3600)
         )
 
     def clone(self, *, name: str | None = None) -> Volume:

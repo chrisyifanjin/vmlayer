@@ -1,0 +1,27 @@
+[package]
+name = "vmlayer-blob"
+description = "Durable volume snapshots in object storage: content-addressed chunks over S3, Azure Blob, GCS or a local directory."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+fastcdc = "5"
+futures = { workspace = true }
+hex = "0.4"
+object_store = { version = "0.14", features = ["aws", "azure", "gcp"] }
+serde = { workspace = true }
+serde_json = "1"
+sha2 = { workspace = true }
+tar = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -12,6 +12,23 @@ service System {
   // Resolve an image for a backend ahead of time: pull it and, for microVM
   // backends, build the root filesystem. Idempotent; later creates are fast.
   rpc PullImage(PullImageRequest) returns (ImageInfo);
+  // Delete blob-store chunks that no snapshot references any more.
+  rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse);
+}
+
+message CollectGarbageRequest {
+  // Count what would be deleted without deleting it.
+  bool dry_run = 1;
+}
+
+message CollectGarbageResponse {
+  uint64 snapshots = 1;
+  uint64 chunks = 2;
+  uint64 referenced_chunks = 3;
+  // Unreferenced but within the grace period, so kept.
+  uint64 recent_chunks = 4;
+  uint64 deleted_chunks = 5;
+  uint64 deleted_bytes = 6;
 }
 
 message PullImageRequest {
@@ -44,6 +61,8 @@ message SystemInfo {
   repeated BackendInfo backends = 2;
   string default_backend = 3;
   string data_dir = 4;
+  // URL of the blob store for durable snapshots, empty if none.
+  string blob_store = 5;
 }
 
 message HealthResponse { bool ok = 1; }

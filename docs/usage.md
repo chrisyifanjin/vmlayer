@@ -160,6 +160,31 @@ Rules:
 - `restore` and `fork` attach clones, never the original.
 - `workspace=None` means no volume at all (slightly faster, nothing persists).
 
+### Durable snapshots and moving workspaces between hosts
+
+With a blob store configured (`vmlayerd --blob-store s3://bucket/prefix`, or
+`az://`, `gs://`, `file://`), a snapshot can also be kept in object storage:
+
+```python
+ckpt = repo.snapshot(durable=True)    # uploads only blocks the store lacks
+ckpt.delete(local_only=True)          # free local disk, keep it in the store
+
+# On any host whose daemon uses the same store:
+other = vmlayer.Client("unix:///run/vmlayer/vmlayerd.sock")
+[s.id for s in other.list_volume_snapshots(remote=True)]
+copy = Volume.from_snapshot(ckpt.id, client=other)   # downloads, then mounts
+
+client.collect_garbage(dry_run=True)  # chunks no snapshot uses any more
+```
+
+A durable snapshot is stored as 4 MiB content-addressed chunks, so the next
+snapshot of the same volume sends only the blocks that changed, and
+identical blocks are stored once across all volumes. A Firecracker volume
+can only be restored as a Firecracker volume and a Docker volume as a
+Docker volume. Restore currently downloads the whole snapshot before the
+volume is attached. Design and limits are in
+[decision 0011](decisions/0011-durable-snapshots-in-object-storage.md).
+
 On macOS with Docker Desktop or colima, the daemon's data directory must be
 under a path shared with the engine (the default `~/.vmlayer` is). The daemon
 checks this at startup and marks the backend unavailable with a clear reason

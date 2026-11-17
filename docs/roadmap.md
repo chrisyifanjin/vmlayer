@@ -23,7 +23,11 @@
 - [ ] **4. Egress allowlists and quotas** (eBPF or nftables; pids, disk,
       output size).
 - [ ] **5. libkrun backend** for macOS development.
-- [ ] **6. S3-compatible blob store** for durable snapshots.
+- [x] **6. Blob store for durable snapshots** (S3 and S3-compatible, Azure
+      Blob, GCS, shared directory; content-addressed chunks, incremental,
+      garbage-collected; decision 0011).
+- [ ] **6a. Lazy restore**: serve a volume straight from its manifest
+      through ublk or NBD, fetching chunks on first read.
 - [ ] **7. TypeScript SDK, asyncio client, E2B-compatible facade.**
 - [ ] **8. Adapters** for the six runtimes in docs/integrations.md.
 - [ ] **8a. Agent Sandbox API compatibility.** Define and test a supported

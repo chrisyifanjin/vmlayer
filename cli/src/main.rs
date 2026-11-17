@@ -151,15 +151,37 @@ enum VolumeCmd {
     #[command(alias = "rm")]
     Delete { volume: String },
     /// Filesystem snapshot of a volume; prints the snapshot id.
-    Snapshot { volume: String },
-    /// New volume from a volume snapshot.
+    Snapshot {
+        volume: String,
+        /// Also store it in the daemon's blob store (S3, Azure Blob, GCS...).
+        #[arg(long)]
+        durable: bool,
+    },
+    /// New volume from a volume snapshot (downloaded if only in the blob store).
     FromSnapshot {
         snapshot: String,
         #[arg(long)]
         name: Option<String>,
     },
     #[command(name = "ls-snapshots")]
-    ListSnapshots,
+    ListSnapshots {
+        /// List the blob store's snapshots instead of this daemon's.
+        #[arg(long)]
+        remote: bool,
+    },
+    /// Delete a volume snapshot, including its blob-store copy.
+    #[command(name = "rm-snapshot")]
+    DeleteSnapshot {
+        snapshot: String,
+        /// Free only the local copy of a durable snapshot.
+        #[arg(long)]
+        local_only: bool,
+    },
+    /// Delete blob-store chunks that no snapshot references.
+    Gc {
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -472,7 +494,7 @@ async fn main() -> anyhow::Result<()> {
                     .delete(pb::DeleteVolumeRequest { id: v.id })
                     .await?;
             }
-            VolumeCmd::Snapshot { volume } => {
+            VolumeCmd::Snapshot { volume, durable } => {
                 let v = c
                     .volumes
                     .get(pb::GetVolumeRequest { volume })
@@ -482,6 +504,7 @@ async fn main() -> anyhow::Result<()> {
                     .volumes
                     .take_snapshot(pb::SnapshotVolumeRequest {
                         id: v.id,
+                        durable,
                         ..Default::default()
                     })
                     .await?
@@ -500,13 +523,52 @@ async fn main() -> anyhow::Result<()> {
                     .into_inner();
                 println!("{}", v.id);
             }
-            VolumeCmd::ListSnapshots => {
+            VolumeCmd::ListSnapshots { remote } => {
                 let r = c
                     .volumes
-                    .list_snapshots(pb::ListVolumeSnapshotsRequest::default())
+                    .list_snapshots(pb::ListVolumeSnapshotsRequest {
+                        remote,
+                        ..Default::default()
+                    })
                     .await?
                     .into_inner();
                 output::volume_snapshots(&r.snapshots, json);
+            }
+            VolumeCmd::DeleteSnapshot {
+                snapshot,
+                local_only,
+            } => {
+                c.volumes
+                    .delete_snapshot(pb::DeleteVolumeSnapshotRequest {
+                        id: snapshot,
+                        local_only,
+                    })
+                    .await?;
+            }
+            VolumeCmd::Gc { dry_run } => {
+                let r = c
+                    .system
+                    .collect_garbage(pb::CollectGarbageRequest { dry_run })
+                    .await?
+                    .into_inner();
+                if json {
+                    output::json(&serde_json::json!({
+                        "snapshots": r.snapshots, "chunks": r.chunks,
+                        "referenced_chunks": r.referenced_chunks, "recent_chunks": r.recent_chunks,
+                        "deleted_chunks": r.deleted_chunks, "deleted_bytes": r.deleted_bytes,
+                    }));
+                } else {
+                    let verb = if dry_run { "would delete" } else { "deleted" };
+                    println!(
+                        "{} snapshots, {} chunks: {} referenced, {} recent; {verb} {} chunks ({} bytes)",
+                        r.snapshots,
+                        r.chunks,
+                        r.referenced_chunks,
+                        r.recent_chunks,
+                        r.deleted_chunks,
+                        r.deleted_bytes
+                    );
+                }
             }
         },
         Cmd::Snapshots(s) => match s {

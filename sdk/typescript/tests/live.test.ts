@@ -47,9 +47,9 @@ before(async () => {
   tmp = fs.mkdtempSync(path.join(root, "ts-"));
   const sock = path.join(tmp, "d.sock");
   const log = fs.openSync(path.join(tmp, "daemon.log"), "w");
-  daemon = spawn(bin, ["--listen", `unix://${sock}`, "--data-dir", path.join(tmp, "data")], {
-    stdio: ["ignore", log, log],
-  });
+  const args = ["--listen", `unix://${sock}`, "--data-dir", path.join(tmp, "data")];
+  args.push("--blob-store", `file://${path.join(tmp, "blobs")}`);
+  daemon = spawn(bin, args, { stdio: ["ignore", log, log] });
   client = new Client(`unix://${sock}`);
   const deadline = Date.now() + 30_000;
   for (;;) {
@@ -200,6 +200,26 @@ test("workspace volume outlives sandboxes; single writer; volume snapshots", asy
       await restored.delete();
     }
     await vol.deleteSnapshot(ckpt);
+
+    // Durable: stored in the blob store, restorable after the local copy is gone.
+    assert.match((await client.info()).blobStore ?? "", /^file:\/\//);
+    const durable = await vol.snapshot({ durable: true });
+    assert.ok(durable.durable && durable.local);
+    await vol.deleteSnapshot(durable, { localOnly: true });
+    const remote = await client.listVolumeSnapshots({ remote: true });
+    assert.ok(remote.some((s) => s.id === durable.id && !s.local));
+    const fromBlob = await Volume.fromSnapshot(durable.id);
+    try {
+      await using e = await Sandbox.create(ALPINE, { workspace: fromBlob });
+      assert.equal((await e.exec("cat /work/state.txt")).stdout, "v2\n");
+    } finally {
+      await fromBlob.delete();
+    }
+    assert.ok((await client.collectGarbage({ dryRun: true })).snapshots >= 1);
+    await vol.deleteSnapshot(durable);
+    assert.ok(
+      !(await client.listVolumeSnapshots({ remote: true })).some((s) => s.id === durable.id),
+    );
   } finally {
     await vol.delete();
   }

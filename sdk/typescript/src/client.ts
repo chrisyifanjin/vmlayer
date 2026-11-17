@@ -46,6 +46,7 @@ export class Client {
       })),
       defaultBackend: r.default_backend,
       dataDir: r.data_dir,
+      blobStore: r.blob_store || null,
     };
   }
 
@@ -112,6 +113,43 @@ export class Client {
 
   async deleteSnapshot(id: string): Promise<void> {
     await this.conn.call(this.conn.system, "DeleteSnapshot", { id });
+  }
+
+  /** This daemon's volume snapshots, or with `remote` every one in its blob store. */
+  async listVolumeSnapshots(
+    filter: { labels?: Record<string, string>; remote?: boolean } = {},
+  ): Promise<import("./types.js").VolumeSnapshot[]> {
+    const { volumeSnapshotFrom } = await import("./volume.js");
+    const r: any = await this.conn.call(
+      this.conn.volumes,
+      "ListSnapshots",
+      { labels: labels(filter.labels), remote: !!filter.remote },
+      300_000,
+    );
+    return (r.snapshots ?? []).map(volumeSnapshotFrom);
+  }
+
+  /**
+   * Delete blob-store chunks no snapshot references any more. Chunks younger
+   * than the daemon's grace period are kept, so uploads in progress are safe.
+   */
+  async collectGarbage(
+    opts: { dryRun?: boolean } = {},
+  ): Promise<import("./types.js").GarbageCollection> {
+    const r: any = await this.conn.call(
+      this.conn.system,
+      "CollectGarbage",
+      { dry_run: !!opts.dryRun },
+      3_600_000,
+    );
+    return {
+      snapshots: Number(r.snapshots ?? 0),
+      chunks: Number(r.chunks ?? 0),
+      referencedChunks: Number(r.referenced_chunks ?? 0),
+      recentChunks: Number(r.recent_chunks ?? 0),
+      deletedChunks: Number(r.deleted_chunks ?? 0),
+      deletedBytes: Number(r.deleted_bytes ?? 0),
+    };
   }
 
   close(): void {

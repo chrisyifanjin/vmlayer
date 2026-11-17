@@ -74,6 +74,19 @@ export interface SystemInfo {
   backends: BackendInfo[];
   defaultBackend: string;
   dataDir: string;
+  /** URL of the blob store for durable snapshots, or null. */
+  blobStore: string | null;
+}
+
+/** What `Client.collectGarbage` found and removed in the blob store. */
+export interface GarbageCollection {
+  snapshots: number;
+  chunks: number;
+  referencedChunks: number;
+  /** Unreferenced but within the grace period, so kept. */
+  recentChunks: number;
+  deletedChunks: number;
+  deletedBytes: number;
 }
 
 export interface VolumeSnapshot {
@@ -82,8 +95,11 @@ export interface VolumeSnapshot {
   guestPath: string | null;
   createdAt: number;
   sizeBytes: number;
+  /** Stored in the daemon's blob store, restorable by any daemon sharing it. */
   durable: boolean;
   labels: Record<string, string>;
+  /** A copy is on this daemon's disk; false once dropped or if pushed elsewhere. */
+  local: boolean;
 }
 
 export interface Snapshot {

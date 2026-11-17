@@ -30,6 +30,9 @@ struct Args {
     /// Backend used for "auto" (docker, firecracker, ...).
     #[arg(long, env = "VMLAYER_DEFAULT_BACKEND")]
     default_backend: Option<String>,
+    /// Blob store for durable volume snapshots, e.g. s3://bucket/prefix.
+    #[arg(long, env = "VMLAYER_BLOB_STORE")]
+    blob_store: Option<String>,
 }
 
 #[tokio::main]
@@ -53,6 +56,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if args.default_backend.is_some() {
         cfg.default_backend = args.default_backend;
+    }
+    if args.blob_store.is_some() {
+        cfg.blob_store.url = args.blob_store;
     }
 
     let filter = tracing_subscriber::EnvFilter::try_new(&cfg.log.filter)
