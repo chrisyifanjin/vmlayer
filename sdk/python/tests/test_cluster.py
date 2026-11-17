@@ -32,7 +32,7 @@ def eventually(check: Callable[[], bool], within: float = 15) -> None:
 
 
 class Host:
-    def __init__(self, root: Path, name: str, store: Path) -> None:
+    def __init__(self, root: Path, name: str, store: Path, extra: list[str] | None = None) -> None:
         self.dir = root / name
         self.dir.mkdir()
         sock = self.dir / "d.sock"
@@ -47,6 +47,7 @@ class Host:
                 "--advertise", self.endpoint,
                 "--heartbeat-secs", "1",
                 "--lease-ttl-secs", "3",
+                *(extra or []),
             ],
             stdout=open(self.dir / "daemon.log", "wb"),
             stderr=subprocess.STDOUT,

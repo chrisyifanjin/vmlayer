@@ -62,6 +62,11 @@ export interface CreateOptions {
    * blob store; a second create fails while the first lives.
    */
   lease?: string;
+  /**
+   * With `lease`: checkpoint the workspace to the blob store, and let a daemon
+   * running with `--rescue` recreate the sandbox from it if this host dies.
+   */
+  reschedule?: boolean;
   labels?: Record<string, string>;
   client?: Client;
 }
@@ -151,6 +156,7 @@ export class Sandbox {
     };
     if (opts.diskMb !== undefined) req.disk_mib = opts.diskMb;
     if (opts.lease) req.lease = opts.lease;
+    if (opts.reschedule) req.reschedule = true;
     if (opts.egress !== undefined) req.egress = { allow: opts.egress };
     if (opts.limits !== undefined) {
       req.limits = {};

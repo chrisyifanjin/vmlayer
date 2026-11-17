@@ -34,6 +34,7 @@ Flags and environment:
 | `--blob-store s3://bucket/prefix` | `VMLAYER_BLOB_STORE` | none (durable snapshots off) |
 | `--advertise tcp://10.0.0.5:7070`, `--host-id` | `VMLAYER_ADVERTISE`, `VMLAYER_HOST_ID` | not in the host registry; hostname |
 | `--heartbeat-secs`, `--lease-ttl-secs` | `VMLAYER_HEARTBEAT_SECS`, `VMLAYER_LEASE_TTL_SECS` | 10, 30 |
+| `--rescue`, `--checkpoint-secs` | `VMLAYER_RESCUE`, `VMLAYER_CHECKPOINT_SECS` | off, 60 |
 
 Config file (every key optional):
 
@@ -70,6 +71,8 @@ host_id = "host-a"                     # default: the hostname
 labels = { zone = "a" }                # for placement constraints
 heartbeat_secs = 10
 lease_ttl_secs = 30
+rescue = true                          # recreate rescheduled sandboxes of dead hosts here
+checkpoint_secs = 60                   # workspace checkpoint interval for rescheduled sandboxes
 
 [log]
 format = "json"

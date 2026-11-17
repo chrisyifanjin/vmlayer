@@ -59,6 +59,8 @@ impl Sandboxes for Services {
             egress: convert::egress_from(r.egress)?,
             limits: convert::limits_from(r.limits)?,
             lease: (!r.lease.is_empty()).then_some(r.lease),
+            reschedule: r.reschedule,
+            rescued: None,
         };
         let view = self.daemon.create(params).await.map_err(status)?;
         Ok(Response::new(convert::sandbox(&view)))

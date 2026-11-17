@@ -41,4 +41,6 @@
       a Kata RuntimeClass and one Pod per sandbox.
 - [x] **9. Several hosts** (decision 0014): heartbeats and leases in the
       blob store, client-side placement, single-instance sandboxes with
-      fencing. Automatic rescheduling from dead hosts is open.
+      fencing.
+- [x] **9a. Rescheduling from dead hosts** (decision 0015): periodic
+      workspace checkpoints, rescue by any daemon that wins the lease.

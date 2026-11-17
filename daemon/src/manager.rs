@@ -27,6 +27,9 @@ pub struct Live {
     pub exposed: Mutex<BTreeMap<u16, Endpoint>>,
     ttl_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     lease_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    checkpoint_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Killed because its lease was lost: someone else owns its workload now.
+    pub(crate) fenced: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -69,6 +72,11 @@ pub struct CreateParams {
     pub limits: vmlayer_core::IoLimits,
     /// Cluster-wide single-instance name (decision 0014).
     pub lease: Option<String>,
+    /// Checkpoint the workspace and bring the sandbox back on another host
+    /// if this one dies (decision 0015). Needs `lease`.
+    pub reschedule: bool,
+    /// Set when this create is a rescue: the record being brought back.
+    pub rescued: Option<Box<crate::rescue::Workload>>,
 }
 
 /// What callers see: the stored row plus live state.
@@ -121,6 +129,7 @@ impl Daemon {
         });
         d.reattach().await;
         d.start_heartbeat();
+        d.start_rescue();
         Ok(d)
     }
 
@@ -148,6 +157,9 @@ impl Daemon {
                     if let Some(name) = row.labels.get(crate::cluster::LEASE_LABEL) {
                         self.arm_lease(&live, name.clone());
                     }
+                    if let Some(name) = crate::rescue::lease_name(&row.labels) {
+                        self.arm_checkpoints(&live, name.clone());
+                    }
                     tracing::info!(id = %row.id, "reattached");
                 }
                 Err(e) => {
@@ -173,6 +185,8 @@ impl Daemon {
             exposed: Mutex::new(BTreeMap::new()),
             ttl_task: Mutex::new(None),
             lease_task: Mutex::new(None),
+            checkpoint_task: Mutex::new(None),
+            fenced: std::sync::atomic::AtomicBool::new(false),
         });
         self.live.write().await.insert(id, live.clone());
         live
@@ -196,6 +210,14 @@ impl Daemon {
         let live = live.clone();
         tokio::spawn(async move {
             *live.ttl_task.lock().await = Some(task);
+        });
+    }
+
+    fn arm_checkpoints(self: &Arc<Self>, live: &Arc<Live>, name: String) {
+        let task = self.keep_checkpoints(live.id.clone(), name);
+        let live = live.clone();
+        tokio::spawn(async move {
+            *live.checkpoint_task.lock().await = Some(task);
         });
     }
 
@@ -325,6 +347,15 @@ impl Daemon {
                 feature: "network and disk rate limits",
             });
         }
+        // Validate rescheduling before doing any work.
+        let workload = match (p.reschedule, p.lease.as_deref().filter(|l| !l.is_empty())) {
+            (false, _) => None,
+            (true, None) => return Err(Error::Guest("reschedule needs a lease name".into())),
+            (true, Some(name)) => Some(match p.rescued.clone() {
+                Some(w) => *w,
+                None => crate::rescue::Workload::from_params(name, &p)?,
+            }),
+        };
         let resolved = entry.resolver.resolve(&p.image).await?;
         let id = SandboxId(new_id("sb"));
         // The image's WORKDIR is only a useful workspace mount point when it
@@ -398,6 +429,9 @@ impl Daemon {
         let mut labels = p.labels;
         if let Some(name) = &lease {
             labels.insert(crate::cluster::LEASE_LABEL.into(), name.clone());
+            if workload.is_some() {
+                labels.insert(crate::rescue::RESCHEDULE_LABEL.into(), name.clone());
+            }
         }
         let row = SandboxRow {
             id: id.clone(),
@@ -418,6 +452,15 @@ impl Daemon {
         let live = self.register(id.clone(), backend_name, handle).await;
         self.arm_ttl(&live, row.created_at, row.ttl);
         if let Some(name) = lease {
+            if let Some(mut w) = workload {
+                w.host = self.host_id();
+                w.sandbox_id = id.0.clone();
+                w.updated_at = crate::cluster::now_ms();
+                if let Err(e) = self.write_workload(&w).await {
+                    tracing::warn!(%id, error = %e, "could not record workload for rescheduling");
+                }
+                self.arm_checkpoints(&live, name.clone());
+            }
             self.arm_lease(&live, name);
         }
         tracing::info!(%id, image = %row.image, backend = %row.backend, "created");
@@ -563,7 +606,7 @@ impl Daemon {
     pub async fn kill(&self, id: &SandboxId) -> Result<()> {
         let live = self.live.write().await.remove(id);
         if let Some(live) = &live {
-            for task in [&live.ttl_task, &live.lease_task] {
+            for task in [&live.ttl_task, &live.lease_task, &live.checkpoint_task] {
                 if let Some(t) = task.lock().await.take() {
                     // These tasks call kill themselves; aborting one from
                     // inside would cancel this very call half-way through.
@@ -589,6 +632,17 @@ impl Daemon {
                 .map_err(|_| Error::SandboxNotFound(id.clone()))?;
         }
         let row = self.store.get_sandbox(id).ok();
+        let fenced = live
+            .as_ref()
+            .is_some_and(|l| l.fenced.load(std::sync::atomic::Ordering::Relaxed));
+        if let Some(name) = row
+            .as_ref()
+            .and_then(|r| crate::rescue::lease_name(&r.labels))
+        {
+            if !fenced {
+                self.forget_workload(name, id).await;
+            }
+        }
         if let Some(name) = row
             .as_ref()
             .and_then(|r| r.labels.get(crate::cluster::LEASE_LABEL))

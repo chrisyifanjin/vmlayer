@@ -65,6 +65,11 @@ versions; every change to the SDK surface is listed.
   `Sandbox.create(lease="name")` keeps at most one live sandbox per name
   across hosts, using the store's conditional writes, and a daemon that
   loses or cannot renew a lease kills its sandbox.
+- Rescheduling from dead hosts (decision 0015):
+  `Sandbox.create(lease=..., reschedule=True)` checkpoints the workspace to
+  the blob store every `[cluster] checkpoint_secs`, and daemons with
+  `--rescue` recreate the sandbox from the last checkpoint once its host's
+  lease expires.
 - `vmlayer.e2b`: an E2B-shaped Python facade (`Sandbox.create / connect /
   list`, `commands.run` with background handles, `files.*`, `get_host`,
   E2B's exception types) so code written for the E2B SDK runs after changing

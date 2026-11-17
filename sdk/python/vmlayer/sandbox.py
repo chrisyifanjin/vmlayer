@@ -157,6 +157,7 @@ class Sandbox:
         egress: Sequence[str] | None = None,
         limits: IoLimits | None = None,
         lease: str | None = None,
+        reschedule: bool = False,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
     ) -> Sandbox:
@@ -204,6 +205,11 @@ class Sandbox:
         another sandbox with the same lease on any daemon sharing the blob
         store fails. A daemon that loses the lease (cut off from the store
         past the lease TTL) kills its sandbox, so two never run at once.
+
+        ``reschedule=True`` (with ``lease``) checkpoints the workspace to the
+        blob store periodically; if this host dies, a daemon running with
+        ``--rescue`` recreates the sandbox from the last checkpoint. It boots
+        fresh: memory state and writes after the last checkpoint are lost.
         """
         c = _client(client)
         req = sandboxes_pb2.CreateSandboxRequest(
@@ -223,6 +229,7 @@ class Sandbox:
             req.disk_mib = disk_mb
         if lease:
             req.lease = lease
+        req.reschedule = reschedule
         if egress is not None:
             if isinstance(egress, str):
                 raise TypeError("egress takes a list of rules, not a string")

@@ -174,6 +174,13 @@ Sandbox.create("python:3.12", lease="repo-42", client=cluster.client(cluster.pla
 
 A host that loses a lease, or cannot renew it before it expires, kills the
 sandbox holding it, so a partitioned host cannot keep a second copy running.
+
+Add `reschedule=True` to survive host failures. The daemon checkpoints the
+workspace to the blob store every `checkpoint_secs`, and any daemon started
+with `--rescue` recreates the sandbox from the last checkpoint once the
+dead host's lease expires. It boots fresh: memory state and writes after
+the last checkpoint are lost
+([decision 0015](decisions/0015-rescheduling.md)).
 Leases need an object store with conditional writes (S3, Azure Blob, GCS).
 Design: [decision 0014](decisions/0014-hosts-placement-and-leases.md).
 

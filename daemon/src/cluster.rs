@@ -264,6 +264,10 @@ impl Daemon {
                 };
                 if let Some(reason) = reason {
                     tracing::error!(%id, %reason, "killing sandbox to keep the lease exclusive");
+                    if let Ok(live) = d.live(&id).await {
+                        live.fenced
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                     if let Err(e) = d.kill(&id).await {
                         tracing::warn!(%id, error = %e, "kill after losing the lease failed");
                     }

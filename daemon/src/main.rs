@@ -43,6 +43,11 @@ struct Args {
     heartbeat_secs: Option<u64>,
     #[arg(long, env = "VMLAYER_LEASE_TTL_SECS")]
     lease_ttl_secs: Option<u64>,
+    /// Bring back rescheduled sandboxes of failed hosts on this one.
+    #[arg(long, env = "VMLAYER_RESCUE")]
+    rescue: bool,
+    #[arg(long, env = "VMLAYER_CHECKPOINT_SECS")]
+    checkpoint_secs: Option<u64>,
 }
 
 #[tokio::main]
@@ -81,6 +86,12 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(s) = args.lease_ttl_secs {
         cfg.cluster.lease_ttl_secs = s;
+    }
+    if args.rescue {
+        cfg.cluster.rescue = true;
+    }
+    if let Some(s) = args.checkpoint_secs {
+        cfg.cluster.checkpoint_secs = s;
     }
 
     let filter = tracing_subscriber::EnvFilter::try_new(&cfg.log.filter)

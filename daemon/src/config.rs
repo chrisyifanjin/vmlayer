@@ -38,6 +38,10 @@ pub struct ClusterConfig {
     pub heartbeat_secs: u64,
     /// Lease lifetime; a crashed holder blocks a name for at most this long.
     pub lease_ttl_secs: u64,
+    /// Bring back rescheduled sandboxes whose host died (decision 0015).
+    pub rescue: bool,
+    /// How often a rescheduled sandbox's workspace is checkpointed.
+    pub checkpoint_secs: u64,
 }
 
 impl Default for ClusterConfig {
@@ -48,6 +52,8 @@ impl Default for ClusterConfig {
             labels: Default::default(),
             heartbeat_secs: 10,
             lease_ttl_secs: 30,
+            rescue: false,
+            checkpoint_secs: 60,
         }
     }
 }

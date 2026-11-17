@@ -8,6 +8,7 @@ pub mod grpc;
 pub mod images;
 pub mod manager;
 pub mod registry;
+pub mod rescue;
 pub mod server;
 pub mod store;
 pub mod volumes;
