@@ -28,6 +28,8 @@
 - [x] **6. Blob store for durable snapshots** (S3 and S3-compatible, Azure
       Blob, GCS, shared directory; content-addressed chunks, incremental,
       garbage-collected; decision 0011).
+- [x] **5a. Restore memory prefetch** over userfaultfd (decision 0013):
+      first heavy process after a restore 2.8 s to 0.75 s on nested KVM.
 - [ ] **6a. Lazy restore**: serve a volume straight from its manifest
       through ublk or NBD, fetching chunks on first read.
 - [ ] **7. TypeScript SDK, asyncio client, E2B-compatible facade.**

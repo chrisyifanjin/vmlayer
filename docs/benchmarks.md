@@ -218,8 +218,8 @@ complete when `import requests` has run.
 | vmlayer, Docker backend: restore disk snapshot | 153 ms | 2,063 ms |
 | vmlayer, Firecracker backend: restore memory and disk | 3,085 ms | 11,753 ms |
 
-On this host the Firecracker restore loses to reinstalling a small package.
-A separate probe split the episode into its parts, over four restores:
+In this first run the Firecracker restore lost to reinstalling a small
+package. A probe split the episode into its parts, over four restores:
 
 | Step after a Firecracker restore | Range |
 |---|---:|
@@ -228,14 +228,39 @@ A separate probe split the episode into its parts, over four restores:
 | First `import requests` | 2,416 to 3,114 ms |
 | Second `import requests` | 383 to 522 ms |
 
-The restore itself is fast. The time goes to the first use of memory after
-it: Firecracker maps the snapshot's memory file lazily, so every page the
-guest touches is a page fault, and under nested virtualization each fault is
-expensive. This cost has not been measured on bare metal. Loading the
-recorded working set ahead of the guest, as REAP and FaaSnap do
-([research notes](research.md)), is the known remedy and is not implemented.
-The snapshot still pays off when the setup takes far longer than a few
-seconds, since the per-episode cost does not grow with the setup time.
+The restore itself was fast. The time went to the first use of memory after
+it: Firecracker mapped the snapshot's memory file lazily, so every page the
+guest touched was a page fault, and under nested virtualization each fault
+is expensive.
+
+### After memory prefetch
+
+The backend now restores through userfaultfd and copies all guest memory
+into place right after the restore, mapping all-zero ranges to the shared
+zero page instead of copying them
+([decision 0013](decisions/0013-restore-memory-prefetch.md)). For the
+512 MiB guest above it copies 148 MiB and zero-maps 364 MiB in 160 to
+220 ms. The same probe, median of four restores:
+
+| Step after a Firecracker restore | Lazy page faults | Prefetch |
+|---|---:|---:|
+| Restore call | 220 ms | 155 ms |
+| First `true` | 110 ms | 35 ms |
+| First `import requests` | 2,800 ms | 750 ms |
+| Second `import requests` | 500 ms | 195 ms |
+
+The episode benchmark again, Firecracker only, five episodes:
+
+| | Per episode | One-time preparation |
+|---|---:|---:|
+| Built-in Docker: new container, install again | 1,379 ms | none |
+| vmlayer, Firecracker: restore memory and disk, with prefetch | 1,043 ms | 13,627 ms |
+
+A Firecracker episode now costs less than reinstalling even a small
+package, and the gap grows with the setup time, which the restore does not
+repeat. Samples:
+[`episode-reset-firecracker-prefetch-2026-11-17.json`](../bench/results/episode-reset-firecracker-prefetch-2026-11-17.json).
+These are still nested-virtualization numbers.
 
 ### What these numbers support
 
@@ -246,8 +271,10 @@ seconds, since the per-episode cost does not grow with the setup time.
 - **Startup is slower on Firecracker** by about 1.2 to 1.6 seconds, the cost
   of booting a kernel on nested KVM. A boot template shortens this for
   sandboxes without a mounted volume (see above).
-- **Docker-backend snapshots make episode reset about nine times faster**
-  than repeating a small install.
+- **Snapshots make episode reset faster** than repeating a small install:
+  about nine times on the Docker backend, and about a quarter faster on
+  Firecracker with memory prefetch, where each episode also gets its own
+  kernel.
 - The built-in sandboxes and vmlayer's Docker backend give container
   isolation. The Firecracker backend gives each sandbox its own kernel, which
   these latency tables do not show.

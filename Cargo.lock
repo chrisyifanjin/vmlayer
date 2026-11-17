@@ -2949,6 +2949,8 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "libc",
+ "nix",
  "prost-types",
  "serde",
  "serde_json",

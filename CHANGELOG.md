@@ -58,6 +58,11 @@ versions; every change to the SDK surface is listed.
   `limits=IoLimits(network_mbps=..., disk_mbps=..., disk_iops=...)` uses
   Firecracker's rate limiters. New capabilities `egress_policy` and
   `io_limits`; the Docker backend refuses both with `BackendUnsupported`.
+- Firecracker restores populate guest memory up front over userfaultfd
+  (decision 0013, `[firecracker] prefetch_memory`, default on): all-zero
+  ranges map to the shared zero page, the rest is copied in 2 MiB batches
+  while guest faults are served first. On the nested-KVM host the first
+  heavy process after a restore drops from 2.8 s to 0.75 s.
 - Firecracker boot templates are pruned to the most recently used
   `template_limit` (default 4), at startup and after each build.
 

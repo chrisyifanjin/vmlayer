@@ -19,6 +19,7 @@ kernel = "$PREFIX/kernel/vmlinux"
 guest_agent = "$PREFIX/bin/vmlayer-guest-agent"
 template_snapshots = true
 template_warmup_argv = ["python3", "-c", "pass"]
+prefetch_memory = ${VMLAYER_PREFETCH_MEMORY:-true}
 
 # Durable volume snapshots. A local directory here; point it at
 # s3://, az:// or gs:// to share snapshots between hosts.

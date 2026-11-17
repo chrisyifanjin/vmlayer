@@ -1,0 +1,15 @@
+{
+  "image": "python:3.12-slim",
+  "results_ms": {
+    "Episode reset from a prepared state": {
+      "built-in Docker: new container + install": {
+        "per episode": 1379.1910409927368,
+        "one-time preparation": 0.0
+      },
+      "vmlayer (firecracker): restore memory+disk snapshot": {
+        "per episode": 1043.0260000284761,
+        "one-time preparation": 13626.513625029474
+      }
+    }
+  }
+}

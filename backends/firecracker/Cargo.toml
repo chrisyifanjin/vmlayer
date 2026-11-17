@@ -27,5 +27,9 @@ tower = "0.5"
 tracing = { workspace = true }
 uuid = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+nix = { version = "0.31", features = ["socket", "ioctl", "poll", "mman", "uio"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -59,7 +59,14 @@ pub struct FirecrackerSandbox {
     exposed: Mutex<HashMap<u16, net::Proxy>>,
     /// Enforces the domain rules of the egress policy; stops when dropped.
     dns: std::sync::Mutex<Option<DnsProxy>>,
+    /// Populates guest memory after a restore (`prefetch_memory`).
+    memory: std::sync::Mutex<Option<MemoryServer>>,
 }
+
+#[cfg(target_os = "linux")]
+type MemoryServer = crate::uffd::UffdServer;
+#[cfg(not(target_os = "linux"))]
+type MemoryServer = ();
 
 /// Upper bound on the volume flush that precedes a kill.
 const VOLUME_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -385,6 +392,7 @@ impl FirecrackerSandbox {
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
                 dns: std::sync::Mutex::new(dns),
+                memory: std::sync::Mutex::new(None),
             })
         }
         .await;
@@ -443,14 +451,35 @@ impl FirecrackerSandbox {
             )
             .await?;
             let dns = Self::start_dns(&config, &spec, &lease).await?;
+            #[cfg(target_os = "linux")]
+            let memory = if config.prefetch_memory {
+                Some(crate::uffd::UffdServer::listen(
+                    &jail.join("uffd.sock"),
+                    &jail.join("mem"),
+                    config.jail_uid,
+                    config.jail_gid,
+                )?)
+            } else {
+                None
+            };
+            #[cfg(not(target_os = "linux"))]
+            let memory: Option<MemoryServer> = None;
+            let mem_backend = if memory.is_some() {
+                api::MemBackend {
+                    backend_type: "Uffd",
+                    backend_path: "/uffd.sock",
+                }
+            } else {
+                api::MemBackend {
+                    backend_type: "File",
+                    backend_path: "/mem",
+                }
+            };
             let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
             vmm.api
                 .snapshot_load(&api::SnapshotLoad {
                     snapshot_path: "/vmstate",
-                    mem_backend: api::MemBackend {
-                        backend_type: "File",
-                        backend_path: "/mem",
-                    },
+                    mem_backend,
                     enable_diff_snapshots: false,
                     resume_vm: true,
                     network_overrides: Vec::new(),
@@ -504,6 +533,7 @@ impl FirecrackerSandbox {
                 mounts,
                 exposed: Mutex::new(HashMap::new()),
                 dns: std::sync::Mutex::new(dns),
+                memory: std::sync::Mutex::new(memory),
             })
         }
         .await;
@@ -572,6 +602,7 @@ impl FirecrackerSandbox {
             mounts: meta.mounts,
             exposed: Mutex::new(HashMap::new()),
             dns: std::sync::Mutex::new(dns),
+            memory: std::sync::Mutex::new(None),
         })
     }
 
@@ -943,6 +974,8 @@ impl SandboxHandle for FirecrackerSandbox {
     async fn kill(&self) -> Result<()> {
         self.flush_volumes().await;
         drop(self.dns.lock().unwrap().take());
+        // Stops the memory handler when this function returns.
+        let _memory = self.memory.lock().unwrap().take();
         self.link.mark_dead();
         self.exposed.lock().await.clear();
         let mut vmm = self.vm.lock().await;

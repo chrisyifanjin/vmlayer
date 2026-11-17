@@ -27,6 +27,8 @@ mod net;
 mod process;
 mod sandbox;
 mod template;
+#[cfg(target_os = "linux")]
+mod uffd;
 mod vm;
 
 use std::path::{Path, PathBuf};
@@ -79,6 +81,9 @@ pub struct Config {
     pub template_warmup_argv: Vec<String>,
     /// Templates kept on disk, most recently used first.
     pub template_limit: usize,
+    /// Restore memory snapshots through userfaultfd and copy all guest memory
+    /// into place right away, instead of faulting it in page by page.
+    pub prefetch_memory: bool,
     /// Cold boots allowed to run at once; further creates wait their turn.
     /// A guest kernel boot is CPU-bound, so starting more of them than the
     /// host has cores only makes every one slower. 0 means one per host CPU.
@@ -396,6 +401,7 @@ pub(crate) fn test_config() -> Config {
         template_snapshots: false,
         template_warmup_argv: Vec::new(),
         template_limit: 4,
+        prefetch_memory: true,
         max_concurrent_boots: 0,
         boot_timeout: Duration::from_secs(30),
     }

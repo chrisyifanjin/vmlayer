@@ -83,6 +83,9 @@ pub struct FirecrackerConfig {
     /// Templates kept on disk (one per image and VM shape), most recently
     /// used first. Each takes the guest's memory size plus its root disk.
     pub template_limit: usize,
+    /// Copy all of a restored guest's memory into place right away
+    /// (userfaultfd) instead of faulting it in on first touch.
+    pub prefetch_memory: bool,
     /// Cold boots that may run at once; more creates queue. 0 = one per CPU.
     pub max_concurrent_boots: usize,
     /// Seconds a booted VM has to bring up its guest agent.
@@ -106,6 +109,7 @@ impl Default for FirecrackerConfig {
             template_snapshots: false,
             template_warmup_argv: Vec::new(),
             template_limit: 4,
+            prefetch_memory: true,
             max_concurrent_boots: 0,
             boot_timeout_secs: 30,
         }
