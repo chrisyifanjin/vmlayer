@@ -1,5 +1,28 @@
 # E2B API mapping
 
+## Run unmodified E2B code
+
+`vmlayer-e2b-server` speaks E2B's wire protocols, so existing E2B programs
+run against vmlayer by changing addresses only
+([decision 0017](decisions/0017-e2b-wire-compatibility.md)):
+
+```bash
+pip install "vmlayer[e2b-server]"
+vmlayer-e2b-server --listen 0.0.0.0:3000 --api-key "$KEY"
+```
+
+```bash
+export E2B_API_URL=http://gateway:3000 E2B_SANDBOX_URL=http://gateway:3000 E2B_API_KEY="$KEY"
+python my_e2b_program.py        # from e2b import Sandbox, unchanged
+```
+
+Tested with the E2B Python SDK, sync and async. Not supported, and answered
+as unimplemented: PTY sessions, filesystem watchers, pause and resume,
+E2B snapshots, metrics and logs, and E2B's template builds. Templates are
+OCI images or labelled vmlayer snapshots.
+
+## The Python facade
+
 E2B's SDK shape is becoming the de facto interface for agent sandboxes: at
 least two other self-hosted runtimes already ship E2B-compatible facades.
 vmlayer keeps its own API (snapshot/fork and capabilities need a different

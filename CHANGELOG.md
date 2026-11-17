@@ -65,6 +65,10 @@ versions; every change to the SDK surface is listed.
   `Sandbox.create(lease="name")` keeps at most one live sandbox per name
   across hosts, using the store's conditional writes, and a daemon that
   loses or cannot renew a lease kills its sandbox.
+- E2B wire compatibility (decision 0017): `vmlayer-e2b-server` serves
+  E2B's REST control plane and envd Connect services on any vmlayer
+  backend, so unmodified E2B SDK code runs after setting `E2B_API_URL`,
+  `E2B_SANDBOX_URL` and `E2B_API_KEY`. Extra `vmlayer[e2b-server]`.
 - Lazy restore of Firecracker volumes (decision 0016): a volume restored
   from the blob store is usable at once; chunks are fetched on first read
   and in the background, and served to the VM as `/dev/nbdN`

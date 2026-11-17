@@ -31,8 +31,8 @@
 - [x] **5a. Restore memory prefetch** over userfaultfd (decision 0013):
       first heavy process after a restore 2.8 s to 0.75 s on nested KVM.
 - [x] **6a. Lazy restore** of block volumes through NBD (decision 0016).
-- [ ] **7. TypeScript SDK** (done), **E2B-shaped facade** (done for Python,
-      source compatible), **asyncio client** (open).
+- [ ] **7. TypeScript SDK** (done), **E2B compatibility** (done: wire-level
+      gateway, decision 0017, and a Python facade), **asyncio client** (open).
 - [ ] **8. Adapters** for the six runtimes in docs/integrations.md.
 - [ ] **8a. Agent Sandbox API compatibility.** Define and test a supported
       subset of its Sandbox lifecycle against the direct-VM host daemon.

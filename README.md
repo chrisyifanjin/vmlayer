@@ -44,11 +44,11 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Durable volume snapshots in S3, Azure Blob, GCS or a shared directory (incremental, deduplicated, move between hosts) | working; tested against MinIO and Azurite in CI ([usage](docs/usage.md#durable-snapshots-and-moving-workspaces-between-hosts), [design](docs/decisions/0011-durable-snapshots-in-object-storage.md)) |
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
 | Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |
-| E2B-shaped Python facade (`from vmlayer.e2b import Sandbox`; source compatible, not wire compatible) | working, tested end to end ([mapping](docs/e2b-mapping.md)) |
+| E2B compatibility: unmodified E2B SDK code runs against vmlayer by changing two addresses (`vmlayer-e2b-server`), plus a source-level facade (`vmlayer.e2b`) | working, tested with the real E2B Python SDK ([mapping](docs/e2b-mapping.md), [design](docs/decisions/0017-e2b-wire-compatibility.md)) |
 | Several hosts without a scheduler service: host registry and leases in the blob store, placement in the SDK (`vmlayer.Cluster`), single-instance sandboxes (`lease=`) with fencing | working, tested end to end with two daemons ([usage](docs/usage.md#several-hosts), [design](docs/decisions/0014-hosts-placement-and-leases.md)) |
 | Automatic rescheduling from dead hosts: periodic workspace checkpoints, any daemon with `--rescue` recreates the sandbox (`reschedule=True`) | working, tested end to end by killing a host ([design](docs/decisions/0015-rescheduling.md)) |
 | Lazy restore: Firecracker volumes from the blob store are usable at once, fetched on demand through NBD | working, tested end to end on KVM ([design](docs/decisions/0016-lazy-volume-restore.md)) |
-| Wire-level E2B API, asyncio client, more adapters (ADK, SWE-ReX, smolagents) | planned |
+| asyncio client, more adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says
