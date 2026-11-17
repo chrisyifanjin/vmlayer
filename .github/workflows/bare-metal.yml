@@ -1,0 +1,23 @@
+name: Bare-metal benchmark
+
+# Runs only on demand, on a self-hosted runner you register on a bare-metal
+# Linux host with /dev/kvm and give the label "bare-metal". GitHub-hosted
+# runners are virtual machines, so the regular CI's Firecracker job measures
+# nested virtualization.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: [self-hosted, linux, bare-metal]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/bare-metal-bench.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firecracker-bare-metal
+          path: bench/results/firecracker-bare-metal-*.json

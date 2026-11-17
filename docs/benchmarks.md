@@ -58,7 +58,22 @@ this x86_64 runner takes about a quarter of the time it takes on the
 nested aarch64 host above. Samples:
 [`firecracker-x86_64-github-runner-2026-11-17.json`](../bench/results/firecracker-x86_64-github-runner-2026-11-17.json);
 every CI run uploads a fresh copy as the `firecracker-x86_64` artifact.
-Bare-metal numbers are still missing.
+
+### Bare metal
+
+No bare-metal numbers are recorded yet; every table above is nested
+virtualization. On any bare-metal Linux host with `/dev/kvm` (for example
+an AWS `*.metal` instance, a Hetzner dedicated server, or a workstation),
+one command installs everything, runs the Firecracker tests and the stress
+test, and writes the benchmark JSON into `bench/results/`:
+
+```bash
+scripts/bare-metal-bench.sh
+```
+
+With a self-hosted GitHub runner labelled `bare-metal` on such a host, the
+manual "Bare-metal benchmark" workflow does the same and uploads the
+results as an artifact.
 
 Reproduce from inside a KVM host after `scripts/kvm-vm/provision.sh` and
 `scripts/kvm-vm/run-daemon.sh`:
