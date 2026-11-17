@@ -35,6 +35,18 @@ versions; every change to the SDK surface is listed.
   (`vmlayer[openhands]`, experimental).
 - Benchmarks with recorded samples in `docs/benchmarks.md`, including each
   agent framework's own sandbox against the same framework on vmlayer.
+- Firecracker end-to-end tests (`tests/test_firecracker.py`) and a CI job
+  that runs them, the snapshot stress test and the benchmark on a GitHub
+  x86_64 runner with KVM.
+
+### Fixed
+- Firecracker: a file written to a volume just before the sandbox was
+  killed could be missing from the volume, because the guest's page cache
+  died with the VM. The backend now freezes (flushes) the guest's volumes
+  before killing it, resuming a paused guest first.
+- Firecracker: microVMs had no network egress on hosts that also run Docker,
+  whose FORWARD policy drops routed traffic. The backend now accepts the
+  sandbox address pool in Docker's `DOCKER-USER` chain when it exists.
 
 ### Changed
 - Python SDK now requires `protobuf>=5.26` and `grpcio>=1.68` (was

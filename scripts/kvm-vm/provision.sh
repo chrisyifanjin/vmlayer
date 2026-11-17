@@ -15,7 +15,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 if ! command -v cargo >/dev/null && [ ! -x "$HOME/.cargo/bin/cargo" ]; then
   curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
 fi
-. "$HOME/.cargo/env"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 rustup target add "$ARCH-unknown-linux-musl" >/dev/null
 
 sudo mkdir -p "$PREFIX/bin" "$PREFIX/kernel"
@@ -48,7 +48,7 @@ if [ ! -f "$PREFIX/kernel/vmlinux" ]; then
   curl -fsSL "https://s3.amazonaws.com/spec.ccfc.min/$key" -o "$PREFIX/kernel/vmlinux"
 fi
 
-export CARGO_TARGET_DIR="$HOME/target"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/target}"
 cd "$REPO"
 cargo build --release --locked -p vmlayerd -p vmlayer-cli 2>&1 | tail -2
 cargo build --release --locked -p vmlayer-guest-agent --target "$ARCH-unknown-linux-musl" 2>&1 | tail -1

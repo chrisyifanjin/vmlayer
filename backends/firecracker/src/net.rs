@@ -203,7 +203,40 @@ pub async fn ensure_host(subnet: Subnet) -> Result<()> {
         subnet.cidr()
     );
     let _ = run("nft", &["delete", "table", "ip", "vmlayer"]).await;
-    nft_apply(None, &rules).await
+    nft_apply(None, &rules).await?;
+    allow_through_docker(&subnet.cidr()).await;
+    Ok(())
+}
+
+/// Docker sets the host's FORWARD policy to drop, which would silently cut
+/// microVM egress on any host that also runs Docker. `DOCKER-USER` is the
+/// chain Docker reserves for the administrator's own rules and evaluates
+/// first, so accept the pool's traffic there. A host without Docker (no such
+/// chain) is left alone. Other firewalls with a forward-drop policy (ufw,
+/// firewalld) need the equivalent rule from the administrator.
+async fn allow_through_docker(cidr: &str) {
+    if run("iptables", &["-w", "-n", "-L", "DOCKER-USER"])
+        .await
+        .is_err()
+    {
+        return;
+    }
+    for dir in ["-s", "-d"] {
+        let rule = ["DOCKER-USER", dir, cidr, "-j", "ACCEPT"];
+        let check = [&["-w", "-C"], &rule[..]].concat();
+        if run("iptables", &check).await.is_ok() {
+            continue;
+        }
+        let insert = [&["-w", "-I"], &rule[..]].concat();
+        match run("iptables", &insert).await {
+            Ok(_) => {
+                tracing::info!(%cidr, dir, "allowed the sandbox pool through Docker's forward chain")
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not add a DOCKER-USER rule; microVM egress may be blocked")
+            }
+        }
+    }
 }
 
 /// Build the VM's namespace: tap for Firecracker, veth to the host, NAT out,

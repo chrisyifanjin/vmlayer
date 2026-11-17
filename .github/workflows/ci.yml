@@ -101,3 +101,63 @@ jobs:
       - run: npm test
         env:
           VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd
+
+  firecracker:
+    # GitHub-hosted Linux runners expose /dev/kvm. They are themselves cloud
+    # VMs, so this is x86_64 under nested virtualization, not bare metal.
+    name: Firecracker on KVM (x86_64 e2e, benchmark)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: Make /dev/kvm usable
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: Install Firecracker, a guest kernel, and build vmlayer
+        run: scripts/kvm-vm/provision.sh
+        env:
+          REPO: ${{ github.workspace }}
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      - name: Start vmlayerd with the Firecracker backend
+        run: scripts/kvm-vm/run-daemon.sh
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group dev
+        working-directory: sdk/python
+      - name: End-to-end tests against real microVMs
+        working-directory: sdk/python
+        run: uv run pytest -q tests/test_firecracker.py
+        env:
+          VMLAYER_FIRECRACKER_ENDPOINT: unix:///run/vmlayer/vmlayerd.sock
+      - name: Snapshot, restore and fork under load
+        working-directory: sdk/python
+        run: uv run python ../../bench/stress_snapshots.py --restores 10 --forks 5 --children 3
+        env:
+          VMLAYER_ENDPOINT: unix:///run/vmlayer/vmlayerd.sock
+      - name: Benchmark
+        working-directory: sdk/python
+        run: |
+          uv run python ../../bench/bench.py --image python:3.12-alpine --runs 10 \
+            --exec-runs 100 --fork 4 --parallel 4 --memory-mb 256 \
+            --label "Firecracker $(cat /opt/vmlayer/firecracker.version), GitHub-hosted x86_64 runner (nested KVM, $(nproc) vCPU)" \
+            --json "$RUNNER_TEMP/firecracker-x86_64.json"
+        env:
+          VMLAYER_ENDPOINT: unix:///run/vmlayer/vmlayerd.sock
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firecracker-x86_64
+          path: ${{ runner.temp }}/firecracker-x86_64.json
+          if-no-files-found: ignore
+      - name: Daemon log and failed boot consoles
+        if: failure()
+        run: |
+          sudo tail -n 300 /var/log/vmlayerd.log || true
+          sudo sh -c 'for f in /var/lib/vmlayer/firecracker/failed/*.log; do echo "== $f"; tail -n 60 "$f"; done' || true

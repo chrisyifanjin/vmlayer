@@ -58,6 +58,9 @@ pub struct FirecrackerSandbox {
     exposed: Mutex<HashMap<u16, net::Proxy>>,
 }
 
+/// Upper bound on the volume flush that precedes a kill.
+const VOLUME_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// PATH for guest processes when neither the image nor the caller sets one.
 const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -137,6 +140,33 @@ impl FirecrackerSandbox {
             .await;
         }
         let _ = tokio::fs::remove_dir_all(jail.parent().unwrap_or(jail)).await;
+    }
+
+    /// Make what the guest has written to its volumes durable before the VM
+    /// goes away. A volume outlives its sandbox but the guest's page cache
+    /// does not: without this, a file written just before `kill` would be
+    /// missing from the volume. Freezing flushes each volume's filesystem and
+    /// leaves it consistent on its disk image. Best effort and bounded, so a
+    /// hung guest cannot hold up its own removal.
+    async fn flush_volumes(&self) {
+        if self.mounts.is_empty() {
+            return;
+        }
+        let flush = async {
+            let state = self.vm.lock().await.api.info().await.map(|i| i.state);
+            if matches!(&state, Ok(s) if s == "Paused") {
+                // A paused guest cannot flush; let it run for a moment.
+                self.resume().await?;
+            }
+            self.freeze_fs().await
+        };
+        match tokio::time::timeout(VOLUME_FLUSH_TIMEOUT, flush).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(id = %self.id, %error, "could not flush volumes before kill")
+            }
+            Err(_) => tracing::warn!(id = %self.id, "timed out flushing volumes before kill"),
+        }
     }
 
     /// Connect to the guest agent; on failure include the console tail.
@@ -854,6 +884,7 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn kill(&self) -> Result<()> {
+        self.flush_volumes().await;
         self.link.mark_dead();
         self.exposed.lock().await.clear();
         let mut vmm = self.vm.lock().await;
