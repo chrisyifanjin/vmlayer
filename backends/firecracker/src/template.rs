@@ -15,7 +15,7 @@ use vmlayer_core::{
 };
 
 use crate::sandbox::cpu_model;
-use crate::{FirecrackerBackend, FirecrackerSandbox};
+use crate::FirecrackerBackend;
 
 fn file_stamp(path: &Path) -> (u64, u128) {
     std::fs::metadata(path)
@@ -108,15 +108,7 @@ impl FirecrackerBackend {
         blank.ttl = None;
         blank.labels.clear();
 
-        let lease = self.net.lock().await.allocate(&blank.id)?;
-        let guest = FirecrackerSandbox::boot(
-            self.config.clone(),
-            self.net.clone(),
-            blank,
-            base.to_path_buf(),
-            lease,
-        )
-        .await?;
+        let guest = self.cold_boot(blank, base.to_path_buf()).await?;
         if !self.config.template_warmup_argv.is_empty() {
             let request = ExecRequest {
                 argv: self.config.template_warmup_argv.clone(),

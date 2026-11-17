@@ -34,7 +34,15 @@ jail_uid = 65534
 jail_gid = 65534
 host_subnet = "10.200.0.0/16"
 dns = ["1.1.1.1", "8.8.8.8"]
+max_concurrent_boots = 0      # cold boots at once; 0 = one per host CPU
+boot_timeout_secs = 30        # for the guest agent to come up after boot
 ```
+
+A guest kernel boot is CPU-bound. When more creates arrive than
+`max_concurrent_boots`, the extra ones wait for a slot instead of starting
+together and slowing each other past the boot timeout; the wait does not
+count against `boot_timeout_secs`. Restores from a snapshot or a boot
+template are not limited.
 
 `vmlayer info` shows the backend as `ready` or the exact reason it is not
 (no `/dev/kvm`, missing binary, missing kernel).

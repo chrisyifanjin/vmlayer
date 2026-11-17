@@ -1,0 +1,53 @@
+{
+  "image": "python:3.12-slim",
+  "results_ms": {
+    "mini-swe-agent: environment": {
+      "built-in DockerEnvironment": {
+        "start to first action": 122.55220813676715,
+        "action (echo)": 28.059771051630378,
+        "action (python)": 33.134583034552634
+      },
+      "vmlayer (docker)": {
+        "start to first action": 118.05695784278214,
+        "action (echo)": 16.485083615407348,
+        "action (python)": 21.135271061211824
+      },
+      "vmlayer (firecracker)": {
+        "start to first action": 1300.3174171317369,
+        "action (echo)": 3.21574998088181,
+        "action (python)": 9.070708532817662
+      }
+    },
+    "AutoGen: code executor": {
+      "built-in DockerCommandLineCodeExecutor": {
+        "start to first result": 231.77425004541874,
+        "code block (python)": 24.708083015866578,
+        "stop": 10102.619624929503
+      },
+      "vmlayer (docker)": {
+        "start to first result": 150.36112489178777,
+        "code block (python)": 42.36593749374151,
+        "stop": 69.00804094038904
+      },
+      "vmlayer (firecracker)": {
+        "start to first result": 1869.5221671368927,
+        "code block (python)": 8.86618799995631,
+        "stop": 29.835167108103633
+      }
+    },
+    "Episode reset from a prepared state": {
+      "built-in Docker: new container + install": {
+        "per episode": 1428.5809169523418,
+        "one-time preparation": 0.0
+      },
+      "vmlayer (docker): restore disk snapshot": {
+        "per episode": 152.65975007787347,
+        "one-time preparation": 2063.2012498099357
+      },
+      "vmlayer (firecracker): restore memory+disk snapshot": {
+        "per episode": 3085.324291139841,
+        "one-time preparation": 11753.399333916605
+      }
+    }
+  }
+}

@@ -22,7 +22,7 @@ from ..sandbox import Sandbox
 from ..types import Backend
 
 
-class VmlayerWorkspace(RemoteWorkspace):
+class VmlayerWorkspace(RemoteWorkspace):  # type: ignore[misc]
     """Run the OpenHands agent server in Firecracker or another vmlayer backend."""
 
     working_dir: str = Field(default="/workspace")

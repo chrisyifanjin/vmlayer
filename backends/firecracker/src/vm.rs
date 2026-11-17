@@ -284,21 +284,7 @@ mod tests {
 
     #[test]
     fn boot_args_contain_the_essentials() {
-        let cfg = Config {
-            firecracker_bin: "/usr/bin/firecracker".into(),
-            jailer_bin: "/usr/bin/jailer".into(),
-            kernel: "/k".into(),
-            kernel_args: "quiet".into(),
-            data_dir: "/d".into(),
-            jail_uid: 1000,
-            jail_gid: 1000,
-            subnet: net::Subnet::default(),
-            dns: vec!["1.1.1.1".into()],
-            agent_port: 5200,
-            guest_agent: None,
-            template_snapshots: false,
-            template_warmup_argv: Vec::new(),
-        };
+        let cfg = crate::test_config();
         let a = boot_args(&cfg, "sb-1");
         for needle in [
             "init=/vmlayer-guest-agent",

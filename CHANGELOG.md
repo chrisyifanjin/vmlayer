@@ -22,6 +22,19 @@ versions; every change to the SDK surface is listed.
   so a fork bomb stays inside its sandbox.
 - `Backend::cleanup_dir`: volumes written as root inside containers are
   removed through the engine when the daemon cannot delete them itself.
+- Firecracker backend verified on real KVM (aarch64, nested): boot from an
+  OCI image, exec, files, pty, block-image volumes, memory snapshots,
+  restore and fork. `scripts/kvm-vm/` sets up a KVM host on a laptop.
+- Firecracker boot templates (`[firecracker] template_snapshots`): after the
+  first cold create of an image and VM shape, later creates restore a new
+  microVM from a data-free on-disk snapshot.
+- Firecracker boot admission control (`[firecracker] max_concurrent_boots`,
+  default one per host CPU) and a configurable `boot_timeout_secs`: a burst
+  of creates queues instead of timing out.
+- Framework bridges for Deep Agents (`vmlayer[deepagents]`) and OpenHands
+  (`vmlayer[openhands]`, experimental).
+- Benchmarks with recorded samples in `docs/benchmarks.md`, including each
+  agent framework's own sandbox against the same framework on vmlayer.
 
 ### Changed
 - Python SDK now requires `protobuf>=5.26` and `grpcio>=1.68` (was

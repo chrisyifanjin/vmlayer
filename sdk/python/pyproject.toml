@@ -51,7 +51,16 @@ ignore_missing_imports = true
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["minisweagent", "minisweagent.*", "autogen_core", "autogen_core.*"]
+module = [
+  "minisweagent",
+  "minisweagent.*",
+  "autogen_core",
+  "autogen_core.*",
+  "deepagents",
+  "deepagents.*",
+  "openhands",
+  "openhands.*",
+]
 ignore_missing_imports = true
 follow_imports = "skip"
 

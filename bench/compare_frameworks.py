@@ -30,13 +30,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import statistics
 import sys
 import tempfile
 import time
 from collections.abc import Callable
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
+
+# The built-in sandboxes start `docker` subprocesses from this process. With
+# a gRPC channel open, gRPC's fork handlers run in every such child and log
+# to its stderr, which would slow the built-in side and pollute its output.
+os.environ.setdefault("GRPC_ENABLE_FORK_SUPPORT", "0")
 
 import vmlayer
 
@@ -116,19 +123,27 @@ async def bench_autogen(make: Callable[[], Any], runs: int, blocks: int) -> Row:
         ex = make()
         t0 = time.perf_counter()
         await ex.start()
-        r = await ex.execute_code_blocks([CodeBlock(language="python", code="print(6 * 7)")], token)
-        assert r.exit_code == 0 and "42" in r.output, r
-        starts.append((time.perf_counter() - t0) * 1000)
-        for i in range(blocks):
-            t = time.perf_counter()
+        stopped = False
+        try:
             r = await ex.execute_code_blocks(
-                [CodeBlock(language="python", code=f"print({i} + 1)")], token
+                [CodeBlock(language="python", code="print(6 * 7)")], token
             )
-            runs_ms.append((time.perf_counter() - t) * 1000)
-            assert r.exit_code == 0, r
-        t = time.perf_counter()
-        await ex.stop()
-        stops.append((time.perf_counter() - t) * 1000)
+            assert r.exit_code == 0 and "42" in r.output, r
+            starts.append((time.perf_counter() - t0) * 1000)
+            for i in range(blocks):
+                t = time.perf_counter()
+                r = await ex.execute_code_blocks(
+                    [CodeBlock(language="python", code=f"print({i} + 1)")], token
+                )
+                runs_ms.append((time.perf_counter() - t) * 1000)
+                assert r.exit_code == 0, r
+            t = time.perf_counter()
+            await ex.stop()
+            stopped = True
+            stops.append((time.perf_counter() - t) * 1000)
+        finally:
+            if not stopped:
+                await ex.stop()
     return {
         "start to first result": p50(starts),
         "code block (python)": p50(runs_ms),
@@ -136,13 +151,17 @@ async def bench_autogen(make: Callable[[], Any], runs: int, blocks: int) -> Row:
     }
 
 
-def scenario_autogen(clients: dict[str, vmlayer.Client], runs: int, blocks: int) -> dict[str, Row]:
+def scenario_autogen(
+    clients: dict[str, vmlayer.Client], runs: int, blocks: int, tmp_root: Path
+) -> dict[str, Row]:
     from autogen_ext.code_executors.docker import DockerCommandLineCodeExecutor
 
     from vmlayer.integrations.autogen import VmlayerCodeExecutor
 
     out: dict[str, Row] = {}
-    with tempfile.TemporaryDirectory(prefix="autogen-bench-") as tmp:
+    # The built-in executor bind-mounts its work directory into the container.
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="autogen-bench-", dir=tmp_root) as tmp:
         out["built-in DockerCommandLineCodeExecutor"] = asyncio.run(
             bench_autogen(
                 lambda: DockerCommandLineCodeExecutor(image=IMAGE, work_dir=tmp, timeout=60),
@@ -244,6 +263,13 @@ def main() -> int:
     ap.add_argument("--episodes", type=int, default=5)
     ap.add_argument("--only", choices=["minisweagent", "autogen", "episode"], action="append")
     ap.add_argument("--json", default="")
+    ap.add_argument(
+        "--tmp",
+        type=Path,
+        default=Path.home() / ".vmlayer-bench",
+        help="scratch directory for the built-in executors' bind mounts; the default is "
+        "under $HOME because VM-based Docker engines (Docker Desktop, colima) share it",
+    )
     args = ap.parse_args()
 
     clients: dict[str, vmlayer.Client] = {}
@@ -266,7 +292,9 @@ def main() -> int:
             table("mini-swe-agent: environment", results["mini-swe-agent: environment"]), flush=True
         )
     if "autogen" in want:
-        results["AutoGen: code executor"] = scenario_autogen(clients, args.runs, args.actions)
+        results["AutoGen: code executor"] = scenario_autogen(
+            clients, args.runs, args.actions, args.tmp
+        )
         print(table("AutoGen: code executor", results["AutoGen: code executor"]), flush=True)
     if "episode" in want:
         results["Episode reset from a prepared state"] = scenario_episode_reset(

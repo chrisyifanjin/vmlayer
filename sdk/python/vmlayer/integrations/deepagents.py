@@ -19,7 +19,7 @@ from ..sandbox import Sandbox
 from ..types import Backend
 
 
-class VmlayerSandbox(BaseSandbox):
+class VmlayerSandbox(BaseSandbox):  # type: ignore[misc]
     """Host-side Deep Agents backend with a vmlayer sandbox as its tool target."""
 
     def __init__(

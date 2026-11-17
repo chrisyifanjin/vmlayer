@@ -185,3 +185,11 @@ All exceptions derive from `vmlayer.VmlayerError`:
 The SDK is thread-safe and the daemon serves many concurrent calls. Each
 `Process` and `Pty` holds its own stream. An `asyncio` client is planned;
 until then `asyncio.to_thread(sb.exec, ...)` works.
+
+If the same process also starts subprocesses and captures their stderr (an
+agent framework that shells out to `docker` or `git`, for example), gRPC's
+fork handlers may write a line such as `FD from fork parent still in poll
+list` into each child's stderr. It is harmless. Set
+`GRPC_ENABLE_FORK_SUPPORT=0` (or `GRPC_VERBOSITY=ERROR`) in the environment
+before importing `vmlayer` to turn it off; a subprocess that execs right
+after the fork does not need gRPC's fork support.

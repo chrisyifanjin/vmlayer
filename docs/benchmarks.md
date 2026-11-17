@@ -24,8 +24,11 @@ The full samples and machine labels are in
 The 591 ms Python p95 is one outlier among ten runs; more samples are needed
 before drawing a tail-latency conclusion. An earlier eight-way parallel run
 timed out one cold boot at the 30 second guest-agent readiness limit on this
-4 vCPU VM. That run is excluded from the table; use a larger host or reduce
-parallelism before treating eight-way throughput as representative.
+4 vCPU VM, and is excluded from the table. The backend now admits one cold
+boot per host CPU at a time (`max_concurrent_boots`) and queues the rest.
+With that change, two rounds of eight simultaneous creates on the same VM
+both finished 8 of 8, in 9.8 s and 9.5 s: four sandboxes ready after about
+5 s, the other four after about 9.5 s.
 
 Reproduce from inside a KVM host after `scripts/kvm-vm/provision.sh` and
 `scripts/kvm-vm/run-daemon.sh`:
@@ -160,3 +163,105 @@ Samples and settings:
 Reproduce with `bench/compare_agent_sandbox.py --transport api --no-workspace`
 and, for bursts, `--parallel 4`. The script uses the Kubernetes Python client
 for create, watch, exec, and delete, avoiding `kubectl` subprocess overhead.
+
+## Each framework's own sandbox versus the same framework on vmlayer
+
+Measured on 17 November 2026 with `bench/compare_frameworks.py`. Each agent
+framework was driven through its own interface, first with the sandbox it
+ships and then with the vmlayer adapter, using the same `python:3.12-slim`
+image and the same operations. The built-in sandboxes and `vmlayer (docker)`
+shared one Docker Desktop 29.5 engine (4 CPUs, 8 GiB) on the Apple M5.
+`vmlayer (firecracker)` ran in the nested-KVM Lima VM described above,
+reached through an SSH-forwarded Unix socket, with the default 1 vCPU and
+512 MiB per microVM. Values are medians over 5 sandbox lifecycles with 30
+actions each.
+
+### mini-swe-agent
+
+Its `DockerEnvironment` runs `docker run -d` once and then one `docker exec`
+subprocess per action.
+
+| | Start to first action | Action (`echo`) | Action (`python3 -c`) |
+|---|---:|---:|---:|
+| Built-in `DockerEnvironment` | 123 ms | 28 ms | 33 ms |
+| vmlayer, Docker backend | 118 ms | 16 ms | 21 ms |
+| vmlayer, Firecracker backend | 1,300 ms | 3 ms | 9 ms |
+
+### AutoGen
+
+Its `DockerCommandLineCodeExecutor` writes each code block into a
+bind-mounted host directory and runs it through the Docker SDK.
+
+| | Start to first result | Code block (Python) | Stop |
+|---|---:|---:|---:|
+| Built-in `DockerCommandLineCodeExecutor` | 232 ms | 25 ms | 10,103 ms |
+| vmlayer, Docker backend | 150 ms | 42 ms | 69 ms |
+| vmlayer, Firecracker backend | 1,870 ms | 9 ms | 30 ms |
+
+The built-in executor's stop takes Docker's full 10 second stop grace
+period; vmlayer kills the sandbox directly. On the Docker backend a vmlayer code block is slower than the built-in one: the
+adapter sends the file through the daemon and Docker's archive API, where
+the built-in executor writes it straight into a shared host directory. The
+adapter does this so the same code works on a microVM, which shares no
+directory with the host.
+
+### Starting every episode from a prepared state
+
+Neither built-in sandbox has snapshots, so each episode starts a container
+and repeats the setup, here `pip install requests`. With vmlayer the setup
+runs once, a snapshot is taken, and each episode restores it. An episode is
+complete when `import requests` has run.
+
+| | Per episode | One-time preparation |
+|---|---:|---:|
+| Built-in Docker: new container, install again | 1,429 ms | none |
+| vmlayer, Docker backend: restore disk snapshot | 153 ms | 2,063 ms |
+| vmlayer, Firecracker backend: restore memory and disk | 3,085 ms | 11,753 ms |
+
+On this host the Firecracker restore loses to reinstalling a small package.
+A separate probe split the episode into its parts, over four restores:
+
+| Step after a Firecracker restore | Range |
+|---|---:|
+| Restore call | 206 to 409 ms |
+| First `true` | 96 to 130 ms |
+| First `import requests` | 2,416 to 3,114 ms |
+| Second `import requests` | 383 to 522 ms |
+
+The restore itself is fast. The time goes to the first use of memory after
+it: Firecracker maps the snapshot's memory file lazily, so every page the
+guest touches is a page fault, and under nested virtualization each fault is
+expensive. This cost has not been measured on bare metal. Loading the
+recorded working set ahead of the guest, as REAP and FaaSnap do
+([research notes](research.md)), is the known remedy and is not implemented.
+The snapshot still pays off when the setup takes far longer than a few
+seconds, since the per-episode cost does not grow with the setup time.
+
+### What these numbers support
+
+- **Per-action latency is lower on vmlayer** in both mini-swe-agent rows and
+  on Firecracker for AutoGen. mini-swe-agent's environment starts a `docker`
+  process per action; vmlayer keeps one connection open, and on Firecracker
+  it talks to an agent inside the guest.
+- **Startup is slower on Firecracker** by about 1.2 to 1.6 seconds, the cost
+  of booting a kernel on nested KVM. A boot template shortens this for
+  sandboxes without a mounted volume (see above).
+- **Docker-backend snapshots make episode reset about nine times faster**
+  than repeating a small install.
+- The built-in sandboxes and vmlayer's Docker backend give container
+  isolation. The Firecracker backend gives each sandbox its own kernel, which
+  these latency tables do not show.
+
+These are single-machine medians from five lifecycles, with the Firecracker
+side on a different Linux VM and behind an SSH socket forward. They show
+direction, not production throughput. Samples:
+[`frameworks-builtin-vs-vmlayer-2026-11-17.json`](../bench/results/frameworks-builtin-vs-vmlayer-2026-11-17.json).
+
+```bash
+cd sdk/python
+uv sync --group dev --group integrations --group bench
+uv run python ../../bench/compare_frameworks.py \
+  --vmlayer docker=unix://$HOME/.vmlayer/vmlayerd.sock \
+  --vmlayer firecracker=unix://$HOME/.vmlayer/kvm.sock \
+  --json compare.json
+```

@@ -30,9 +30,10 @@ mod vm;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use vmlayer_core::{
     Backend, Capabilities, Error, ImageResolver, ResolvedImage, RestoreOptions, Result, Rootfs,
     SandboxHandle, SandboxId, SandboxInfo, SandboxSpec, SnapshotRef, VolumeSourceKind,
@@ -75,6 +76,13 @@ pub struct Config {
     pub template_snapshots: bool,
     /// Optional command run before freezing the data-free template.
     pub template_warmup_argv: Vec<String>,
+    /// Cold boots allowed to run at once; further creates wait their turn.
+    /// A guest kernel boot is CPU-bound, so starting more of them than the
+    /// host has cores only makes every one slower. 0 means one per host CPU.
+    pub max_concurrent_boots: usize,
+    /// How long a booted or restored VM may take to bring its guest agent
+    /// up. Time spent waiting for a boot slot does not count.
+    pub boot_timeout: Duration,
 }
 
 impl Config {
@@ -89,22 +97,61 @@ impl Config {
     pub fn snapshot_dir(&self, id: &str) -> PathBuf {
         self.data_dir.join("snapshots").join(id)
     }
+
+    fn boot_slots(&self) -> usize {
+        match self.max_concurrent_boots {
+            0 => std::thread::available_parallelism().map_or(1, usize::from),
+            n => n,
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct FirecrackerBackend {
     config: Arc<Config>,
     net: Arc<Mutex<net::Pool>>,
     template_lock: Arc<Mutex<()>>,
+    /// Admission control for cold boots (see [`Config::max_concurrent_boots`]).
+    boots: Arc<Semaphore>,
 }
 
 impl FirecrackerBackend {
     pub fn new(config: Config) -> Self {
         let pool = net::Pool::new(config.subnet);
+        let boots = Arc::new(Semaphore::new(config.boot_slots()));
         Self {
             config: Arc::new(config),
             net: Arc::new(Mutex::new(pool)),
             template_lock: Arc::new(Mutex::new(())),
+            boots,
         }
+    }
+
+    /// Boot a new microVM from `base`, waiting for a boot slot first.
+    pub(crate) async fn cold_boot(
+        &self,
+        spec: SandboxSpec,
+        base: PathBuf,
+    ) -> Result<FirecrackerSandbox> {
+        let _slot = match self.boots.try_acquire() {
+            Ok(slot) => slot,
+            Err(_) => {
+                let queued = std::time::Instant::now();
+                let slot = self
+                    .boots
+                    .acquire()
+                    .await
+                    .expect("the boot semaphore is never closed");
+                tracing::debug!(
+                    id = %spec.id,
+                    queued_ms = queued.elapsed().as_millis() as u64,
+                    "waited for a boot slot"
+                );
+                slot
+            }
+        };
+        let lease = self.net.lock().await.allocate(&spec.id)?;
+        FirecrackerSandbox::boot(self.config.clone(), self.net.clone(), spec, base, lease).await
     }
 
     /// Checks that do not need KVM: binaries, kernel, data dir.
@@ -240,22 +287,13 @@ impl Backend for FirecrackerBackend {
         }
         let template_spec = eligible.then(|| spec.clone());
         let template_base = base.clone();
-        let lease = self.net.lock().await.allocate(&spec.id)?;
-        let sb = FirecrackerSandbox::boot(self.config.clone(), self.net.clone(), spec, base, lease)
-            .await?;
+        let sb = self.cold_boot(spec, base).await?;
         if let Some(template_spec) = template_spec {
-            let config = self.config.clone();
-            let net = self.net.clone();
-            let template_lock = self.template_lock.clone();
+            let backend = self.clone();
             tokio::spawn(async move {
                 // Let the first caller run an initial command before the
                 // one-time template build competes for CPU on this host.
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                let backend = FirecrackerBackend {
-                    config,
-                    net,
-                    template_lock,
-                };
+                tokio::time::sleep(Duration::from_millis(250)).await;
                 if let Err(e) = backend.template_for(&template_spec, &template_base).await {
                     tracing::warn!(error = %e, "background template build failed");
                 }
@@ -331,5 +369,40 @@ impl ImageResolver for Ext4PathResolver {
             workdir: None,
             env: Default::default(),
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_config() -> Config {
+    Config {
+        firecracker_bin: "/usr/bin/firecracker".into(),
+        jailer_bin: "/usr/bin/jailer".into(),
+        kernel: "/k".into(),
+        kernel_args: "quiet".into(),
+        data_dir: "/d".into(),
+        jail_uid: 1000,
+        jail_gid: 1000,
+        subnet: net::Subnet::default(),
+        dns: vec!["1.1.1.1".into()],
+        agent_port: 5200,
+        guest_agent: None,
+        template_snapshots: false,
+        template_warmup_argv: Vec::new(),
+        max_concurrent_boots: 0,
+        boot_timeout: Duration::from_secs(30),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boot_slots_default_to_one_per_host_cpu() {
+        let mut cfg = test_config();
+        assert!(cfg.boot_slots() >= 1);
+        cfg.max_concurrent_boots = 3;
+        assert_eq!(cfg.boot_slots(), 3);
+        assert_eq!(FirecrackerBackend::new(cfg).boots.available_permits(), 3);
     }
 }

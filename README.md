@@ -114,6 +114,10 @@ and restart those hosts, but a sandbox create does not create a Kubernetes pod
 or put the control plane in a VM. OpenHands is an optional second pattern:
 its agent server runs inside the sandbox when that framework needs it.
 
+Head-to-head numbers against the sandboxes that mini-swe-agent and AutoGen
+ship are in the
+[benchmarks](docs/benchmarks.md#each-frameworks-own-sandbox-versus-the-same-framework-on-vmlayer).
+
 The local [Agent Sandbox + gVisor comparison](docs/benchmarks.md) measures
 the pod-per-sandbox alternative. Kubernetes can use VM-backed RuntimeClasses
 such as Kata; the distinction here is the sandbox request path and lifecycle,

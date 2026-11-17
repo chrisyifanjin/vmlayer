@@ -189,5 +189,7 @@ fn firecracker_config(
         guest_agent: fc.guest_agent.clone(),
         template_snapshots: fc.template_snapshots,
         template_warmup_argv: fc.template_warmup_argv.clone(),
+        max_concurrent_boots: fc.max_concurrent_boots,
+        boot_timeout: std::time::Duration::from_secs(fc.boot_timeout_secs),
     })
 }

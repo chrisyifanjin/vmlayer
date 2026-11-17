@@ -144,7 +144,7 @@ impl FirecrackerSandbox {
         match Agent::wait_ready(
             jail.join(vm::VSOCK),
             config.agent_port,
-            Duration::from_secs(30),
+            config.boot_timeout,
             settle,
         )
         .await
