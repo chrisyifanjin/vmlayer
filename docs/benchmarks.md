@@ -35,8 +35,8 @@ both finished 8 of 8, in 9.8 s and 9.5 s: four sandboxes ready after about
 CI runs the same benchmark on every push, on a GitHub-hosted x86_64 runner
 (4 vCPU). That runner is itself a cloud VM, so these are also nested
 virtualization numbers, now on Intel/AMD hardware. The daemon uses the
-`scripts/kvm-vm/run-daemon.sh` configuration: boot templates and memory
-prefetch on. One run, 17 November 2026:
+`scripts/kvm-vm/run-daemon.sh` configuration (memory prefetch on). One
+run, 17 November 2026:
 
 | Operation | Median | p95 | Samples |
 |---|---:|---:|---:|
@@ -52,8 +52,10 @@ prefetch on. One run, 17 November 2026:
 | Create four concurrently, total | 574 ms | 596 ms | 3 |
 | Kill | 70 ms | 77 ms | 10 |
 
-Creates here come from a boot template, which is why they are much faster
-than the cold creates in the aarch64 table. Samples:
+Every create here is a cold boot: each sandbox gets a workspace volume,
+and boot templates apply only to sandboxes without volumes. A cold boot on
+this x86_64 runner takes about a quarter of the time it takes on the
+nested aarch64 host above. Samples:
 [`firecracker-x86_64-github-runner-2026-11-17.json`](../bench/results/firecracker-x86_64-github-runner-2026-11-17.json);
 every CI run uploads a fresh copy as the `firecracker-x86_64` artifact.
 Bare-metal numbers are still missing.
