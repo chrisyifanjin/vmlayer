@@ -57,6 +57,11 @@ export interface CreateOptions {
   egress?: string[];
   /** Network and disk rate limits. Needs a backend with `capabilities.ioLimits`. */
   limits?: IoLimits;
+  /**
+   * At most one live sandbox with this name across every daemon sharing the
+   * blob store; a second create fails while the first lives.
+   */
+  lease?: string;
   labels?: Record<string, string>;
   client?: Client;
 }
@@ -145,6 +150,7 @@ export class Sandbox {
       mounts: [],
     };
     if (opts.diskMb !== undefined) req.disk_mib = opts.diskMb;
+    if (opts.lease) req.lease = opts.lease;
     if (opts.egress !== undefined) req.egress = { allow: opts.egress };
     if (opts.limits !== undefined) {
       req.limits = {};

@@ -33,6 +33,16 @@ struct Args {
     /// Blob store for durable volume snapshots, e.g. s3://bucket/prefix.
     #[arg(long, env = "VMLAYER_BLOB_STORE")]
     blob_store: Option<String>,
+    /// This host's name in the host registry (default: hostname).
+    #[arg(long, env = "VMLAYER_HOST_ID")]
+    host_id: Option<String>,
+    /// Address to publish in the host registry, e.g. tcp://10.0.0.5:7070.
+    #[arg(long, env = "VMLAYER_ADVERTISE")]
+    advertise: Option<String>,
+    #[arg(long, env = "VMLAYER_HEARTBEAT_SECS")]
+    heartbeat_secs: Option<u64>,
+    #[arg(long, env = "VMLAYER_LEASE_TTL_SECS")]
+    lease_ttl_secs: Option<u64>,
 }
 
 #[tokio::main]
@@ -59,6 +69,18 @@ async fn main() -> anyhow::Result<()> {
     }
     if args.blob_store.is_some() {
         cfg.blob_store.url = args.blob_store;
+    }
+    if args.host_id.is_some() {
+        cfg.cluster.host_id = args.host_id;
+    }
+    if args.advertise.is_some() {
+        cfg.cluster.advertise = args.advertise;
+    }
+    if let Some(s) = args.heartbeat_secs {
+        cfg.cluster.heartbeat_secs = s;
+    }
+    if let Some(s) = args.lease_ttl_secs {
+        cfg.cluster.lease_ttl_secs = s;
     }
 
     let filter = tracing_subscriber::EnvFilter::try_new(&cfg.log.filter)
@@ -95,5 +117,7 @@ async fn main() -> anyhow::Result<()> {
         }
         tracing::info!("shutting down");
     };
-    serve(daemon, listen, token, shutdown).await
+    let result = serve(daemon.clone(), listen, token, shutdown).await;
+    daemon.withdraw_heartbeat().await;
+    result
 }

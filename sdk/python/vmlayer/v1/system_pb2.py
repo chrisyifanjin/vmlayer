@@ -13,40 +13,49 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
+from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17vmlayer/v1/system.proto\x12\nvmlayer.v1\x1a\x17vmlayer/v1/common.proto\"(\n\x15\x43ollectGarbageRequest\x12\x0f\n\x07\x64ry_run\x18\x01 \x01(\x08\"\x9c\x01\n\x16\x43ollectGarbageResponse\x12\x11\n\tsnapshots\x18\x01 \x01(\x04\x12\x0e\n\x06\x63hunks\x18\x02 \x01(\x04\x12\x19\n\x11referenced_chunks\x18\x03 \x01(\x04\x12\x15\n\rrecent_chunks\x18\x04 \x01(\x04\x12\x16\n\x0e\x64\x65leted_chunks\x18\x05 \x01(\x04\x12\x15\n\rdeleted_bytes\x18\x06 \x01(\x04\"2\n\x10PullImageRequest\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63kend\x18\x02 \x01(\t\"z\n\tImageInfo\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63kend\x18\x02 \x01(\t\x12\x13\n\x0brootfs_kind\x18\x03 \x01(\t\x12\x13\n\x0brootfs_path\x18\x04 \x01(\t\x12\x12\n\nentrypoint\x18\x05 \x03(\t\x12\x0f\n\x07workdir\x18\x06 \x01(\t\"\x7f\n\x0b\x42\x61\x63kendInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x16\n\x0e\x65ngine_version\x18\x02 \x01(\t\x12.\n\x0c\x63\x61pabilities\x18\x03 \x01(\x0b\x32\x18.vmlayer.v1.Capabilities\x12\x1a\n\x12unavailable_reason\x18\x04 \x01(\t\"\x8e\x01\n\nSystemInfo\x12\x16\n\x0e\x64\x61\x65mon_version\x18\x01 \x01(\t\x12)\n\x08\x62\x61\x63kends\x18\x02 \x03(\x0b\x32\x17.vmlayer.v1.BackendInfo\x12\x17\n\x0f\x64\x65\x66\x61ult_backend\x18\x03 \x01(\t\x12\x10\n\x08\x64\x61ta_dir\x18\x04 \x01(\t\x12\x12\n\nblob_store\x18\x05 \x01(\t\"\x1c\n\x0eHealthResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"\x83\x01\n\x14ListSnapshotsRequest\x12<\n\x06labels\x18\x01 \x03(\x0b\x32,.vmlayer.v1.ListSnapshotsRequest.LabelsEntry\x1a-\n\x0bLabelsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"@\n\x15ListSnapshotsResponse\x12\'\n\tsnapshots\x18\x01 \x03(\x0b\x32\x14.vmlayer.v1.Snapshot\"#\n\x15\x44\x65leteSnapshotRequest\x12\n\n\x02id\x18\x01 \x01(\t2\xad\x03\n\x06System\x12\x31\n\x04Info\x12\x11.vmlayer.v1.Empty\x1a\x16.vmlayer.v1.SystemInfo\x12\x37\n\x06Health\x12\x11.vmlayer.v1.Empty\x1a\x1a.vmlayer.v1.HealthResponse\x12T\n\rListSnapshots\x12 .vmlayer.v1.ListSnapshotsRequest\x1a!.vmlayer.v1.ListSnapshotsResponse\x12\x46\n\x0e\x44\x65leteSnapshot\x12!.vmlayer.v1.DeleteSnapshotRequest\x1a\x11.vmlayer.v1.Empty\x12@\n\tPullImage\x12\x1c.vmlayer.v1.PullImageRequest\x1a\x15.vmlayer.v1.ImageInfo\x12W\n\x0e\x43ollectGarbage\x12!.vmlayer.v1.CollectGarbageRequest\x1a\".vmlayer.v1.CollectGarbageResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17vmlayer/v1/system.proto\x12\nvmlayer.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17vmlayer/v1/common.proto\"\xd6\x02\n\x08HostInfo\x12\x0f\n\x07host_id\x18\x01 \x01(\t\x12\x10\n\x08\x65ndpoint\x18\x02 \x01(\t\x12\x16\n\x0e\x64\x61\x65mon_version\x18\x03 \x01(\t\x12\x10\n\x08\x62\x61\x63kends\x18\x04 \x03(\t\x12\x0c\n\x04\x63pus\x18\x05 \x01(\r\x12\x12\n\nmemory_mib\x18\x06 \x01(\x04\x12\x17\n\x0f\x61llocated_vcpus\x18\x07 \x01(\r\x12\x1c\n\x14\x61llocated_memory_mib\x18\x08 \x01(\x04\x12\x13\n\x0bsandbox_ids\x18\t \x03(\t\x12\x30\n\x06labels\x18\n \x03(\x0b\x32 .vmlayer.v1.HostInfo.LabelsEntry\x12.\n\nupdated_at\x18\x0b \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a-\n\x0bLabelsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"8\n\x11ListHostsResponse\x12#\n\x05hosts\x18\x01 \x03(\x0b\x32\x14.vmlayer.v1.HostInfo\"(\n\x15\x43ollectGarbageRequest\x12\x0f\n\x07\x64ry_run\x18\x01 \x01(\x08\"\x9c\x01\n\x16\x43ollectGarbageResponse\x12\x11\n\tsnapshots\x18\x01 \x01(\x04\x12\x0e\n\x06\x63hunks\x18\x02 \x01(\x04\x12\x19\n\x11referenced_chunks\x18\x03 \x01(\x04\x12\x15\n\rrecent_chunks\x18\x04 \x01(\x04\x12\x16\n\x0e\x64\x65leted_chunks\x18\x05 \x01(\x04\x12\x15\n\rdeleted_bytes\x18\x06 \x01(\x04\"2\n\x10PullImageRequest\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63kend\x18\x02 \x01(\t\"z\n\tImageInfo\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63kend\x18\x02 \x01(\t\x12\x13\n\x0brootfs_kind\x18\x03 \x01(\t\x12\x13\n\x0brootfs_path\x18\x04 \x01(\t\x12\x12\n\nentrypoint\x18\x05 \x03(\t\x12\x0f\n\x07workdir\x18\x06 \x01(\t\"\x7f\n\x0b\x42\x61\x63kendInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x16\n\x0e\x65ngine_version\x18\x02 \x01(\t\x12.\n\x0c\x63\x61pabilities\x18\x03 \x01(\x0b\x32\x18.vmlayer.v1.Capabilities\x12\x1a\n\x12unavailable_reason\x18\x04 \x01(\t\"\x8e\x01\n\nSystemInfo\x12\x16\n\x0e\x64\x61\x65mon_version\x18\x01 \x01(\t\x12)\n\x08\x62\x61\x63kends\x18\x02 \x03(\x0b\x32\x17.vmlayer.v1.BackendInfo\x12\x17\n\x0f\x64\x65\x66\x61ult_backend\x18\x03 \x01(\t\x12\x10\n\x08\x64\x61ta_dir\x18\x04 \x01(\t\x12\x12\n\nblob_store\x18\x05 \x01(\t\"\x1c\n\x0eHealthResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"\x83\x01\n\x14ListSnapshotsRequest\x12<\n\x06labels\x18\x01 \x03(\x0b\x32,.vmlayer.v1.ListSnapshotsRequest.LabelsEntry\x1a-\n\x0bLabelsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"@\n\x15ListSnapshotsResponse\x12\'\n\tsnapshots\x18\x01 \x03(\x0b\x32\x14.vmlayer.v1.Snapshot\"#\n\x15\x44\x65leteSnapshotRequest\x12\n\n\x02id\x18\x01 \x01(\t2\xec\x03\n\x06System\x12\x31\n\x04Info\x12\x11.vmlayer.v1.Empty\x1a\x16.vmlayer.v1.SystemInfo\x12\x37\n\x06Health\x12\x11.vmlayer.v1.Empty\x1a\x1a.vmlayer.v1.HealthResponse\x12T\n\rListSnapshots\x12 .vmlayer.v1.ListSnapshotsRequest\x1a!.vmlayer.v1.ListSnapshotsResponse\x12\x46\n\x0e\x44\x65leteSnapshot\x12!.vmlayer.v1.DeleteSnapshotRequest\x1a\x11.vmlayer.v1.Empty\x12@\n\tPullImage\x12\x1c.vmlayer.v1.PullImageRequest\x1a\x15.vmlayer.v1.ImageInfo\x12W\n\x0e\x43ollectGarbage\x12!.vmlayer.v1.CollectGarbageRequest\x1a\".vmlayer.v1.CollectGarbageResponse\x12=\n\tListHosts\x12\x11.vmlayer.v1.Empty\x1a\x1d.vmlayer.v1.ListHostsResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'vmlayer.v1.system_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
+  _globals['_HOSTINFO_LABELSENTRY']._loaded_options = None
+  _globals['_HOSTINFO_LABELSENTRY']._serialized_options = b'8\001'
   _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._loaded_options = None
   _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._serialized_options = b'8\001'
-  _globals['_COLLECTGARBAGEREQUEST']._serialized_start=64
-  _globals['_COLLECTGARBAGEREQUEST']._serialized_end=104
-  _globals['_COLLECTGARBAGERESPONSE']._serialized_start=107
-  _globals['_COLLECTGARBAGERESPONSE']._serialized_end=263
-  _globals['_PULLIMAGEREQUEST']._serialized_start=265
-  _globals['_PULLIMAGEREQUEST']._serialized_end=315
-  _globals['_IMAGEINFO']._serialized_start=317
-  _globals['_IMAGEINFO']._serialized_end=439
-  _globals['_BACKENDINFO']._serialized_start=441
-  _globals['_BACKENDINFO']._serialized_end=568
-  _globals['_SYSTEMINFO']._serialized_start=571
-  _globals['_SYSTEMINFO']._serialized_end=713
-  _globals['_HEALTHRESPONSE']._serialized_start=715
-  _globals['_HEALTHRESPONSE']._serialized_end=743
-  _globals['_LISTSNAPSHOTSREQUEST']._serialized_start=746
-  _globals['_LISTSNAPSHOTSREQUEST']._serialized_end=877
-  _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._serialized_start=832
-  _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._serialized_end=877
-  _globals['_LISTSNAPSHOTSRESPONSE']._serialized_start=879
-  _globals['_LISTSNAPSHOTSRESPONSE']._serialized_end=943
-  _globals['_DELETESNAPSHOTREQUEST']._serialized_start=945
-  _globals['_DELETESNAPSHOTREQUEST']._serialized_end=980
-  _globals['_SYSTEM']._serialized_start=983
-  _globals['_SYSTEM']._serialized_end=1412
+  _globals['_HOSTINFO']._serialized_start=98
+  _globals['_HOSTINFO']._serialized_end=440
+  _globals['_HOSTINFO_LABELSENTRY']._serialized_start=395
+  _globals['_HOSTINFO_LABELSENTRY']._serialized_end=440
+  _globals['_LISTHOSTSRESPONSE']._serialized_start=442
+  _globals['_LISTHOSTSRESPONSE']._serialized_end=498
+  _globals['_COLLECTGARBAGEREQUEST']._serialized_start=500
+  _globals['_COLLECTGARBAGEREQUEST']._serialized_end=540
+  _globals['_COLLECTGARBAGERESPONSE']._serialized_start=543
+  _globals['_COLLECTGARBAGERESPONSE']._serialized_end=699
+  _globals['_PULLIMAGEREQUEST']._serialized_start=701
+  _globals['_PULLIMAGEREQUEST']._serialized_end=751
+  _globals['_IMAGEINFO']._serialized_start=753
+  _globals['_IMAGEINFO']._serialized_end=875
+  _globals['_BACKENDINFO']._serialized_start=877
+  _globals['_BACKENDINFO']._serialized_end=1004
+  _globals['_SYSTEMINFO']._serialized_start=1007
+  _globals['_SYSTEMINFO']._serialized_end=1149
+  _globals['_HEALTHRESPONSE']._serialized_start=1151
+  _globals['_HEALTHRESPONSE']._serialized_end=1179
+  _globals['_LISTSNAPSHOTSREQUEST']._serialized_start=1182
+  _globals['_LISTSNAPSHOTSREQUEST']._serialized_end=1313
+  _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._serialized_start=395
+  _globals['_LISTSNAPSHOTSREQUEST_LABELSENTRY']._serialized_end=440
+  _globals['_LISTSNAPSHOTSRESPONSE']._serialized_start=1315
+  _globals['_LISTSNAPSHOTSRESPONSE']._serialized_end=1379
+  _globals['_DELETESNAPSHOTREQUEST']._serialized_start=1381
+  _globals['_DELETESNAPSHOTREQUEST']._serialized_end=1416
+  _globals['_SYSTEM']._serialized_start=1419
+  _globals['_SYSTEM']._serialized_end=1911
 # @@protoc_insertion_point(module_scope)

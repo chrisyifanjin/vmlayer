@@ -20,7 +20,36 @@ pub struct Config {
     pub docker: DockerConfig,
     pub firecracker: FirecrackerConfig,
     pub blob_store: BlobStoreConfig,
+    pub cluster: ClusterConfig,
     pub log: LogConfig,
+}
+
+/// Several daemons sharing one blob store (decision 0014).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClusterConfig {
+    /// Unique name of this host; defaults to the hostname.
+    pub host_id: Option<String>,
+    /// Address other machines reach this daemon at, e.g. `tcp://10.0.0.5:7070`.
+    /// Set it to publish a heartbeat in the blob store.
+    pub advertise: Option<String>,
+    /// Published with the heartbeat, for placement constraints.
+    pub labels: std::collections::BTreeMap<String, String>,
+    pub heartbeat_secs: u64,
+    /// Lease lifetime; a crashed holder blocks a name for at most this long.
+    pub lease_ttl_secs: u64,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            host_id: None,
+            advertise: None,
+            labels: Default::default(),
+            heartbeat_secs: 10,
+            lease_ttl_secs: 30,
+        }
+    }
 }
 
 /// Object storage for durable volume snapshots (ADR 0011). Off unless `url`
@@ -203,6 +232,7 @@ impl Default for Config {
             docker: DockerConfig::default(),
             firecracker: FirecrackerConfig::default(),
             blob_store: BlobStoreConfig::default(),
+            cluster: ClusterConfig::default(),
             log: LogConfig::default(),
         }
     }

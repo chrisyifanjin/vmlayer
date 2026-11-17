@@ -32,6 +32,7 @@ Quick tour::
 """
 
 from .client import Client, default_client, set_default_client
+from .cluster import Cluster, NoCapacity
 from .errors import (
     BackendUnsupported,
     DaemonUnavailable,
@@ -58,6 +59,7 @@ from .types import (
     ExecResult,
     FileInfo,
     GarbageCollection,
+    HostInfo,
     ImageInfo,
     IoLimits,
     OutputChunk,
@@ -75,6 +77,7 @@ __all__ = [
     "BackendUnsupported",
     "Capabilities",
     "Client",
+    "Cluster",
     "DaemonUnavailable",
     "Endpoint",
     "ExecResult",
@@ -82,9 +85,11 @@ __all__ = [
     "FileInfo",
     "Files",
     "GarbageCollection",
+    "HostInfo",
     "ImageInfo",
     "InvalidArgument",
     "IoLimits",
+    "NoCapacity",
     "NotFound",
     "OutputChunk",
     "Process",

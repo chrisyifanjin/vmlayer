@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package vmlayer.v1;
 
+import "google/protobuf/timestamp.proto";
 import "vmlayer/v1/common.proto";
 
 service System {
@@ -14,7 +15,29 @@ service System {
   rpc PullImage(PullImageRequest) returns (ImageInfo);
   // Delete blob-store chunks that no snapshot references any more.
   rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse);
+  // Hosts with a fresh heartbeat in the shared blob store, for placement.
+  rpc ListHosts(Empty) returns (ListHostsResponse);
 }
+
+message HostInfo {
+  string host_id = 1;
+  // Address to connect to, as the host advertises it.
+  string endpoint = 2;
+  string daemon_version = 3;
+  // Backends usable on the host.
+  repeated string backends = 4;
+  uint32 cpus = 5;
+  // 0 when unknown.
+  uint64 memory_mib = 6;
+  // Totals over the host's running sandboxes.
+  uint32 allocated_vcpus = 7;
+  uint64 allocated_memory_mib = 8;
+  repeated string sandbox_ids = 9;
+  map<string, string> labels = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message ListHostsResponse { repeated HostInfo hosts = 1; }
 
 message CollectGarbageRequest {
   // Count what would be deleted without deleting it.

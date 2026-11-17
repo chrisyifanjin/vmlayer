@@ -39,4 +39,6 @@
       subset of its Sandbox lifecycle against the direct-VM host daemon.
       The upstream controller remains Pod-backed; reusing it unchanged means
       a Kata RuntimeClass and one Pod per sandbox.
-- [ ] Later: optional multi-host scheduler.
+- [x] **9. Several hosts** (decision 0014): heartbeats and leases in the
+      blob store, client-side placement, single-instance sandboxes with
+      fencing. Automatic rescheduling from dead hosts is open.

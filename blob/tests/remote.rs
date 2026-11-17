@@ -91,6 +91,53 @@ async fn exercise(url: &str) {
         remote.delete(&id).await.unwrap();
     }
     assert!(remote.list().await.unwrap().is_empty());
+
+    // Leases rely on the store's conditional writes.
+    let ttl = std::time::Duration::from_millis(1500);
+    remote
+        .acquire_lease("it-lease", "a", ttl)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(remote
+        .acquire_lease("it-lease", "b", ttl)
+        .await
+        .unwrap()
+        .is_err());
+    remote
+        .renew_lease("it-lease", "a", ttl)
+        .await
+        .unwrap()
+        .unwrap();
+    let racers = futures::future::join_all((0..8).map(|i| {
+        let r = remote.clone();
+        async move {
+            r.acquire_lease("it-race", &format!("r{i}"), ttl)
+                .await
+                .unwrap()
+        }
+    }))
+    .await;
+    assert_eq!(
+        racers.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{url}: {racers:?}"
+    );
+    tokio::time::sleep(ttl + std::time::Duration::from_millis(200)).await;
+    remote
+        .acquire_lease("it-lease", "b", ttl)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(remote
+        .renew_lease("it-lease", "a", ttl)
+        .await
+        .unwrap()
+        .is_err());
+    remote.release_lease("it-lease", "b").await.unwrap();
+    for r in racers.into_iter().flatten() {
+        remote.release_lease("it-race", &r.holder).await.unwrap();
+    }
 }
 
 #[tokio::test]

@@ -157,6 +157,26 @@ for the record's lifetime. The Docker backend cannot enforce `egress` or
 `sandbox.capabilities.egress_policy` and `io_limits`. Details are in
 [decision 0012](decisions/0012-network-isolation-egress-and-io-limits.md).
 
+### Several hosts
+
+Daemons that share a blob store and are started with `--advertise` form a
+cluster with no extra service. Place sandboxes through any one of them:
+
+```python
+cluster = vmlayer.Cluster("tcp://10.0.0.5:7070", token=TOKEN)
+[h.host_id for h in cluster.hosts()]           # fresh heartbeats
+sb = cluster.create("python:3.12", memory_mb=2048, placement={"zone": "a"})
+cluster.connect(sb.id)                         # find it again from anywhere
+
+# At most one live sandbox named "repo-42" across all hosts:
+Sandbox.create("python:3.12", lease="repo-42", client=cluster.client(cluster.place()))
+```
+
+A host that loses a lease, or cannot renew it before it expires, kills the
+sandbox holding it, so a partitioned host cannot keep a second copy running.
+Leases need an object store with conditional writes (S3, Azure Blob, GCS).
+Design: [decision 0014](decisions/0014-hosts-placement-and-leases.md).
+
 ## Volumes: workspaces that outlive sandboxes
 
 Every sandbox gets an anonymous volume at its `workdir` (`/work` by default)

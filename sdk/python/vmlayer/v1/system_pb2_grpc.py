@@ -65,6 +65,11 @@ class SystemStub(object):
                 request_serializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.SerializeToString,
                 response_deserializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.FromString,
                 _registered_method=True)
+        self.ListHosts = channel.unary_unary(
+                '/vmlayer.v1.System/ListHosts',
+                request_serializer=vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
+                response_deserializer=vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServicer(object):
@@ -109,6 +114,13 @@ class SystemServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListHosts(self, request, context):
+        """Hosts with a fresh heartbeat in the shared blob store, for placement.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -141,6 +153,11 @@ def add_SystemServicer_to_server(servicer, server):
                     servicer.CollectGarbage,
                     request_deserializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.FromString,
                     response_serializer=vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.SerializeToString,
+            ),
+            'ListHosts': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListHosts,
+                    request_deserializer=vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
+                    response_serializer=vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -305,6 +322,33 @@ class System(object):
             '/vmlayer.v1.System/CollectGarbage',
             vmlayer_dot_v1_dot_system__pb2.CollectGarbageRequest.SerializeToString,
             vmlayer_dot_v1_dot_system__pb2.CollectGarbageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListHosts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vmlayer.v1.System/ListHosts',
+            vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
+            vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.FromString,
             options,
             channel_credentials,
             insecure,

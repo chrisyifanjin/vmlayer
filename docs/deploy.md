@@ -32,6 +32,8 @@ Flags and environment:
 | `--log-format pretty\|json`, `--log-filter` | `VMLAYER_LOG_FORMAT`, `VMLAYER_LOG` | pretty, info |
 | `--default-backend` | `VMLAYER_DEFAULT_BACKEND` | strongest available |
 | `--blob-store s3://bucket/prefix` | `VMLAYER_BLOB_STORE` | none (durable snapshots off) |
+| `--advertise tcp://10.0.0.5:7070`, `--host-id` | `VMLAYER_ADVERTISE`, `VMLAYER_HOST_ID` | not in the host registry; hostname |
+| `--heartbeat-secs`, `--lease-ttl-secs` | `VMLAYER_HEARTBEAT_SECS`, `VMLAYER_LEASE_TTL_SECS` | 10, 30 |
 
 Config file (every key optional):
 
@@ -61,6 +63,13 @@ url = "s3://my-bucket/vmlayer"         # or az://container/prefix, gs://bucket/p
 options = { region = "eu-central-1" }  # optional; e.g. endpoint, allow_http, use_emulator
 gc_grace_hours = 24                    # unreferenced chunks younger than this survive GC
 concurrency = 16                       # requests in flight per transfer
+
+[cluster]                              # several hosts sharing the blob store (decision 0014)
+advertise = "tcp://10.0.0.5:7070"      # publish this host in the registry
+host_id = "host-a"                     # default: the hostname
+labels = { zone = "a" }                # for placement constraints
+heartbeat_secs = 10
+lease_ttl_secs = 30
 
 [log]
 format = "json"

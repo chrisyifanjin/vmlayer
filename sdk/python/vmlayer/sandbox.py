@@ -156,6 +156,7 @@ class Sandbox:
         network: bool = True,
         egress: Sequence[str] | None = None,
         limits: IoLimits | None = None,
+        lease: str | None = None,
         labels: Mapping[str, str] | None = None,
         client: Client | None = None,
     ) -> Sandbox:
@@ -198,6 +199,11 @@ class Sandbox:
 
         ``egress`` and ``limits`` need a microVM backend; a backend that cannot
         enforce them raises ``BackendUnsupported`` (see ``capabilities``).
+
+        ``lease`` names the sandbox cluster-wide: while it lives, creating
+        another sandbox with the same lease on any daemon sharing the blob
+        store fails. A daemon that loses the lease (cut off from the store
+        past the lease TTL) kills its sandbox, so two never run at once.
         """
         c = _client(client)
         req = sandboxes_pb2.CreateSandboxRequest(
@@ -215,6 +221,8 @@ class Sandbox:
         )
         if disk_mb is not None:
             req.disk_mib = disk_mb
+        if lease:
+            req.lease = lease
         if egress is not None:
             if isinstance(egress, str):
                 raise TypeError("egress takes a list of rules, not a string")

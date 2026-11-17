@@ -29,6 +29,7 @@
 mod chunk;
 mod error;
 mod gc;
+mod lease;
 mod manifest;
 mod pull;
 mod push;
@@ -43,6 +44,7 @@ use object_store::{ObjectStore, ObjectStoreExt};
 
 pub use error::{Error, Result};
 pub use gc::GcStats;
+pub use lease::{LeaseError, LeaseRecord};
 pub use manifest::{ChunkRef, Chunking, Kind, Manifest, SnapshotMeta, FORMAT};
 pub use push::PushStats;
 

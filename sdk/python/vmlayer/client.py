@@ -13,6 +13,7 @@ from .types import (
     BackendInfo,
     Capabilities,
     GarbageCollection,
+    HostInfo,
     ImageInfo,
     SystemInfo,
 )
@@ -149,6 +150,26 @@ class Client:
             timeout=300,
         )
         return [VolumeSnapshot._from_pb(self, s) for s in r.snapshots]
+
+    def list_hosts(self) -> list[HostInfo]:
+        """Daemons with a fresh heartbeat in this daemon's blob store."""
+        r = self._conn.call(self._conn.system.ListHosts, common_pb2.Empty(), timeout=60)
+        return [
+            HostInfo(
+                host_id=h.host_id,
+                endpoint=h.endpoint,
+                daemon_version=h.daemon_version,
+                backends=tuple(h.backends),
+                cpus=h.cpus,
+                memory_mb=h.memory_mib,
+                allocated_vcpus=h.allocated_vcpus,
+                allocated_memory_mb=h.allocated_memory_mib,
+                sandbox_ids=tuple(h.sandbox_ids),
+                labels=dict(h.labels),
+                updated_at=_rpc.from_timestamp(h.updated_at),
+            )
+            for h in r.hosts
+        ]
 
     def collect_garbage(self, *, dry_run: bool = False) -> GarbageCollection:
         """Delete blob-store chunks no snapshot references any more.

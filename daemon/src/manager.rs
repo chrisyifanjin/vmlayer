@@ -26,6 +26,7 @@ pub struct Live {
     pub procs: ProcessTable,
     pub exposed: Mutex<BTreeMap<u16, Endpoint>>,
     ttl_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    lease_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +67,8 @@ pub struct CreateParams {
     pub labels: BTreeMap<String, String>,
     pub egress: Option<vmlayer_core::EgressPolicy>,
     pub limits: vmlayer_core::IoLimits,
+    /// Cluster-wide single-instance name (decision 0014).
+    pub lease: Option<String>,
 }
 
 /// What callers see: the stored row plus live state.
@@ -117,6 +120,7 @@ impl Daemon {
             live: RwLock::new(HashMap::new()),
         });
         d.reattach().await;
+        d.start_heartbeat();
         Ok(d)
     }
 
@@ -141,6 +145,9 @@ impl Daemon {
                         .register(row.id.clone(), row.backend.clone(), handle)
                         .await;
                     self.arm_ttl(&live, row.created_at, row.ttl);
+                    if let Some(name) = row.labels.get(crate::cluster::LEASE_LABEL) {
+                        self.arm_lease(&live, name.clone());
+                    }
                     tracing::info!(id = %row.id, "reattached");
                 }
                 Err(e) => {
@@ -165,6 +172,7 @@ impl Daemon {
             procs: ProcessTable::new(self.cfg.defaults.output_buffer_bytes),
             exposed: Mutex::new(BTreeMap::new()),
             ttl_task: Mutex::new(None),
+            lease_task: Mutex::new(None),
         });
         self.live.write().await.insert(id, live.clone());
         live
@@ -189,6 +197,15 @@ impl Daemon {
         tokio::spawn(async move {
             *live.ttl_task.lock().await = Some(task);
         });
+    }
+
+    fn arm_lease(self: &Arc<Self>, live: &Arc<Live>, name: String) {
+        if let Some(task) = self.keep_lease(live.id.clone(), name) {
+            let live = live.clone();
+            tokio::spawn(async move {
+                *live.lease_task.lock().await = Some(task);
+            });
+        }
     }
 
     pub async fn live(&self, id: &SandboxId) -> Result<Arc<Live>> {
@@ -361,13 +378,27 @@ impl Daemon {
             ttl: p.ttl,
             labels: p.labels.clone(),
         };
+        let lease = p.lease.clone().filter(|l| !l.is_empty());
+        if let Some(name) = &lease {
+            if let Err(e) = self.acquire_lease(name, &id).await {
+                self.rollback_attach(&id, &[]).await;
+                return Err(e);
+            }
+        }
         let handle = match entry.backend.create(spec.clone()).await {
             Ok(h) => h,
             Err(e) => {
+                if let Some(name) = &lease {
+                    self.release_lease(name, &id).await;
+                }
                 self.rollback_attach(&id, &[]).await;
                 return Err(e);
             }
         };
+        let mut labels = p.labels;
+        if let Some(name) = &lease {
+            labels.insert(crate::cluster::LEASE_LABEL.into(), name.clone());
+        }
         let row = SandboxRow {
             id: id.clone(),
             backend: backend_name.clone(),
@@ -377,7 +408,7 @@ impl Daemon {
             state: SandboxState::Running,
             created_at: SystemTime::now(),
             ttl: p.ttl,
-            labels: p.labels,
+            labels,
             spec,
         };
         self.store.insert_sandbox(&row).map_err(store_err)?;
@@ -386,6 +417,9 @@ impl Daemon {
         }
         let live = self.register(id.clone(), backend_name, handle).await;
         self.arm_ttl(&live, row.created_at, row.ttl);
+        if let Some(name) = lease {
+            self.arm_lease(&live, name);
+        }
         tracing::info!(%id, image = %row.image, backend = %row.backend, "created");
         self.view(&id).await
     }
@@ -529,11 +563,13 @@ impl Daemon {
     pub async fn kill(&self, id: &SandboxId) -> Result<()> {
         let live = self.live.write().await.remove(id);
         if let Some(live) = &live {
-            if let Some(t) = live.ttl_task.lock().await.take() {
-                // The TTL task itself calls kill; aborting it from inside
-                // would cancel this very call half-way through.
-                if tokio::task::try_id() != Some(t.id()) {
-                    t.abort();
+            for task in [&live.ttl_task, &live.lease_task] {
+                if let Some(t) = task.lock().await.take() {
+                    // These tasks call kill themselves; aborting one from
+                    // inside would cancel this very call half-way through.
+                    if tokio::task::try_id() != Some(t.id()) {
+                        t.abort();
+                    }
                 }
             }
             live.handle.kill().await?;
@@ -553,6 +589,12 @@ impl Daemon {
                 .map_err(|_| Error::SandboxNotFound(id.clone()))?;
         }
         let row = self.store.get_sandbox(id).ok();
+        if let Some(name) = row
+            .as_ref()
+            .and_then(|r| r.labels.get(crate::cluster::LEASE_LABEL))
+        {
+            self.release_lease(name, id).await;
+        }
         self.volumes.detach_all(id)?;
         self.store.delete_sandbox(id).map_err(store_err)?;
         if let Some(row) = row {

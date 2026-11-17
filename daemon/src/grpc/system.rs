@@ -34,6 +34,33 @@ impl System for Services {
         }))
     }
 
+    async fn list_hosts(
+        &self,
+        _req: Request<pb::Empty>,
+    ) -> Result<Response<pb::ListHostsResponse>, Status> {
+        let hosts = self.daemon.list_hosts().await.map_err(status)?;
+        Ok(Response::new(pb::ListHostsResponse {
+            hosts: hosts
+                .into_iter()
+                .map(|h| pb::HostInfo {
+                    host_id: h.host_id,
+                    endpoint: h.endpoint,
+                    daemon_version: h.daemon_version,
+                    backends: h.backends,
+                    cpus: h.cpus,
+                    memory_mib: h.memory_mib,
+                    allocated_vcpus: h.allocated_vcpus,
+                    allocated_memory_mib: h.allocated_memory_mib,
+                    sandbox_ids: h.sandboxes,
+                    labels: h.labels.into_iter().collect(),
+                    updated_at: convert::ts(
+                        std::time::UNIX_EPOCH + std::time::Duration::from_millis(h.updated_at),
+                    ),
+                })
+                .collect(),
+        }))
+    }
+
     async fn collect_garbage(
         &self,
         req: Request<pb::CollectGarbageRequest>,

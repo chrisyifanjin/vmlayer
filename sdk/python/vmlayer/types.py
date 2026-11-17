@@ -165,6 +165,24 @@ class SystemInfo:
 
 
 @dataclass(frozen=True)
+class HostInfo:
+    """A daemon in the shared host registry (``Client.list_hosts``)."""
+
+    host_id: str
+    endpoint: str
+    daemon_version: str
+    backends: tuple[str, ...]
+    cpus: int
+    memory_mb: int
+    """0 when the host does not report it."""
+    allocated_vcpus: int
+    allocated_memory_mb: int
+    sandbox_ids: tuple[str, ...]
+    labels: dict[str, str]
+    updated_at: float
+
+
+@dataclass(frozen=True)
 class GarbageCollection:
     """What ``Client.collect_garbage`` found and removed in the blob store."""
 

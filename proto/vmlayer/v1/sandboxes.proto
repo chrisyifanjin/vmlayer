@@ -73,6 +73,10 @@ message CreateSandboxRequest {
   EgressPolicy egress = 14;
   // Backends without the io_limits capability refuse limits.
   IoLimits limits = 15;
+  // At most one live sandbox with this name across every daemon sharing the
+  // blob store; creating a second fails while the first lives. Needs a blob
+  // store with conditional writes (S3, Azure Blob, GCS).
+  string lease = 16;
 }
 
 message RestoreSandboxRequest {
