@@ -211,6 +211,38 @@ TLS-terminating load balancer that forwards `Host` unchanged. Ports are
 published only on request (`expose(port, gateway=True)`), and the gateway
 stores only a hash of each token.
 
+## Credential proxy
+
+Give sandboxes API access without giving them keys (decision 0022). The
+daemon reads each secret from its own environment or a file:
+
+```toml
+[credential_proxy]
+listen = "0.0.0.0:7072"       # sandboxes reach it at vmlayer.host:7072; firewall it from outside
+
+[[credential_proxy.credentials]]
+name = "anthropic"
+upstream = "https://api.anthropic.com"
+header = "x-api-key"
+secret_env = "ANTHROPIC_API_KEY"          # or secret_file = "/run/secrets/anthropic"
+guest_env = { ANTHROPIC_BASE_URL = "{url}", ANTHROPIC_API_KEY = "{placeholder}" }
+
+[[credential_proxy.credentials]]
+name = "openai"
+upstream = "https://api.openai.com"
+header = "authorization"
+value = "Bearer {secret}"
+secret_env = "OPENAI_API_KEY"
+guest_env = { OPENAI_BASE_URL = "{url}/v1", OPENAI_API_KEY = "{placeholder}" }
+tenants = ["acme"]                        # optional: only these tenants
+```
+
+A sandbox created with `credentials=["anthropic"]` gets a placeholder and
+the base URL. The proxy replaces the placeholder with the secret on the
+way out. On Firecracker the host opens only this port to guests, so the
+rest of the host stays closed. The daemon refuses to start if a secret
+cannot be read.
+
 ## Data directory
 
 ```

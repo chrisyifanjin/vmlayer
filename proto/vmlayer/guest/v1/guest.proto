@@ -42,6 +42,10 @@ message ConfigureRequest {
   string cwd = 2;
   // Rebind the guest identity after restoring a shared boot template.
   string hostname = 3;
+  // Names to resolve in /etc/hosts, name -> IPv4 address; replaces earlier
+  // entries for the same names (e.g. vmlayer.host, the host as seen from
+  // this guest, which differs per VM).
+  map<string, string> hosts = 4;
 }
 
 message MountRequest {

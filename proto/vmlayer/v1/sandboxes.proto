@@ -81,6 +81,10 @@ message CreateSandboxRequest {
   // and let a daemon with [cluster] rescue recreate the sandbox from the last
   // checkpoint if this host dies. Memory state and later writes are lost.
   bool reschedule = 17;
+  // Credentials from the daemon's [credential_proxy] config to inject on the
+  // egress path: the sandbox gets placeholders and base URLs, never the
+  // secrets (decision 0022).
+  repeated string credentials = 18;
 }
 
 message RestoreSandboxRequest {

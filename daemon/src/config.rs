@@ -19,6 +19,8 @@ pub struct Config {
     pub tls: crate::auth::TlsConfig,
     /// Authenticated HTTPS gateway for exposed ports (decision 0021).
     pub gateway: crate::gateway::GatewayConfig,
+    /// Credentials injected on the egress path (decision 0022).
+    pub credential_proxy: crate::credentials::CredentialProxyConfig,
     pub data_dir: PathBuf,
     /// Backend used for `backend = "auto"`; `None` picks the strongest
     /// available (firecracker, libkrun, docker).
@@ -257,6 +259,7 @@ impl Default for Config {
             auth: Default::default(),
             tls: Default::default(),
             gateway: Default::default(),
+            credential_proxy: Default::default(),
             data_dir: default_data_dir(),
             default_backend: None,
             defaults: Defaults::default(),

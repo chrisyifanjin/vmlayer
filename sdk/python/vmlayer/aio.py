@@ -259,6 +259,7 @@ class AsyncSandbox(_Fields):
         lease: str | None = None,
         reschedule: bool = False,
         labels: Mapping[str, str] | None = None,
+        credentials: Sequence[str] = (),
         client: AsyncClient | None = None,
     ) -> AsyncSandbox:
         """Boot a new sandbox from an image (see ``vmlayer.Sandbox.create``)."""
@@ -281,6 +282,7 @@ class AsyncSandbox(_Fields):
             lease=lease,
             reschedule=reschedule,
             labels=labels,
+            credentials=credentials,
         )
         return cls(cl, await cl._conn.call(cl._conn.sandboxes.Create, req, timeout=600))
 

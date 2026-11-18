@@ -44,6 +44,8 @@ pub const BACKEND_NAME: &str = "docker";
 pub const LABEL_MANAGED: &str = "vmlayer.managed";
 pub const LABEL_SANDBOX_ID: &str = "vmlayer.sandbox_id";
 pub const LABEL_ROLE: &str = "vmlayer.role";
+/// The name every sandbox resolves to the host (decision 0022).
+pub const HOST_NAME: &str = "vmlayer.host";
 
 /// Tunables. Defaults are fine for development.
 #[derive(Clone, Debug)]
@@ -332,6 +334,10 @@ impl DockerBackend {
             network_mode: Some(network_mode.clone()),
             init: Some(true),
             pids_limit: (self.config.pids_limit > 0).then_some(self.config.pids_limit),
+            // The host as the sandbox reaches it, as on every backend
+            // (decision 0022); Docker resolves host-gateway per platform.
+            extra_hosts: (network_mode != "none")
+                .then(|| vec![format!("{HOST_NAME}:host-gateway")]),
             ..Default::default()
         };
         let body = bollard::models::ContainerCreateBody {

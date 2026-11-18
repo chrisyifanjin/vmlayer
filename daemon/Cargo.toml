@@ -41,6 +41,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+reqwest = { workspace = true }
 tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

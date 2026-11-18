@@ -6,6 +6,7 @@ pub mod admission;
 pub mod auth;
 pub mod cluster;
 pub mod config;
+pub mod credentials;
 pub mod durable;
 pub mod gateway;
 pub mod grpc;

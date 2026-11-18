@@ -74,7 +74,11 @@ impl Registry {
             }
         }
         if cfg.firecracker.enabled {
-            match firecracker_config(&cfg.firecracker, &cfg.data_dir) {
+            match firecracker_config(
+                &cfg.firecracker,
+                &cfg.data_dir,
+                cfg.credential_proxy.port().into_iter().collect(),
+            ) {
                 Ok(fc) => {
                     let be = Arc::new(vmlayer_backend_firecracker::FirecrackerBackend::new(fc));
                     let unavailable = be.probe().await.err().map(|e| e.to_string());
@@ -171,6 +175,7 @@ impl Registry {
 fn firecracker_config(
     fc: &crate::config::FirecrackerConfig,
     data_dir: &std::path::Path,
+    host_ports: Vec<u16>,
 ) -> anyhow::Result<vmlayer_backend_firecracker::Config> {
     let (net, prefix) = fc
         .host_subnet
@@ -200,6 +205,7 @@ fn firecracker_config(
                 .and_then(|p| p.parent().map(|d| d.join("vmlayer-shim")))
                 .unwrap_or_else(|| "vmlayer-shim".into())
         }),
+        host_ports,
         prefetch_memory: fc.prefetch_memory,
         max_concurrent_boots: fc.max_concurrent_boots,
         boot_timeout: std::time::Duration::from_secs(fc.boot_timeout_secs),

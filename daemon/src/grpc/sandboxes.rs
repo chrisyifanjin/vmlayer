@@ -17,6 +17,24 @@ fn port(p: u32) -> Result<u16, Status> {
         .ok_or_else(|| Status::invalid_argument("port must be 1..65535"))
 }
 
+impl Services {
+    /// Credential names `p` may use: configured, and open to its tenant.
+    fn credentials_for(&self, p: &Principal, names: Vec<String>) -> Result<Vec<String>, Status> {
+        let cfg = &self.daemon.cfg.credential_proxy;
+        for n in &names {
+            let allowed = cfg.get(n).is_some_and(|c| {
+                c.tenants.is_empty() || p.tenant.as_ref().is_some_and(|t| c.tenants.contains(t))
+            });
+            if !allowed {
+                return Err(Status::invalid_argument(format!(
+                    "no credential named {n:?} is available"
+                )));
+            }
+        }
+        Ok(names)
+    }
+}
+
 #[tonic::async_trait]
 impl Sandboxes for Services {
     async fn create(
@@ -68,6 +86,7 @@ impl Sandboxes for Services {
             limits: convert::limits_from(r.limits)?,
             lease: (!r.lease.is_empty()).then_some(r.lease),
             reschedule: r.reschedule,
+            credentials: self.credentials_for(&p, r.credentials)?,
             rescued: None,
         };
         let view = self.daemon.create(params).await.map_err(status)?;

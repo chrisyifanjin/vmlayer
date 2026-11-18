@@ -53,6 +53,7 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Callers: TLS and mutual TLS, tokens with a tenant and a role (read, write, admin) | working, tested with a mutual-TLS daemon serving two tenants ([deploy](docs/deploy.md#remote-access), [design](docs/decisions/0020-callers-tenants-and-tls.md)) |
 | Harbor environment (`vmlayer.integrations.harbor`): Terminal-Bench and other Harbor datasets on vmlayer sandboxes | working, tested with Harbor's CLI on Docker and Firecracker ([integrations](docs/integrations.md#harbor)) |
 | Run commands as another user (`exec(user=...)`) | working on Docker and Firecracker |
+| API keys that never enter the sandbox: a credential proxy swaps placeholders for real secrets on the way out (`credentials=[...]`) | working on Docker and Firecracker ([usage](docs/usage.md#api-keys-without-giving-them-to-the-sandbox), [design](docs/decisions/0022-credential-proxy.md)) |
 | Exposed ports on an authenticated HTTPS gateway (`expose(port, gateway=True)`): `https://<port>-<sandbox>.<domain>`, a token per port, WebSockets | working, tested end to end ([deploy](docs/deploy.md#port-gateway), [design](docs/decisions/0021-port-gateway.md)) |
 | More adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
 

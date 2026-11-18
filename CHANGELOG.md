@@ -125,6 +125,10 @@ versions; every change to the SDK surface is listed.
   `AsyncFiles`, `AsyncProcess`) on native `grpc.aio`, sharing request
   building and result parsing with the synchronous SDK. `OutputChunk.text`
   decodes a chunk.
+- Credential proxy (`[credential_proxy]`, decision 0022): sandboxes
+  created with `credentials=[...]` get placeholders and base URLs; the
+  daemon swaps in the real secrets on the way out, streaming included.
+  Every sandbox resolves `vmlayer.host` to the host.
 - Port gateway (`[gateway]`, decision 0021): `expose(port, gateway=True)`
   publishes a port at `https://<port>-<sandbox-id>.<domain>` with its own
   token; HTTP and WebSocket are proxied and the token never reaches the

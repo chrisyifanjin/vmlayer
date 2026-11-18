@@ -559,6 +559,15 @@ impl Guest for Agent {
             nix::unistd::sethostname(&r.hostname)
                 .map_err(|e| Status::failed_precondition(format!("hostname: {e}")))?;
         }
+        if !r.hosts.is_empty() {
+            let current = tokio::fs::read_to_string("/etc/hosts")
+                .await
+                .unwrap_or_default();
+            let updated = crate::fs::with_hosts(&current, &r.hosts);
+            tokio::fs::write("/etc/hosts", updated)
+                .await
+                .map_err(|e| Status::failed_precondition(format!("/etc/hosts: {e}")))?;
+        }
         if !r.cwd.is_empty() {
             tokio::fs::create_dir_all(&r.cwd)
                 .await

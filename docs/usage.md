@@ -188,6 +188,24 @@ names, whichever server the guest asks, and opens each answer's addresses
 for the record's lifetime. Details are in
 [decision 0012](decisions/0012-network-isolation-egress-and-io-limits.md).
 
+### API keys without giving them to the sandbox
+
+When the daemon's operator has configured credentials
+([deploy.md](deploy.md#credential-proxy)), a sandbox can use an API
+without ever holding its key:
+
+```python
+sb = Sandbox.create("python:3.12", credentials=["anthropic"])
+sb.exec("printenv ANTHROPIC_API_KEY")    # vmlayer-3f2c...  (a placeholder)
+sb.exec("printenv ANTHROPIC_BASE_URL")   # http://vmlayer.host:7072/anthropic
+sb.exec("python agent.py")               # the SDK's requests carry the real key upstream
+```
+
+The SDK in the sandbox sends the placeholder to the daemon's proxy, which
+swaps in the real key and forwards to the API over HTTPS, streaming
+included. The placeholder works only for the credentials this sandbox
+was granted, and only while it lives. Forks and restores keep it.
+
 #### What the Docker backend does not isolate
 
 The Docker backend is for laptops and CI, where there is no KVM. It gives

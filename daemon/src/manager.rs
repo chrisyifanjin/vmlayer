@@ -74,6 +74,8 @@ pub struct CreateParams {
     /// Checkpoint the workspace and bring the sandbox back on another host
     /// if this one dies (decision 0015). Needs `lease`.
     pub reschedule: bool,
+    /// Credential names for the egress proxy (decision 0022).
+    pub credentials: Vec<String>,
     /// Set when this create is a rescue: the record being brought back.
     pub rescued: Option<Box<crate::rescue::Workload>>,
 }
@@ -345,8 +347,26 @@ impl Daemon {
             .any(|s| s.workspace_volume_id.as_ref() == Some(vol))
     }
 
-    pub async fn create(self: &Arc<Self>, p: CreateParams) -> Result<SandboxView> {
+    pub async fn create(self: &Arc<Self>, mut p: CreateParams) -> Result<SandboxView> {
         let (backend_name, entry) = self.registry.pick(&p.backend)?;
+        if !p.credentials.is_empty() {
+            // Placeholders and proxy URLs only; the secrets stay in the
+            // daemon (decision 0022).
+            let cfg = &self.cfg.credential_proxy;
+            if let Some(n) = p.credentials.iter().find(|n| cfg.get(n).is_none()) {
+                return Err(Error::Guest(format!(
+                    "no credential named {n:?} is configured"
+                )));
+            }
+            let placeholder = crate::credentials::new_placeholder();
+            p.env.extend(crate::credentials::guest_env(
+                cfg,
+                &p.credentials,
+                &placeholder,
+            ));
+            p.labels
+                .insert(crate::credentials::LABEL.into(), p.credentials.join(","));
+        }
         // Refuse what the backend cannot enforce before doing any work.
         let caps = entry.backend.capabilities();
         if p.egress.is_some() && !caps.egress_policy {
@@ -466,6 +486,7 @@ impl Daemon {
             spec,
         };
         self.store.insert_sandbox(&row).map_err(store_err)?;
+        crate::credentials::regrant(self, &id, &row.labels, &row.spec.env);
         for m in &mount_rows {
             self.store.insert_mount(m).map_err(store_err)?;
         }
@@ -594,6 +615,7 @@ impl Daemon {
             spec,
         };
         self.store.insert_sandbox(&row).map_err(store_err)?;
+        crate::credentials::regrant(self, &id, &row.labels, &row.spec.env);
         for m in &rows {
             self.store.insert_mount(m).map_err(store_err)?;
         }
@@ -976,6 +998,7 @@ impl Daemon {
                 spec,
             };
             self.store.insert_sandbox(&child_row).map_err(store_err)?;
+            crate::credentials::regrant(self, &cid, &child_row.labels, &child_row.spec.env);
             for m in &child_mounts {
                 self.store
                     .insert_mount(&MountRow {

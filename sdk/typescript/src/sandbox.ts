@@ -68,6 +68,11 @@ export interface CreateOptions {
    */
   reschedule?: boolean;
   labels?: Record<string, string>;
+  /**
+   * Credentials the daemon's operator configured (`[credential_proxy]`): the
+   * sandbox gets placeholders and base URLs, never the secrets.
+   */
+  credentials?: string[];
   client?: Client;
 }
 
@@ -159,6 +164,7 @@ export class Sandbox {
     if (opts.diskMb !== undefined) req.disk_mib = opts.diskMb;
     if (opts.lease) req.lease = opts.lease;
     if (opts.reschedule) req.reschedule = true;
+    if (opts.credentials !== undefined) req.credentials = opts.credentials;
     if (opts.egress !== undefined) req.egress = { allow: opts.egress };
     if (opts.limits !== undefined) {
       req.limits = {};

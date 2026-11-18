@@ -39,6 +39,7 @@ hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 http = "1"
 http-body-util = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "http2"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"

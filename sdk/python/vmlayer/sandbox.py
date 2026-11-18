@@ -67,6 +67,7 @@ def _create_request(
     lease: str | None,
     reschedule: bool,
     labels: Mapping[str, str] | None,
+    credentials: Sequence[str] = (),
 ) -> sandboxes_pb2.CreateSandboxRequest:
     """The Create request for ``Sandbox.create``; shared with ``vmlayer.aio``."""
     req = sandboxes_pb2.CreateSandboxRequest(
@@ -87,6 +88,9 @@ def _create_request(
     if lease:
         req.lease = lease
     req.reschedule = reschedule
+    if isinstance(credentials, str):
+        raise TypeError("credentials takes a list of names, not a string")
+    req.credentials.extend(credentials)
     if egress is not None:
         if isinstance(egress, str):
             raise TypeError("egress takes a list of rules, not a string")
@@ -295,6 +299,7 @@ class Sandbox(_Fields):
         lease: str | None = None,
         reschedule: bool = False,
         labels: Mapping[str, str] | None = None,
+        credentials: Sequence[str] = (),
         client: Client | None = None,
     ) -> Sandbox:
         """Boot a new sandbox from an image.
@@ -337,6 +342,11 @@ class Sandbox(_Fields):
         ``egress`` and ``limits`` need a microVM backend; a backend that cannot
         enforce them raises ``BackendUnsupported`` (see ``capabilities``).
 
+        ``credentials`` names API credentials the daemon's operator configured
+        (``[credential_proxy]``). The sandbox gets placeholders and base URLs
+        for them in its environment; the daemon swaps in the real secrets on
+        the way out, so code in the sandbox never sees them.
+
         ``lease`` names the sandbox cluster-wide: while it lives, creating
         another sandbox with the same lease on any daemon sharing the blob
         store fails. A daemon that loses the lease (cut off from the store
@@ -366,6 +376,7 @@ class Sandbox(_Fields):
             lease=lease,
             reschedule=reschedule,
             labels=labels,
+            credentials=credentials,
         )
         pb = c._conn.call(c._conn.sandboxes.Create, req, timeout=600)
         return cls(c, pb)

@@ -68,6 +68,14 @@ const MIGRATIONS: &[&str] = &[
         token_sha256 BLOB NOT NULL,
         PRIMARY KEY (sandbox_id, port)
     );",
+    // 3: credentials granted to sandboxes (decision 0022), by the SHA-256 of
+    // the placeholder; forks and restores share their parent's placeholder.
+    "CREATE TABLE credential_grants (
+        token_sha256 BLOB NOT NULL,
+        sandbox_id TEXT NOT NULL,
+        names TEXT NOT NULL,
+        PRIMARY KEY (token_sha256, sandbox_id)
+    );",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -238,8 +246,41 @@ impl Store {
             "DELETE FROM gateway_routes WHERE sandbox_id = ?1",
             params![id.0],
         )?;
+        conn.execute(
+            "DELETE FROM credential_grants WHERE sandbox_id = ?1",
+            params![id.0],
+        )?;
         conn.execute("DELETE FROM sandboxes WHERE id = ?1", params![id.0])?;
         Ok(())
+    }
+
+    // -- credential grants ------------------------------------------------
+
+    pub fn put_credential_grant(
+        &self,
+        token_sha256: &[u8; 32],
+        sandbox: &SandboxId,
+        names: &[String],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO credential_grants (token_sha256, sandbox_id, names) VALUES (?1, ?2, ?3)",
+            params![token_sha256.as_slice(), sandbox.0, names.join(",")],
+        )?;
+        Ok(())
+    }
+
+    /// The credentials a placeholder grants, while any sandbox holding it lives.
+    pub fn credential_grant(&self, token_sha256: &[u8; 32]) -> Result<Option<Vec<String>>> {
+        let conn = self.conn.lock().unwrap();
+        let names: Option<String> = conn
+            .query_row(
+                "SELECT names FROM credential_grants WHERE token_sha256 = ?1 LIMIT 1",
+                params![token_sha256.as_slice()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(names.map(|n| n.split(',').map(String::from).collect()))
     }
 
     // -- gateway routes ---------------------------------------------------

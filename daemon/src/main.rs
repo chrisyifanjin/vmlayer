@@ -129,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(version = vmlayerd::VERSION, data_dir = %cfg.data_dir.display(), "starting vmlayerd");
 
     let listen = parse_listen(&cfg.listen)?;
+    cfg.credential_proxy.validate()?;
     let security = Security {
         token: cfg.token.clone(),
         auth: cfg.auth.clone(),
@@ -154,6 +155,14 @@ async fn main() -> anyhow::Result<()> {
         }
         tracing::info!("shutting down");
     };
+    tokio::spawn({
+        let daemon = daemon.clone();
+        async move {
+            if let Err(e) = vmlayerd::credentials::serve(daemon).await {
+                tracing::error!(error = %format!("{e:#}"), "credential proxy stopped");
+            }
+        }
+    });
     let serving = serve(daemon.clone(), listen, security, shutdown);
     let result = if daemon.cfg.gateway.enabled() {
         // The gateway serves until the process exits; it only returns on a

@@ -86,6 +86,10 @@ pub struct Config {
     pub template_limit: usize,
     /// The per-VM helper binary (`vmlayer-shim`, decision 0019).
     pub shim_bin: PathBuf,
+    /// TCP ports of host services guests may reach at `vmlayer.host` (the
+    /// daemon's credential proxy, decision 0022). Everything else on the
+    /// host stays closed to guests.
+    pub host_ports: Vec<u16>,
     /// Restore memory snapshots through userfaultfd and copy all guest memory
     /// into place right away, instead of faulting it in page by page.
     pub prefetch_memory: bool,
@@ -221,7 +225,7 @@ impl Backend for FirecrackerBackend {
                 ),
                 source: None,
             })?;
-        net::ensure_host(self.config.subnet).await?;
+        net::ensure_host(self.config.subnet, &self.config.host_ports).await?;
         api::version(&self.config.firecracker_bin).await?;
         // A daemon restart can interrupt a background template build. These
         // VMs are never registered as user sandboxes, so recover and remove
@@ -414,6 +418,7 @@ pub(crate) fn test_config() -> Config {
         template_warmup_argv: Vec::new(),
         template_limit: 4,
         shim_bin: "/vmlayer-shim".into(),
+        host_ports: Vec::new(),
         prefetch_memory: true,
         max_concurrent_boots: 0,
         boot_timeout: Duration::from_secs(30),

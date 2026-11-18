@@ -64,6 +64,8 @@ pub struct FirecrackerSandbox {
 const VOLUME_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// PATH for guest processes when neither the image nor the caller sets one.
+/// The name every sandbox resolves to the host (decision 0022).
+pub const HOST_NAME: &str = "vmlayer.host";
 const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 fn device_for(i: usize) -> String {
@@ -306,6 +308,7 @@ impl FirecrackerSandbox {
         agent: &mut Agent,
         spec: &SandboxSpec,
         mounts: &[(String, String)],
+        host_ip: std::net::Ipv4Addr,
     ) -> Result<()> {
         for (dev, path) in mounts {
             if path.is_empty() {
@@ -341,6 +344,8 @@ impl FirecrackerSandbox {
                 env,
                 cwd: spec.workdir.clone(),
                 hostname: spec.id.0.clone(),
+                // The host as this guest reaches it (its veth peer).
+                hosts: [(HOST_NAME.to_string(), host_ip.to_string())].into(),
             })
             .await
             .map_err(|e| err(format!("configuring guest: {e}")))?;
@@ -380,6 +385,7 @@ impl FirecrackerSandbox {
                 config.jail_uid,
                 config.jail_gid,
                 spec.egress.as_ref(),
+                &config.host_ports,
             )
             .await?;
             let services = vm::Services {
@@ -402,7 +408,7 @@ impl FirecrackerSandbox {
                 guest_boot_ms = (t0.elapsed() - t_start).as_millis() as u64,
                 "microVM booted"
             );
-            Self::configure_guest(&mut agent, &spec, &mounts).await?;
+            Self::configure_guest(&mut agent, &spec, &mounts, lease.host_ip).await?;
             let created_at = SystemTime::now();
             Self::write_jail_meta(
                 &jail,
@@ -484,6 +490,7 @@ impl FirecrackerSandbox {
                 config.jail_uid,
                 config.jail_gid,
                 spec.egress.as_ref(),
+                &config.host_ports,
             )
             .await?;
             // Ordered like the snapshot's drives (see `ordered`).
@@ -602,7 +609,13 @@ impl FirecrackerSandbox {
                 }
             }
             let mut agent = sandbox.link.agent();
-            Self::configure_guest(&mut agent, &sandbox.spec, &sandbox.mounts).await
+            Self::configure_guest(
+                &mut agent,
+                &sandbox.spec,
+                &sandbox.mounts,
+                sandbox.lease.host_ip,
+            )
+            .await
         };
         if let Err(error) = configured.await {
             let _ = sandbox.kill().await;

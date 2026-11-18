@@ -131,6 +131,7 @@ impl Workload {
             limits: self.limits,
             lease: Some(self.name.clone()),
             reschedule: true,
+            credentials: Vec::new(),
             rescued: Some(Box::new(self.clone())),
         })
     }
@@ -358,6 +359,7 @@ mod tests {
             limits: IoLimits::default(),
             lease: Some("svc".into()),
             reschedule: true,
+            credentials: Vec::new(),
             rescued: None,
         }
     }

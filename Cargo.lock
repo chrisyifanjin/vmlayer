@@ -3090,6 +3090,7 @@ dependencies = [
  "hyper-util",
  "oci-client",
  "prost-types",
+ "reqwest",
  "rusqlite",
  "rustls",
  "serde",

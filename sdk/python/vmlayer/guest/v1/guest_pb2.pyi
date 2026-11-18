@@ -19,8 +19,15 @@ class ReadyResponse(_message.Message):
     def __init__(self, agent_version: _Optional[str] = ..., kernel: _Optional[str] = ..., uptime: _Optional[float] = ...) -> None: ...
 
 class ConfigureRequest(_message.Message):
-    __slots__ = ("env", "cwd", "hostname")
+    __slots__ = ("env", "cwd", "hostname", "hosts")
     class EnvEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    class HostsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
         VALUE_FIELD_NUMBER: _ClassVar[int]
@@ -30,10 +37,12 @@ class ConfigureRequest(_message.Message):
     ENV_FIELD_NUMBER: _ClassVar[int]
     CWD_FIELD_NUMBER: _ClassVar[int]
     HOSTNAME_FIELD_NUMBER: _ClassVar[int]
+    HOSTS_FIELD_NUMBER: _ClassVar[int]
     env: _containers.ScalarMap[str, str]
     cwd: str
     hostname: str
-    def __init__(self, env: _Optional[_Mapping[str, str]] = ..., cwd: _Optional[str] = ..., hostname: _Optional[str] = ...) -> None: ...
+    hosts: _containers.ScalarMap[str, str]
+    def __init__(self, env: _Optional[_Mapping[str, str]] = ..., cwd: _Optional[str] = ..., hostname: _Optional[str] = ..., hosts: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class MountRequest(_message.Message):
     __slots__ = ("source", "path", "fstype", "read_only")
