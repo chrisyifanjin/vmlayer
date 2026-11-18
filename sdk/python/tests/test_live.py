@@ -264,3 +264,12 @@ def test_cloud_metadata_is_unreachable(daemon: vmlayer.Client) -> None:
         assert sb.exec("ip route del blackhole 169.254.0.0/16").exit_code != 0
         # Everything else still routes.
         assert sb.exec("ip route get 1.1.1.1").exit_code == 0
+
+
+def test_exec_as_another_user(daemon: vmlayer.Client) -> None:
+    with Sandbox.create(ALPINE, timeout=timedelta(minutes=2)) as sb:
+        assert sb.exec("id -u").stdout.strip() == "0"
+        assert sb.exec("id -un", user="nobody").stdout.strip() == "nobody"
+        assert sb.exec("id -u", user="1234:1234").stdout.strip() == "1234"
+        r = sb.exec("touch /root/x", user="nobody")
+        assert r.exit_code != 0, "an unprivileged user cannot write root's home"

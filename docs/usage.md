@@ -78,6 +78,14 @@ A string runs through `/bin/sh -c`; a list is exec'd directly. A non-zero
 exit is not an exception. A timeout is: `ExecTimeout` carries `.partial`
 with whatever was produced before the kill.
 
+`user=` runs a command as another account: a name from the guest's
+`/etc/passwd`, a UID, or `"uid:gid"` (default: the image's user, usually
+root). `HOME` and `USER` follow the account. `spawn` and `pty` take it too.
+
+```python
+sb.exec("id -un", user="nobody").stdout   # "nobody\n"
+```
+
 Streaming and interactive:
 
 ```python

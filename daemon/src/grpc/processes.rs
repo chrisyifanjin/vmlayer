@@ -25,6 +25,7 @@ fn exec_request(
     env: std::collections::HashMap<String, String>,
     timeout: Option<prost_types::Duration>,
     pty: Option<PtySize>,
+    user: String,
 ) -> Result<ExecRequest, Status> {
     if argv.is_empty() {
         return Err(Status::invalid_argument("argv is required"));
@@ -35,6 +36,7 @@ fn exec_request(
         env: env.into_iter().collect::<BTreeMap<_, _>>(),
         timeout: convert::dur_from(timeout),
         pty,
+        user: (!user.is_empty()).then_some(user),
     })
 }
 
@@ -51,7 +53,7 @@ impl Processes for Services {
         let p = Principal::of(&req);
         let r = req.into_inner();
         convert::require_id(&r.sandbox_id, "sandbox_id")?;
-        let er = exec_request(r.argv, r.cwd, r.env, r.timeout, None)?;
+        let er = exec_request(r.argv, r.cwd, r.env, r.timeout, None, r.user)?;
         let (_, entry) = self
             .daemon
             .exec(&self.sandbox(&p, &r.sandbox_id)?, er)
@@ -216,7 +218,7 @@ impl Processes for Services {
         } else {
             open.argv
         };
-        let er = exec_request(argv, open.cwd, open.env, None, Some(size))?;
+        let er = exec_request(argv, open.cwd, open.env, None, Some(size), open.user)?;
         let mut pty = self
             .daemon
             .pty(&self.sandbox(&p, &open.sandbox_id)?, er)

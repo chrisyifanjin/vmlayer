@@ -411,6 +411,7 @@ impl Daemon {
             env: BTreeMap::new(),
             timeout: None,
             pty: None,
+            user: None,
         });
         let spec = SandboxSpec {
             id: id.clone(),

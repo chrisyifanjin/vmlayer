@@ -22,6 +22,7 @@ minisweagent = ["mini-swe-agent>=2.0"]
 autogen = ["autogen-core>=0.7"]
 openhands = ["openhands-sdk>=1.62; python_version >= '3.12'"]
 deepagents = ["deepagents>=0.7.38; python_version >= '3.11'"]
+harbor = ["harbor>=0.26; python_version >= '3.12'"]
 # E2B wire-compatible gateway (python -m vmlayer.e2b_server).
 e2b-server = ["e2b>=2.5", "starlette>=0.40", "uvicorn>=0.30", "python-multipart>=0.0.9"]
 
@@ -72,6 +73,8 @@ module = [
   "deepagents.*",
   "openhands",
   "openhands.*",
+  "harbor",
+  "harbor.*",
   "e2b",
   "e2b.*",
   "connectrpc",

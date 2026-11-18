@@ -16,7 +16,7 @@ class PtySize(_message.Message):
     def __init__(self, cols: _Optional[int] = ..., rows: _Optional[int] = ...) -> None: ...
 
 class ExecRequest(_message.Message):
-    __slots__ = ("sandbox_id", "argv", "cwd", "env", "timeout", "stdin", "detach")
+    __slots__ = ("sandbox_id", "argv", "cwd", "env", "timeout", "stdin", "detach", "user")
     class EnvEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -31,6 +31,7 @@ class ExecRequest(_message.Message):
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     STDIN_FIELD_NUMBER: _ClassVar[int]
     DETACH_FIELD_NUMBER: _ClassVar[int]
+    USER_FIELD_NUMBER: _ClassVar[int]
     sandbox_id: str
     argv: _containers.RepeatedScalarFieldContainer[str]
     cwd: str
@@ -38,7 +39,8 @@ class ExecRequest(_message.Message):
     timeout: _duration_pb2.Duration
     stdin: bytes
     detach: bool
-    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., stdin: _Optional[bytes] = ..., detach: bool = ...) -> None: ...
+    user: str
+    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., stdin: _Optional[bytes] = ..., detach: bool = ..., user: _Optional[str] = ...) -> None: ...
 
 class ExecEvent(_message.Message):
     __slots__ = ("started", "output", "exited", "dropped_bytes")
@@ -119,7 +121,7 @@ class PtyInput(_message.Message):
     def __init__(self, open: _Optional[_Union[PtyOpen, _Mapping]] = ..., data: _Optional[bytes] = ..., resize: _Optional[_Union[PtySize, _Mapping]] = ...) -> None: ...
 
 class PtyOpen(_message.Message):
-    __slots__ = ("sandbox_id", "argv", "cwd", "env", "size")
+    __slots__ = ("sandbox_id", "argv", "cwd", "env", "size", "user")
     class EnvEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -132,12 +134,14 @@ class PtyOpen(_message.Message):
     CWD_FIELD_NUMBER: _ClassVar[int]
     ENV_FIELD_NUMBER: _ClassVar[int]
     SIZE_FIELD_NUMBER: _ClassVar[int]
+    USER_FIELD_NUMBER: _ClassVar[int]
     sandbox_id: str
     argv: _containers.RepeatedScalarFieldContainer[str]
     cwd: str
     env: _containers.ScalarMap[str, str]
     size: PtySize
-    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., size: _Optional[_Union[PtySize, _Mapping]] = ...) -> None: ...
+    user: str
+    def __init__(self, sandbox_id: _Optional[str] = ..., argv: _Optional[_Iterable[str]] = ..., cwd: _Optional[str] = ..., env: _Optional[_Mapping[str, str]] = ..., size: _Optional[_Union[PtySize, _Mapping]] = ..., user: _Optional[str] = ...) -> None: ...
 
 class PtyOutput(_message.Message):
     __slots__ = ("started", "data", "exited")

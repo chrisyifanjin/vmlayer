@@ -87,8 +87,12 @@ impl DockerSandbox {
     /// inside the container, so `kill` reads this file instead.
     fn wrap_argv(argv: &[String], pid: u32, log: Option<&str>) -> Vec<String> {
         let redirect = log.map(|l| format!(" >{l} 2>&1")).unwrap_or_default();
+        // The state directory is shared by commands of every user (`user`),
+        // so it is world-writable and sticky like /tmp; only its creator (root
+        // in PID 1 or the first exec) can set that, so errors are ignored.
         let script = format!(
-            "mkdir -p {d} && echo $$ > {d}/$0.pid && exec \"$@\"{redirect}",
+            "{{ mkdir -p {d} && chmod 1777 {d}; }} 2>/dev/null; \
+             echo $$ > {d}/$0.pid && exec \"$@\"{redirect}",
             d = STATE_DIR
         );
         let mut v = vec![
@@ -118,6 +122,7 @@ impl DockerSandbox {
             env: if env.is_empty() { None } else { Some(env) },
             cmd: Some(cmd),
             working_dir: req.cwd.clone(),
+            user: req.user.clone(),
             ..Default::default()
         }
     }
@@ -184,6 +189,7 @@ impl DockerSandbox {
             env: BTreeMap::new(),
             timeout: None,
             pty: None,
+            user: None,
         };
         let pid = self.next_pid.fetch_add(1, Ordering::SeqCst);
         let (exec_id, started) = self.create_and_start(&req, pid, false, false).await?;

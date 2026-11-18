@@ -125,6 +125,11 @@ versions; every change to the SDK surface is listed.
   `AsyncFiles`, `AsyncProcess`) on native `grpc.aio`, sharing request
   building and result parsing with the synchronous SDK. `OutputChunk.text`
   decodes a chunk.
+- Harbor environment, `vmlayer.integrations.harbor.VmlayerEnvironment`
+  (`vmlayer[harbor]`, Python 3.12+): Harbor agents and datasets run on
+  vmlayer sandboxes; network policies map to the sandbox's network.
+- `user` on exec, spawn and pty in the API and both SDKs: a name from the
+  guest's `/etc/passwd`, a UID or `uid:gid`, on Docker and Firecracker.
 - Docker sandboxes cannot reach cloud metadata services
   (`[docker] block_metadata`, on by default): blackhole routes in the
   sandbox's network namespace, added before its code runs.

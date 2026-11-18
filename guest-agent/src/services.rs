@@ -110,6 +110,7 @@ fn exec_request(
     env: std::collections::HashMap<String, String>,
     timeout: Option<prost_types::Duration>,
     pty: Option<PtySize>,
+    user: String,
 ) -> Result<ExecRequest, Status> {
     if argv.is_empty() {
         return Err(Status::invalid_argument("argv is required"));
@@ -120,6 +121,7 @@ fn exec_request(
         env: env.into_iter().collect::<BTreeMap<_, _>>(),
         timeout: dur_from(timeout),
         pty,
+        user: (!user.is_empty()).then_some(user),
     })
 }
 
@@ -134,7 +136,14 @@ impl Processes for Agent {
         req: Request<pb::ExecRequest>,
     ) -> Result<Response<Self::ExecStream>, Status> {
         let r = req.into_inner();
-        let er = self.with_defaults(exec_request(r.argv.clone(), r.cwd, r.env, r.timeout, None)?);
+        let er = self.with_defaults(exec_request(
+            r.argv.clone(),
+            r.cwd,
+            r.env,
+            r.timeout,
+            None,
+            r.user,
+        )?);
         let timeout = er.timeout;
         let process = LocalProcess::spawn(&er).map_err(status)?;
         let entry = self
@@ -279,7 +288,14 @@ impl Processes for Agent {
         } else {
             open.argv
         };
-        let er = self.with_defaults(exec_request(argv, open.cwd, open.env, None, Some(size))?);
+        let er = self.with_defaults(exec_request(
+            argv,
+            open.cwd,
+            open.env,
+            None,
+            Some(size),
+            open.user,
+        )?);
         let mut pty = LocalPty::spawn(&er).map_err(status)?;
         let pid = pty.pid();
         let mut output = vmlayer_core::Pty::output(&mut pty);
@@ -591,7 +607,14 @@ impl Guest for Agent {
         req: Request<guest::EntrypointRequest>,
     ) -> Result<Response<pb::Started>, Status> {
         let r = req.into_inner();
-        let er = self.with_defaults(exec_request(r.argv.clone(), r.cwd, r.env, None, None)?);
+        let er = self.with_defaults(exec_request(
+            r.argv.clone(),
+            r.cwd,
+            r.env,
+            None,
+            None,
+            String::new(),
+        )?);
         let process = LocalProcess::spawn(&er).map_err(status)?;
         let entry = self
             .inner

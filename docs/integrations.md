@@ -73,6 +73,7 @@ their framework lazily; install with the matching extra.
 | `vmlayer.integrations.autogen.VmlayerCodeExecutor` | AutoGen `CodeExecutor` | **working**; tested with real `CodeBlock`s incl. timeout, cancellation, restart (`pip install "vmlayer[autogen]"`) |
 | `vmlayer.integrations.deepagents.VmlayerSandbox` | Deep Agents `BaseSandbox` | **working**; host-side agent loop, Firecracker tool calls and file transfer (`pip install "vmlayer[deepagents]"`) |
 | `vmlayer.integrations.openhands.VmlayerWorkspace` | OpenHands `RemoteWorkspace` | **experimental**; real agent-server image and command API ran in Firecracker (`pip install "vmlayer[openhands]"`, Python 3.12+) |
+| `vmlayer.integrations.harbor.VmlayerEnvironment` | Harbor `BaseEnvironment` (Terminal-Bench and the other Harbor datasets, with any Harbor agent) | **working**; Harbor's own CLI runs trials with its oracle and no-op agents on Docker in CI and on Firecracker (nested KVM, a whole trial in 2 s); `no-network` and `allowlist` policies map to the sandbox's network (`pip install "vmlayer[harbor]"`, Python 3.12+) |
 | Google ADK `BaseCodeExecutor` | write + exec | planned |
 | SWE-ReX `AbstractDeployment` | boot swerex-server image, expose | planned |
 | smolagents `RemotePythonExecutor` | boot kernel-gateway image, expose, Jupyter websocket | planned |
@@ -110,6 +111,37 @@ The OpenHands adapter is a different pattern: it boots the framework's
 agent-server image inside a VM. On the local nested-KVM host this took about
 95 seconds to become healthy. It is a compatibility proof, not a fast-create
 result; a warm snapshot of that 2 GiB VM did not fit on the 20 GiB test disk.
+
+### Harbor
+
+[Harbor](https://github.com/harbor-framework/harbor) runs any of its agents
+against its datasets inside an environment. vmlayer is one, loaded by
+import path:
+
+```bash
+pip install "vmlayer[harbor]"
+harbor run --dataset terminal-bench@2.0 --agent claude-code \
+  --env vmlayer.integrations.harbor:VmlayerEnvironment \
+  --ek endpoint=tls://10.0.0.5:7443 --ek backend=firecracker
+```
+
+The adapter maps each piece of a Harbor task onto the sandbox:
+
+- **Image.** The task's `docker_image` becomes the sandbox image, with no
+  workspace volume, so the image's own working directory stays intact.
+  Tasks that ship only a Dockerfile are built with the local
+  `docker build`. The Docker backend can use such an image directly; for
+  Firecracker, publish it and set `docker_image`.
+- **Shape.** `cpus`, `memory_mb` and `storage_mb` become the sandbox
+  shape.
+- **Network.** `no-network` removes the network device. `allowlist`
+  becomes the egress allowlist (Firecracker), and the adapter tells
+  Harbor which kinds of entries it enforces.
+- **Users and timeouts.** `exec(user=...)` runs as that user. A timeout
+  raises the same error as Harbor's Docker environment.
+
+Daemon endpoint, token and TLS come from `--ek endpoint=...` and the usual
+`VMLAYER_*` variables.
 
 ### What plugging in found
 

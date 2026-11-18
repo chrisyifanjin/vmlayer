@@ -19,6 +19,10 @@ pub struct ExecRequest {
     /// Allocate a pty instead of pipes. Output then arrives as a single
     /// stream with terminal escapes intact.
     pub pty: Option<PtySize>,
+    /// Run as this user: a name in the guest's `/etc/passwd`, a UID, or
+    /// `uid:gid`. `None` runs as the image's default user.
+    #[serde(default)]
+    pub user: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

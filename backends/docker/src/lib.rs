@@ -338,7 +338,11 @@ impl DockerBackend {
             image: Some(image.to_string()),
             // Keep-alive PID 1; the entrypoint runs as an exec (see module docs).
             entrypoint: Some(vec!["/bin/sh".into(), "-c".into()]),
-            cmd: Some(vec!["while :; do sleep 2147483647; done".into()]),
+            cmd: Some(vec![format!(
+                "{{ mkdir -p {d} && chmod 1777 {d}; }} 2>/dev/null; \
+                 while :; do sleep 2147483647; done",
+                d = sandbox::STATE_DIR
+            )]),
             env: Some(env),
             working_dir: Some(spec.workdir.clone()),
             labels: Some(labels),

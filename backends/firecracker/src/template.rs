@@ -182,6 +182,7 @@ impl FirecrackerBackend {
                 env: Default::default(),
                 timeout: Some(Duration::from_secs(30)),
                 pty: None,
+                user: None,
             };
             match guest.exec(request).await {
                 Ok(mut process) => match process.wait().await {

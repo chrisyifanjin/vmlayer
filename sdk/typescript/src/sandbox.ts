@@ -77,6 +77,8 @@ export interface ExecOptions {
   stdin?: Buffer | string;
   /** Default 5 minutes for `exec`; none for `spawn`. `null` disables. */
   timeoutMs?: number | null;
+  /** Run as this user: a name in the guest's /etc/passwd, a UID, or "uid:gid". */
+  user?: string;
 }
 
 /**
@@ -209,6 +211,7 @@ export class Sandbox {
       sandbox_id: this.id,
       argv: argvOf(cmd),
       cwd: opts.cwd ?? "",
+      user: opts.user ?? "",
       env: opts.env ?? {},
       timeout: duration(timeoutMs),
       stdin: opts.stdin ? Buffer.from(opts.stdin) : Buffer.alloc(0),
@@ -238,6 +241,7 @@ export class Sandbox {
       sandbox_id: this.id,
       argv: argvOf(cmd),
       cwd: opts.cwd ?? "",
+      user: opts.user ?? "",
       env: opts.env ?? {},
       timeout: duration(opts.timeoutMs ?? null),
       detach: true,
@@ -272,7 +276,7 @@ export class Sandbox {
   /** Interactive terminal. Requires `capabilities.pty`. */
   pty(
     cmd: string | string[] = "/bin/bash",
-    opts: { size?: PtySize; cwd?: string; env?: Record<string, string> } = {},
+    opts: { size?: PtySize; cwd?: string; env?: Record<string, string>; user?: string } = {},
   ): Pty {
     const argv = typeof cmd === "string" ? [cmd] : [...cmd];
     const size = opts.size ?? { cols: 80, rows: 24 };
@@ -282,6 +286,7 @@ export class Sandbox {
       cwd: opts.cwd ?? "",
       env: opts.env ?? {},
       size,
+      user: opts.user ?? "",
     });
   }
 

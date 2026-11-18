@@ -17,7 +17,7 @@ from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb
 from vmlayer.v1 import common_pb2 as vmlayer_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1avmlayer/v1/processes.proto\x12\nvmlayer.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x17vmlayer/v1/common.proto\"%\n\x07PtySize\x12\x0c\n\x04\x63ols\x18\x01 \x01(\r\x12\x0c\n\x04rows\x18\x02 \x01(\r\"\xe2\x01\n\x0b\x45xecRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0c\n\x04\x61rgv\x18\x02 \x03(\t\x12\x0b\n\x03\x63wd\x18\x03 \x01(\t\x12-\n\x03\x65nv\x18\x04 \x03(\x0b\x32 .vmlayer.v1.ExecRequest.EnvEntry\x12*\n\x07timeout\x18\x05 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\r\n\x05stdin\x18\x06 \x01(\x0c\x12\x0e\n\x06\x64\x65tach\x18\x07 \x01(\x08\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xaa\x01\n\tExecEvent\x12&\n\x07started\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.StartedH\x00\x12)\n\x06output\x18\x02 \x01(\x0b\x32\x17.vmlayer.v1.OutputChunkH\x00\x12(\n\x06\x65xited\x18\x03 \x01(\x0b\x32\x16.vmlayer.v1.ExitStatusH\x00\x12\x17\n\rdropped_bytes\x18\x04 \x01(\x04H\x00\x42\x07\n\x05\x65vent\"\x16\n\x07Started\x12\x0b\n\x03pid\x18\x01 \x01(\r\"0\n\rOutputRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\";\n\nStdinChunk\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\"Z\n\x0bWaitRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12*\n\x07timeout\x18\x03 \x01(\x0b\x32\x19.google.protobuf.Duration\"E\n\x12KillProcessRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12\x0e\n\x06signal\x18\x03 \x01(\x05\"*\n\x14ListProcessesRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\"C\n\x15ListProcessesResponse\x12*\n\tprocesses\x18\x01 \x03(\x0b\x32\x17.vmlayer.v1.ProcessInfo\"o\n\x08PtyInput\x12#\n\x04open\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.PtyOpenH\x00\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12%\n\x06resize\x18\x03 \x01(\x0b\x32\x13.vmlayer.v1.PtySizeH\x00\x42\x07\n\x05input\"\xb2\x01\n\x07PtyOpen\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0c\n\x04\x61rgv\x18\x02 \x03(\t\x12\x0b\n\x03\x63wd\x18\x03 \x01(\t\x12)\n\x03\x65nv\x18\x04 \x03(\x0b\x32\x1c.vmlayer.v1.PtyOpen.EnvEntry\x12!\n\x04size\x18\x05 \x01(\x0b\x32\x13.vmlayer.v1.PtySize\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"w\n\tPtyOutput\x12&\n\x07started\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.StartedH\x00\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12(\n\x06\x65xited\x18\x03 \x01(\x0b\x32\x16.vmlayer.v1.ExitStatusH\x00\x42\x08\n\x06output2\xb2\x03\n\tProcesses\x12\x38\n\x04\x45xec\x12\x17.vmlayer.v1.ExecRequest\x1a\x15.vmlayer.v1.ExecEvent0\x01\x12<\n\x06Output\x12\x19.vmlayer.v1.OutputRequest\x1a\x15.vmlayer.v1.ExecEvent0\x01\x12\x34\n\x05Stdin\x12\x16.vmlayer.v1.StdinChunk\x1a\x11.vmlayer.v1.Empty(\x01\x12\x37\n\x04Wait\x12\x17.vmlayer.v1.WaitRequest\x1a\x16.vmlayer.v1.ExitStatus\x12\x39\n\x04Kill\x12\x1e.vmlayer.v1.KillProcessRequest\x1a\x11.vmlayer.v1.Empty\x12K\n\x04List\x12 .vmlayer.v1.ListProcessesRequest\x1a!.vmlayer.v1.ListProcessesResponse\x12\x36\n\x03Pty\x12\x14.vmlayer.v1.PtyInput\x1a\x15.vmlayer.v1.PtyOutput(\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1avmlayer/v1/processes.proto\x12\nvmlayer.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x17vmlayer/v1/common.proto\"%\n\x07PtySize\x12\x0c\n\x04\x63ols\x18\x01 \x01(\r\x12\x0c\n\x04rows\x18\x02 \x01(\r\"\xf0\x01\n\x0b\x45xecRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0c\n\x04\x61rgv\x18\x02 \x03(\t\x12\x0b\n\x03\x63wd\x18\x03 \x01(\t\x12-\n\x03\x65nv\x18\x04 \x03(\x0b\x32 .vmlayer.v1.ExecRequest.EnvEntry\x12*\n\x07timeout\x18\x05 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\r\n\x05stdin\x18\x06 \x01(\x0c\x12\x0e\n\x06\x64\x65tach\x18\x07 \x01(\x08\x12\x0c\n\x04user\x18\x08 \x01(\t\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xaa\x01\n\tExecEvent\x12&\n\x07started\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.StartedH\x00\x12)\n\x06output\x18\x02 \x01(\x0b\x32\x17.vmlayer.v1.OutputChunkH\x00\x12(\n\x06\x65xited\x18\x03 \x01(\x0b\x32\x16.vmlayer.v1.ExitStatusH\x00\x12\x17\n\rdropped_bytes\x18\x04 \x01(\x04H\x00\x42\x07\n\x05\x65vent\"\x16\n\x07Started\x12\x0b\n\x03pid\x18\x01 \x01(\r\"0\n\rOutputRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\";\n\nStdinChunk\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\"Z\n\x0bWaitRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12*\n\x07timeout\x18\x03 \x01(\x0b\x32\x19.google.protobuf.Duration\"E\n\x12KillProcessRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0b\n\x03pid\x18\x02 \x01(\r\x12\x0e\n\x06signal\x18\x03 \x01(\x05\"*\n\x14ListProcessesRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\"C\n\x15ListProcessesResponse\x12*\n\tprocesses\x18\x01 \x03(\x0b\x32\x17.vmlayer.v1.ProcessInfo\"o\n\x08PtyInput\x12#\n\x04open\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.PtyOpenH\x00\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12%\n\x06resize\x18\x03 \x01(\x0b\x32\x13.vmlayer.v1.PtySizeH\x00\x42\x07\n\x05input\"\xc0\x01\n\x07PtyOpen\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0c\n\x04\x61rgv\x18\x02 \x03(\t\x12\x0b\n\x03\x63wd\x18\x03 \x01(\t\x12)\n\x03\x65nv\x18\x04 \x03(\x0b\x32\x1c.vmlayer.v1.PtyOpen.EnvEntry\x12!\n\x04size\x18\x05 \x01(\x0b\x32\x13.vmlayer.v1.PtySize\x12\x0c\n\x04user\x18\x06 \x01(\t\x1a*\n\x08\x45nvEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"w\n\tPtyOutput\x12&\n\x07started\x18\x01 \x01(\x0b\x32\x13.vmlayer.v1.StartedH\x00\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12(\n\x06\x65xited\x18\x03 \x01(\x0b\x32\x16.vmlayer.v1.ExitStatusH\x00\x42\x08\n\x06output2\xb2\x03\n\tProcesses\x12\x38\n\x04\x45xec\x12\x17.vmlayer.v1.ExecRequest\x1a\x15.vmlayer.v1.ExecEvent0\x01\x12<\n\x06Output\x12\x19.vmlayer.v1.OutputRequest\x1a\x15.vmlayer.v1.ExecEvent0\x01\x12\x34\n\x05Stdin\x12\x16.vmlayer.v1.StdinChunk\x1a\x11.vmlayer.v1.Empty(\x01\x12\x37\n\x04Wait\x12\x17.vmlayer.v1.WaitRequest\x1a\x16.vmlayer.v1.ExitStatus\x12\x39\n\x04Kill\x12\x1e.vmlayer.v1.KillProcessRequest\x1a\x11.vmlayer.v1.Empty\x12K\n\x04List\x12 .vmlayer.v1.ListProcessesRequest\x1a!.vmlayer.v1.ListProcessesResponse\x12\x36\n\x03Pty\x12\x14.vmlayer.v1.PtyInput\x1a\x15.vmlayer.v1.PtyOutput(\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -31,33 +31,33 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PTYSIZE']._serialized_start=99
   _globals['_PTYSIZE']._serialized_end=136
   _globals['_EXECREQUEST']._serialized_start=139
-  _globals['_EXECREQUEST']._serialized_end=365
-  _globals['_EXECREQUEST_ENVENTRY']._serialized_start=323
-  _globals['_EXECREQUEST_ENVENTRY']._serialized_end=365
-  _globals['_EXECEVENT']._serialized_start=368
-  _globals['_EXECEVENT']._serialized_end=538
-  _globals['_STARTED']._serialized_start=540
-  _globals['_STARTED']._serialized_end=562
-  _globals['_OUTPUTREQUEST']._serialized_start=564
-  _globals['_OUTPUTREQUEST']._serialized_end=612
-  _globals['_STDINCHUNK']._serialized_start=614
-  _globals['_STDINCHUNK']._serialized_end=673
-  _globals['_WAITREQUEST']._serialized_start=675
-  _globals['_WAITREQUEST']._serialized_end=765
-  _globals['_KILLPROCESSREQUEST']._serialized_start=767
-  _globals['_KILLPROCESSREQUEST']._serialized_end=836
-  _globals['_LISTPROCESSESREQUEST']._serialized_start=838
-  _globals['_LISTPROCESSESREQUEST']._serialized_end=880
-  _globals['_LISTPROCESSESRESPONSE']._serialized_start=882
-  _globals['_LISTPROCESSESRESPONSE']._serialized_end=949
-  _globals['_PTYINPUT']._serialized_start=951
-  _globals['_PTYINPUT']._serialized_end=1062
-  _globals['_PTYOPEN']._serialized_start=1065
-  _globals['_PTYOPEN']._serialized_end=1243
-  _globals['_PTYOPEN_ENVENTRY']._serialized_start=323
-  _globals['_PTYOPEN_ENVENTRY']._serialized_end=365
-  _globals['_PTYOUTPUT']._serialized_start=1245
-  _globals['_PTYOUTPUT']._serialized_end=1364
-  _globals['_PROCESSES']._serialized_start=1367
-  _globals['_PROCESSES']._serialized_end=1801
+  _globals['_EXECREQUEST']._serialized_end=379
+  _globals['_EXECREQUEST_ENVENTRY']._serialized_start=337
+  _globals['_EXECREQUEST_ENVENTRY']._serialized_end=379
+  _globals['_EXECEVENT']._serialized_start=382
+  _globals['_EXECEVENT']._serialized_end=552
+  _globals['_STARTED']._serialized_start=554
+  _globals['_STARTED']._serialized_end=576
+  _globals['_OUTPUTREQUEST']._serialized_start=578
+  _globals['_OUTPUTREQUEST']._serialized_end=626
+  _globals['_STDINCHUNK']._serialized_start=628
+  _globals['_STDINCHUNK']._serialized_end=687
+  _globals['_WAITREQUEST']._serialized_start=689
+  _globals['_WAITREQUEST']._serialized_end=779
+  _globals['_KILLPROCESSREQUEST']._serialized_start=781
+  _globals['_KILLPROCESSREQUEST']._serialized_end=850
+  _globals['_LISTPROCESSESREQUEST']._serialized_start=852
+  _globals['_LISTPROCESSESREQUEST']._serialized_end=894
+  _globals['_LISTPROCESSESRESPONSE']._serialized_start=896
+  _globals['_LISTPROCESSESRESPONSE']._serialized_end=963
+  _globals['_PTYINPUT']._serialized_start=965
+  _globals['_PTYINPUT']._serialized_end=1076
+  _globals['_PTYOPEN']._serialized_start=1079
+  _globals['_PTYOPEN']._serialized_end=1271
+  _globals['_PTYOPEN_ENVENTRY']._serialized_start=337
+  _globals['_PTYOPEN_ENVENTRY']._serialized_end=379
+  _globals['_PTYOUTPUT']._serialized_start=1273
+  _globals['_PTYOUTPUT']._serialized_end=1392
+  _globals['_PROCESSES']._serialized_start=1395
+  _globals['_PROCESSES']._serialized_end=1829
 # @@protoc_insertion_point(module_scope)

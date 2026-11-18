@@ -701,6 +701,7 @@ impl FirecrackerSandbox {
             timeout: req
                 .timeout
                 .and_then(|d| prost_types::Duration::try_from(d).ok()),
+            user: req.user.clone().unwrap_or_default(),
             ..Default::default()
         }
     }
@@ -747,6 +748,7 @@ impl SandboxHandle for FirecrackerSandbox {
                 cols: size.cols.into(),
                 rows: size.rows.into(),
             }),
+            user: req.user.clone().unwrap_or_default(),
             ..Default::default()
         };
         Ok(Box::new(RemotePty::open(self.link.agent(), open).await?))

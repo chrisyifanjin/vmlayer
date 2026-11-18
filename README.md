@@ -51,6 +51,8 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Lazy restore: Firecracker volumes from the blob store are usable at once, fetched on demand through NBD | working, tested end to end on KVM ([design](docs/decisions/0016-lazy-volume-restore.md)) |
 | asyncio client (`vmlayer.aio`, native `grpc.aio`) | working, tested against the daemon |
 | Callers: TLS and mutual TLS, tokens with a tenant and a role (read, write, admin) | working, tested with a mutual-TLS daemon serving two tenants ([deploy](docs/deploy.md#remote-access), [design](docs/decisions/0020-callers-tenants-and-tls.md)) |
+| Harbor environment (`vmlayer.integrations.harbor`): Terminal-Bench and other Harbor datasets on vmlayer sandboxes | working, tested with Harbor's CLI on Docker and Firecracker ([integrations](docs/integrations.md#harbor)) |
+| Run commands as another user (`exec(user=...)`) | working on Docker and Firecracker |
 | More adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses

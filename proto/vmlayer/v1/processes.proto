@@ -38,6 +38,9 @@ message ExecRequest {
   // Initial stdin, closed after sending. For interactive use, call Stdin.
   bytes stdin = 6;
   bool detach = 7;
+  // Run as this user: a name from the guest's /etc/passwd, a UID, or
+  // "uid:gid". Empty runs as the image's default user (usually root).
+  string user = 8;
 }
 
 message ExecEvent {
@@ -94,6 +97,8 @@ message PtyOpen {
   string cwd = 3;
   map<string, string> env = 4;
   PtySize size = 5;
+  // As ExecRequest.user.
+  string user = 6;
 }
 
 message PtyOutput {

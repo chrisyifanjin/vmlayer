@@ -46,6 +46,7 @@ fn spec_with(image: &str, id: &str, entrypoint: Option<Vec<&str>>) -> SandboxSpe
             env: BTreeMap::new(),
             timeout: None,
             pty: None,
+            user: None,
         }),
         network: NetworkMode::EgressAndExpose,
         egress: None,
@@ -62,6 +63,7 @@ fn req(argv: &[&str]) -> ExecRequest {
         env: BTreeMap::new(),
         timeout: None,
         pty: None,
+        user: None,
     }
 }
 

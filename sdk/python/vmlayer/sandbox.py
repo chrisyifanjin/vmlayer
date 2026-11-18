@@ -127,8 +127,10 @@ def _exec_request(
     timeout: timedelta | None,
     stdin: bytes | None = None,
     detach: bool = False,
+    user: str | None = None,
 ) -> processes_pb2.ExecRequest:
     return processes_pb2.ExecRequest(
+        user=user or "",
         sandbox_id=sandbox_id,
         argv=_argv(cmd),
         cwd=cwd or "",
@@ -405,15 +407,18 @@ class Sandbox(_Fields):
         env: Mapping[str, str] | None = None,
         stdin: bytes | None = None,
         timeout: timedelta | None = timedelta(minutes=5),
+        user: str | None = None,
     ) -> ExecResult:
         """Run a command to completion and return its output.
 
         A ``str`` is run through ``/bin/sh -c``; a sequence is exec'd directly.
+        ``user`` runs it as a name from the guest's ``/etc/passwd``, a UID, or
+        ``"uid:gid"`` (default: the image's user, usually root).
         Raises ``ExecTimeout`` if ``timeout`` elapses. A non-zero exit code is
         *not* an exception; check ``result.ok``.
         """
         c = self._client._conn
-        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin)
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin, user=user)
         fold = _ExecFold()
         rpc_timeout = (timeout.total_seconds() + 30) if timeout else None
         for ev in c.stream(c.processes.Exec, req, timeout=rpc_timeout):
@@ -427,10 +432,11 @@ class Sandbox(_Fields):
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: timedelta | None = None,
+        user: str | None = None,
     ) -> Process:
         """Start a command and return immediately with a streaming handle."""
         c = self._client._conn
-        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, detach=True)
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, detach=True, user=user)
         pid = 0
         for ev in c.stream(c.processes.Exec, req, timeout=c.timeout):
             if ev.WhichOneof("event") == "started":
@@ -456,6 +462,7 @@ class Sandbox(_Fields):
         size: PtySize = DEFAULT_PTY_SIZE,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        user: str | None = None,
     ) -> Pty:
         """Open an interactive terminal. Requires ``capabilities.pty``."""
         argv = [cmd] if isinstance(cmd, str) else list(cmd)
@@ -465,6 +472,7 @@ class Sandbox(_Fields):
             cwd=cwd or "",
             env=dict(env or {}),
             size=processes_pb2.PtySize(cols=size.cols, rows=size.rows),
+            user=user or "",
         )
         return Pty(self._client, open_msg)
 

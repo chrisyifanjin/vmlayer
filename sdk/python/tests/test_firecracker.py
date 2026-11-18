@@ -113,6 +113,13 @@ def test_exec_timeout(fc: vmlayer.Client) -> None:
         assert sb.exec("echo still-usable").ok
 
 
+def test_exec_as_another_user(fc: vmlayer.Client) -> None:
+    with create(fc) as sb:
+        assert sb.exec("id -un", user="nobody").stdout.strip() == "nobody"
+        assert sb.exec("id -u", user="1234:1234").stdout.strip() == "1234"
+        assert not sb.exec("touch /root/x", user="nobody").ok
+
+
 def test_egress(fc: vmlayer.Client) -> None:
     probe = "import socket; socket.create_connection(('1.1.1.1', 443), 10).close(); print('ok')"
     with create(fc) as sb:

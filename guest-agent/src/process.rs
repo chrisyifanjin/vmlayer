@@ -33,9 +33,84 @@ fn signal_from(n: i32) -> Signal {
     Signal::try_from(n).unwrap_or(Signal::SIGKILL)
 }
 
-fn command(req: &ExecRequest) -> Command {
+/// The account a command runs as.
+#[derive(Debug, PartialEq, Eq)]
+struct Account {
+    uid: u32,
+    gid: u32,
+    name: Option<String>,
+    home: Option<String>,
+}
+
+/// Resolve `user` (a name, a UID, or `uid:gid`) against a passwd file.
+fn resolve_user(user: &str, passwd: &str) -> Result<Account> {
+    let entries = passwd.lines().filter_map(|l| {
+        let f: Vec<&str> = l.split(':').collect();
+        (f.len() >= 7).then(|| {
+            (
+                f[0],
+                f[2].parse::<u32>().ok(),
+                f[3].parse::<u32>().ok(),
+                f[5],
+            )
+        })
+    });
+    let account = |name: &str, uid: u32, gid: u32, home: &str| Account {
+        uid,
+        gid,
+        name: Some(name.to_string()),
+        home: (!home.is_empty()).then(|| home.to_string()),
+    };
+    if let Some((uid, gid)) = user.split_once(':') {
+        let parse = |s: &str| {
+            s.parse::<u32>()
+                .map_err(|_| Error::Guest(format!("user {user:?}: expected uid:gid")))
+        };
+        let (uid, gid) = (parse(uid)?, parse(gid)?);
+        let known = entries.into_iter().find(|e| e.1 == Some(uid));
+        return Ok(Account {
+            uid,
+            gid,
+            name: known.map(|e| e.0.to_string()),
+            home: known.map(|e| e.3.to_string()).filter(|h| !h.is_empty()),
+        });
+    }
+    let by_uid = user.parse::<u32>().ok();
+    for (name, uid, gid, home) in entries {
+        let (Some(uid), Some(gid)) = (uid, gid) else {
+            continue;
+        };
+        if name == user || by_uid == Some(uid) {
+            return Ok(account(name, uid, gid, home));
+        }
+    }
+    match by_uid {
+        // A UID with no passwd entry runs with the same GID, like `docker exec -u`.
+        Some(uid) => Ok(Account {
+            uid,
+            gid: uid,
+            name: None,
+            home: None,
+        }),
+        None => Err(Error::Guest(format!("no such user in /etc/passwd: {user}"))),
+    }
+}
+
+fn command(req: &ExecRequest) -> Result<Command> {
     let mut cmd = Command::new(&req.argv[0]);
     cmd.args(&req.argv[1..]);
+    if let Some(user) = req.user.as_deref().filter(|u| !u.is_empty()) {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        let account = resolve_user(user, &passwd)?;
+        // Like `su -`: the user's own HOME and USER unless the caller set them.
+        // `/` when the passwd file has no home for it, as `docker exec -u` does.
+        cmd.env("HOME", account.home.as_deref().unwrap_or("/"));
+        if let Some(name) = &account.name {
+            cmd.env("USER", name).env("LOGNAME", name);
+        }
+        // Drops supplementary groups too (std calls setgroups when root).
+        cmd.uid(account.uid).gid(account.gid);
+    }
     if let Some(cwd) = &req.cwd {
         cmd.current_dir(cwd);
     }
@@ -43,7 +118,7 @@ fn command(req: &ExecRequest) -> Command {
         cmd.env(k, v);
     }
     cmd.kill_on_drop(false);
-    cmd
+    Ok(cmd)
 }
 
 pub struct LocalProcess {
@@ -56,7 +131,7 @@ pub struct LocalProcess {
 
 impl LocalProcess {
     pub fn spawn(req: &ExecRequest) -> Result<Self> {
-        let mut cmd = command(req);
+        let mut cmd = command(req)?;
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -168,7 +243,7 @@ impl LocalPty {
         let pty = nix::pty::openpty(Some(&ws), None)
             .map_err(|e| Error::Guest(format!("openpty: {e}")))?;
         let slave_fd = pty.slave.as_raw_fd();
-        let mut cmd = command(req);
+        let mut cmd = command(req)?;
         cmd.env(
             "TERM",
             req.env
@@ -319,4 +394,31 @@ impl Pty for LocalPty {
 #[allow(dead_code)]
 async fn _touch(mut s: StdinBox) {
     let _ = s.shutdown().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PASSWD: &str = "root:x:0:0:root:/root:/bin/sh\n\
+                          agent:x:1000:1001:Agent:/home/agent:/bin/bash\n\
+                          broken:x:abc:0::/:/bin/sh\n";
+
+    #[test]
+    fn users_resolve_by_name_uid_and_pair() {
+        let agent = resolve_user("agent", PASSWD).unwrap();
+        assert_eq!((agent.uid, agent.gid), (1000, 1001));
+        assert_eq!(agent.home.as_deref(), Some("/home/agent"));
+        assert_eq!(resolve_user("1000", PASSWD).unwrap(), agent);
+        let pair = resolve_user("1000:5", PASSWD).unwrap();
+        assert_eq!(
+            (pair.uid, pair.gid, pair.name.as_deref()),
+            (1000, 5, Some("agent"))
+        );
+        let unknown = resolve_user("4242", PASSWD).unwrap();
+        assert_eq!((unknown.uid, unknown.gid, unknown.name), (4242, 4242, None));
+        assert!(resolve_user("nobody-here", PASSWD).is_err());
+        assert!(resolve_user("broken", PASSWD).is_err());
+        assert!(resolve_user("1:x", PASSWD).is_err());
+    }
 }

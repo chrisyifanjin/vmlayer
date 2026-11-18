@@ -311,11 +311,12 @@ class AsyncSandbox(_Fields):
         env: Mapping[str, str] | None = None,
         stdin: bytes | None = None,
         timeout: timedelta | None = timedelta(minutes=5),
+        user: str | None = None,
     ) -> ExecResult:
         """Run a command to completion. A non-zero exit code is not an
         exception; ``ExecTimeout`` is raised when ``timeout`` elapses."""
         c = self._client._conn
-        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin)
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin, user=user)
         fold = _ExecFold()
         rpc_timeout = (timeout.total_seconds() + 30) if timeout else None
         async for ev in c.stream(c.processes.Exec, req, timeout=rpc_timeout):
@@ -329,10 +330,11 @@ class AsyncSandbox(_Fields):
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: timedelta | None = None,
+        user: str | None = None,
     ) -> AsyncProcess:
         """Start a command and return at once with a streaming handle."""
         c = self._client._conn
-        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, detach=True)
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, detach=True, user=user)
         pid = 0
         async for ev in c.stream(c.processes.Exec, req, timeout=c.timeout):
             if ev.WhichOneof("event") == "started":
