@@ -21,6 +21,9 @@ use vmlayer_core::{
 use crate::sandbox::cpu_model;
 use crate::FirecrackerBackend;
 
+/// Present in the guest of every sandbox restored from a boot template.
+pub const TEMPLATE_MARKER: &str = "/run/vmlayer/template";
+
 fn file_stamp(path: &Path) -> (u64, u128) {
     std::fs::metadata(path)
         .ok()
@@ -175,6 +178,14 @@ impl FirecrackerBackend {
         blank.labels.clear();
 
         let guest = self.cold_boot(blank, base.to_path_buf()).await?;
+        // Every sandbox restored from this template carries the marker, a
+        // cold-booted one does not: callers and tests can tell how it started.
+        if let Err(error) = guest
+            .write_file(TEMPLATE_MARKER, bytes::Bytes::from_static(b"1\n"), 0o444)
+            .await
+        {
+            tracing::warn!(%error, "could not mark the template");
+        }
         if !self.config.template_warmup_argv.is_empty() {
             let request = ExecRequest {
                 argv: self.config.template_warmup_argv.clone(),

@@ -273,3 +273,10 @@ def test_exec_as_another_user(daemon: vmlayer.Client) -> None:
         assert sb.exec("id -u", user="1234:1234").stdout.strip() == "1234"
         r = sb.exec("touch /root/x", user="nobody")
         assert r.exit_code != 0, "an unprivileged user cannot write root's home"
+
+
+def test_exists_under_a_missing_directory(daemon: vmlayer.Client) -> None:
+    with Sandbox.create(ALPINE, timeout=timedelta(minutes=2)) as sb:
+        assert not sb.files.exists("/no/such/dir/file")
+        with pytest.raises(vmlayer.NotFound):
+            sb.files.stat("/no/such/dir/file")

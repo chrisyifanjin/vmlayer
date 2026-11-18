@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -41,13 +42,15 @@ def handle(c):
         data += chunk
     head = data.split(b"\r\n\r\n")[0]
     if b"upgrade: echo" in head.lower():
-        c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: echo\r\nConnection: Upgrade\r\n\r\n")
+        c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: echo\r\n"
+                  b"Connection: Upgrade\r\n\r\n")
         while True:
             b = c.recv(4096)
             if not b: break
             c.sendall(b)
     else:
-        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(head) + head)
+        ok = b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"
+        c.sendall(ok % len(head) + head)
     c.close()
 while True:
     c, _ = srv.accept(); threading.Thread(target=handle, args=(c,), daemon=True).start()
@@ -59,7 +62,8 @@ class Gateway:
         certs = root / "certs"
         certs.mkdir()
         _openssl("req", "-x509", "-new", "-nodes", "-newkey", "rsa:2048", "-days", "2",
-                 "-keyout", "ca.key", "-out", "ca.pem", "-subj", "/CN=gw-test-ca", cwd=certs)  # fmt: skip
+                 "-keyout", "ca.key", "-out", "ca.pem", "-subj", "/CN=gw-test-ca",
+                 cwd=certs)  # fmt: skip
         (certs / "gw.ext").write_text(f"subjectAltName=DNS:*.{DOMAIN}\n")
         _openssl("req", "-new", "-nodes", "-newkey", "rsa:2048", "-keyout", "gw.key",
                  "-out", "gw.csr", "-subj", f"/CN=*.{DOMAIN}", cwd=certs)  # fmt: skip
@@ -126,7 +130,7 @@ def gw(daemon: vmlayer.Client) -> Iterator[Gateway]:
 
 def test_published_ports_need_their_token(gw: Gateway) -> None:
     with Sandbox.create(IMAGE, entrypoint=["python3", "-c", SERVER], client=gw.client) as sb:
-        sb.wait_for_port(8080, timeout=__import__("datetime").timedelta(seconds=30))
+        sb.wait_for_port(8080, timeout=timedelta(seconds=30))
         ep = sb.expose(8080, gateway=True)
         host = f"8080-{sb.id}.{DOMAIN}"
         assert ep.url == f"https://{host}:{gw.port}" and ep.token
@@ -180,5 +184,6 @@ def test_published_ports_need_their_token(gw: Gateway) -> None:
 
 
 def test_gateway_off_is_refused(daemon: vmlayer.Client) -> None:
-    with Sandbox.create("alpine:3.20", client=daemon) as sb, pytest.raises(vmlayer.VmlayerError, match="gateway is off"):
-        sb.expose(8080, gateway=True)
+    with Sandbox.create("alpine:3.20", client=daemon) as sb:
+        with pytest.raises(vmlayer.VmlayerError, match="gateway is off"):
+            sb.expose(8080, gateway=True)

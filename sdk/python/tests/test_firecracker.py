@@ -404,11 +404,12 @@ def test_sandboxes_without_a_volume_keep_their_own_identity(fc: vmlayer.Client) 
 
 def test_templates_serve_sandboxes_with_a_workspace(fc: vmlayer.Client) -> None:
     """Review A4: the fast path also covers the common case, a workspace."""
-    times = []
+    times, boots = [], []
     for i in range(3):
         start = time.perf_counter()
         with create(fc, env={"N": str(i)}) as sb:  # default anonymous workspace
             times.append(time.perf_counter() - start)
+            boots.append(sb.files.exists("/run/vmlayer/template"))
             assert sb.exec("echo $N").stdout == f"{i}\n"
             sb.exec("echo kept > /work/f")
             assert sb.exec("cat /work/f").stdout == "kept\n"
@@ -419,7 +420,10 @@ def test_templates_serve_sandboxes_with_a_workspace(fc: vmlayer.Client) -> None:
             time.sleep(10)  # the first create builds the template
     cold, warm = times[0], ", ".join(f"{t:.2f}s" for t in times[1:])
     print(f"create with workspace: cold {cold:.2f}s, from template {warm}")
-    assert min(times[1:]) < times[0]
+    # Sandboxes restored from a template carry its marker. The first create
+    # boots cold unless an earlier test already built this template. (Timing
+    # is no signal on a fast host, where a cold boot is about as quick.)
+    assert boots[1:] == [True, True], boots
 
 
 def test_burst_of_creates_beyond_the_cpu_count(fc: vmlayer.Client) -> None:

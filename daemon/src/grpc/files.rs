@@ -99,7 +99,15 @@ impl Files for Services {
         let trimmed = r.path.trim_end_matches('/');
         let (parent, _) = trimmed.rsplit_once('/').unwrap_or(("/", trimmed));
         let parent = if parent.is_empty() { "/" } else { parent };
-        let entries = live.handle.list_dir(parent).await.map_err(status)?;
+        // A missing parent means a missing path: report it as NotFound like
+        // a missing file, whatever words the backend used.
+        let entries = match live.handle.list_dir(parent).await {
+            Ok(e) => e,
+            Err(e) if is_missing(&e) => {
+                return Err(Status::not_found(format!("no such file: {}", r.path)))
+            }
+            Err(e) => return Err(status(e)),
+        };
         let found = entries
             .iter()
             .find(|e| e.path == trimmed)
@@ -152,5 +160,15 @@ impl Files for Services {
             .await
             .map_err(status)?;
         Ok(Response::new(pb::Empty {}))
+    }
+}
+
+fn is_missing(e: &vmlayer_core::Error) -> bool {
+    match e {
+        vmlayer_core::Error::Io(io) => io.kind() == std::io::ErrorKind::NotFound,
+        other => {
+            let msg = other.to_string().to_ascii_lowercase();
+            msg.contains("not found") || msg.contains("no such file")
+        }
     }
 }
