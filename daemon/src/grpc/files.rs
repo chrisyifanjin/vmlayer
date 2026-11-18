@@ -2,12 +2,12 @@ use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
-use vmlayer_core::SandboxId;
 use vmlayer_proto::v1 as pb;
 use vmlayer_proto::v1::files_server::Files;
 
 use super::convert::{self, status};
 use super::Services;
+use crate::auth::Principal;
 
 const CHUNK: usize = 64 * 1024;
 
@@ -26,11 +26,12 @@ impl Files for Services {
         &self,
         req: Request<pb::ReadFileRequest>,
     ) -> Result<Response<Self::ReadStream>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         path_ok(&r.path)?;
         let live = self
             .daemon
-            .live(&SandboxId(r.sandbox_id))
+            .live(&self.sandbox(&p, &r.sandbox_id)?)
             .await
             .map_err(status)?;
         let data = live.handle.read_file(&r.path).await.map_err(status)?;
@@ -55,6 +56,7 @@ impl Files for Services {
         &self,
         req: Request<Streaming<pb::WriteFileRequest>>,
     ) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let mut inbound = req.into_inner();
         let first = inbound
             .next()
@@ -73,7 +75,7 @@ impl Files for Services {
         }
         let live = self
             .daemon
-            .live(&SandboxId(header.sandbox_id))
+            .live(&self.sandbox(&p, &header.sandbox_id)?)
             .await
             .map_err(status)?;
         let mode = if header.mode == 0 { 0o644 } else { header.mode };
@@ -85,11 +87,12 @@ impl Files for Services {
     }
 
     async fn stat(&self, req: Request<pb::StatRequest>) -> Result<Response<pb::FileInfo>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         path_ok(&r.path)?;
         let live = self
             .daemon
-            .live(&SandboxId(r.sandbox_id))
+            .live(&self.sandbox(&p, &r.sandbox_id)?)
             .await
             .map_err(status)?;
         // List the parent and pick the entry; backends need no separate stat.
@@ -108,11 +111,12 @@ impl Files for Services {
         &self,
         req: Request<pb::ListFilesRequest>,
     ) -> Result<Response<pb::ListFilesResponse>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         path_ok(&r.path)?;
         let live = self
             .daemon
-            .live(&SandboxId(r.sandbox_id))
+            .live(&self.sandbox(&p, &r.sandbox_id)?)
             .await
             .map_err(status)?;
         let entries = live.handle.list_dir(&r.path).await.map_err(status)?;
@@ -122,11 +126,12 @@ impl Files for Services {
     }
 
     async fn mkdir(&self, req: Request<pb::MkdirRequest>) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         path_ok(&r.path)?;
         let live = self
             .daemon
-            .live(&SandboxId(r.sandbox_id))
+            .live(&self.sandbox(&p, &r.sandbox_id)?)
             .await
             .map_err(status)?;
         live.handle.mkdir(&r.path).await.map_err(status)?;
@@ -134,11 +139,12 @@ impl Files for Services {
     }
 
     async fn remove(&self, req: Request<pb::RemoveRequest>) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         path_ok(&r.path)?;
         let live = self
             .daemon
-            .live(&SandboxId(r.sandbox_id))
+            .live(&self.sandbox(&p, &r.sandbox_id)?)
             .await
             .map_err(status)?;
         live.handle

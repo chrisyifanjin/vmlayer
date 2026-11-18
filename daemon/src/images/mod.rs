@@ -154,29 +154,59 @@ impl ImageStore {
     }
 }
 
-/// `ImageResolver` for microVM backends: a path to an ext4 file is used as
-/// is; anything else is an OCI reference built through the store.
+/// `ImageResolver` for microVM backends: an OCI reference is built through
+/// the store; an absolute path to an ext4 file is used as is, but only from
+/// directories the operator listed (review T1.2): otherwise any caller could
+/// boot any file on the host as a disk and read it from inside the guest.
 pub struct MicrovmImageResolver {
     store: std::sync::Arc<ImageStore>,
+    allowed_dirs: Vec<PathBuf>,
 }
 
 impl MicrovmImageResolver {
     pub fn new(store: std::sync::Arc<ImageStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            allowed_dirs: Vec::new(),
+        }
+    }
+
+    /// Directories whose ext4 files callers may name as images.
+    pub fn with_image_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.allowed_dirs = dirs;
+        self
+    }
+
+    /// The file a host-path image names, if it lies inside an allowed
+    /// directory once symlinks and `..` are resolved.
+    fn host_image(&self, image: &str) -> Result<PathBuf> {
+        if self.allowed_dirs.is_empty() {
+            return Err(Error::Guest(format!(
+                "host-path images are off: {image} is a path, not an image reference \
+                 (an operator can allow directories in [firecracker] image_dirs)"
+            )));
+        }
+        let refused = || Error::Guest(format!("{image} is not in an allowed image directory"));
+        let real = std::fs::canonicalize(image).map_err(|_| refused())?;
+        let inside = self.allowed_dirs.iter().any(|d| {
+            std::fs::canonicalize(d)
+                .map(|d| real.starts_with(d))
+                .unwrap_or(false)
+        });
+        if !inside || !real.is_file() {
+            return Err(refused());
+        }
+        Ok(real)
     }
 }
 
 #[async_trait]
 impl ImageResolver for MicrovmImageResolver {
     async fn resolve(&self, image: &str) -> Result<ResolvedImage> {
-        let path = Path::new(image);
-        if path.is_absolute() {
-            if !path.exists() {
-                return Err(Error::Guest(format!("root image not found: {image}")));
-            }
+        if Path::new(image).is_absolute() {
             return Ok(ResolvedImage {
                 rootfs: Rootfs::Ext4 {
-                    path: path.to_path_buf(),
+                    path: self.host_image(image)?,
                 },
                 entrypoint: None,
                 workdir: None,
@@ -196,6 +226,35 @@ impl ImageResolver for MicrovmImageResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_path_images_only_from_allowed_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let allowed = root.path().join("images");
+        std::fs::create_dir(&allowed).unwrap();
+        std::fs::write(allowed.join("base.ext4"), b"x").unwrap();
+        std::fs::write(root.path().join("secret"), b"x").unwrap();
+        let store = std::sync::Arc::new(ImageStore::new(root.path()));
+        let path = |p: &Path| p.to_str().unwrap().to_string();
+
+        let off = MicrovmImageResolver::new(store.clone());
+        assert!(off.host_image(&path(&allowed.join("base.ext4"))).is_err());
+
+        let on = MicrovmImageResolver::new(store).with_image_dirs(vec![allowed.clone()]);
+        assert!(on.host_image(&path(&allowed.join("base.ext4"))).is_ok());
+        assert!(on.host_image(&path(&root.path().join("secret"))).is_err());
+        // `..` and symlinks are resolved before the check.
+        assert!(on.host_image(&path(&allowed.join("../secret"))).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.path().join("secret"), allowed.join("link")).unwrap();
+            assert!(on.host_image(&path(&allowed.join("link"))).is_err());
+        }
+        assert!(
+            on.host_image(&path(&allowed)).is_err(),
+            "a directory is not an image"
+        );
+    }
 
     /// Pulls a real image and unpacks it (no mkfs needed). Network: gated.
     #[tokio::test]

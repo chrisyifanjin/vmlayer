@@ -26,7 +26,8 @@ Flags and environment:
 | Flag | Env | Default |
 |---|---|---|
 | `--listen unix:///path` or `tcp://host:port` | `VMLAYER_LISTEN` | unix socket |
-| `--token` | `VMLAYER_TOKEN` | required for tcp |
+| `--token` | `VMLAYER_TOKEN` | an administrator token; tcp needs it or `[auth] tokens` |
+| `--tls-cert`, `--tls-key`, `--tls-client-ca` | `VMLAYER_TLS_CERT`, `VMLAYER_TLS_KEY`, `VMLAYER_TLS_CLIENT_CA` | plaintext tcp |
 | `--data-dir` | `VMLAYER_DATA_DIR` | `~/.vmlayer` or `/var/lib/vmlayer` |
 | `--config file.toml` | `VMLAYER_CONFIG` | none |
 | `--log-format pretty\|json`, `--log-filter` | `VMLAYER_LOG_FORMAT`, `VMLAYER_LOG` | pretty, info |
@@ -135,12 +136,60 @@ run it under a dedicated user they share.
 
 ## Remote access
 
-```bash
-vmlayerd --listen tcp://0.0.0.0:7443 --token "$(openssl rand -hex 32)"
+Callers on the unix socket are the operator. TCP callers need a token,
+and should use TLS (decision 0020):
+
+```toml
+listen = "tcp://0.0.0.0:7443"
+
+[tls]
+cert = "/etc/vmlayer/tls/server.pem"
+key = "/etc/vmlayer/tls/server.key"
+client_ca = "/etc/vmlayer/tls/clients-ca.pem"   # optional: require client certificates
+
+# One entry per token, by its SHA-256 (printf %s "$TOKEN" | sha256sum).
+[[auth.tokens]]
+name = "agents-prod"
+sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+tenant = "acme"          # unset: every tenant
+role = "write"           # read | write | admin
+
+[[auth.tokens]]
+name = "dashboard"
+sha256 = "..."
+role = "read"
 ```
 
-The daemon refuses TCP without a token. Put TLS in front of it (a reverse
-proxy or an overlay network); the daemon itself speaks plain HTTP/2.
+What each part does:
+
+- **TLS** encrypts the connection. With `client_ca`, a caller must also
+  present a client certificate signed by that CA (mutual TLS).
+- **The token** decides the caller's role and tenant. Mutual TLS does not
+  replace it.
+- **Roles.** `read` lists and reads. `write` also creates, changes,
+  deletes and runs commands. `admin` also runs host-wide operations
+  (blob store garbage collection).
+- **Tenants.** A tenant token sees only its tenant's sandboxes, volumes
+  and snapshots. Another tenant's resources answer "not found". Volume
+  names are per tenant.
+
+`--token` adds one administrator token with no tenant, the quick way to
+get started:
+
+```bash
+vmlayerd --listen tcp://127.0.0.1:7443 --token "$(openssl rand -hex 32)"
+```
+
+The daemon warns when it serves plaintext on a non-loopback address. In
+the host registry, advertise `tls://host:port` so cluster clients use TLS
+too.
+
+Clients:
+
+```bash
+vmlayer --endpoint tls://10.0.0.5:7443 --token "$TOKEN" \
+  --tls-ca ca.pem --tls-cert client.pem --tls-key client.key info
+```
 
 ## Data directory
 

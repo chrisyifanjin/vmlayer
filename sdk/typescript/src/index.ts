@@ -21,4 +21,4 @@ export { Process, Pty } from "./process.js";
 export { Sandbox, type CreateOptions, type ExecOptions } from "./sandbox.js";
 export * from "./types.js";
 export { Volume, type CreateVolumeOptions } from "./volume.js";
-export { defaultEndpoint } from "./rpc.js";
+export { defaultEndpoint, type TlsOptions } from "./rpc.js";

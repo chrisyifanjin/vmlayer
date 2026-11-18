@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ._rpc import TLS
 from .client import Client
 from .errors import NotFound, ResourceExhausted
 from .sandbox import Sandbox
@@ -27,11 +28,15 @@ class NoCapacity(ResourceExhausted):
 
 
 class Cluster:
-    def __init__(self, seed: Client | str, *, token: str | None = None) -> None:
+    def __init__(
+        self, seed: Client | str, *, token: str | None = None, tls: TLS | None = None
+    ) -> None:
         """``seed`` is any daemon in the cluster (a ``Client`` or endpoint);
-        ``token`` is used for every host reached through the registry."""
+        ``token`` and ``tls`` are used for every host reached through the
+        registry."""
         self._token = token
-        self._seed = seed if isinstance(seed, Client) else Client(seed, token=token)
+        self._tls = tls
+        self._seed = seed if isinstance(seed, Client) else Client(seed, token=token, tls=tls)
         self._clients: dict[str, Client] = {}
 
     def hosts(self) -> list[HostInfo]:
@@ -42,7 +47,7 @@ class Cluster:
         if endpoint == self._seed.endpoint:
             return self._seed
         if endpoint not in self._clients:
-            self._clients[endpoint] = Client(endpoint, token=self._token)
+            self._clients[endpoint] = Client(endpoint, token=self._token, tls=self._tls)
         return self._clients[endpoint]
 
     def place(

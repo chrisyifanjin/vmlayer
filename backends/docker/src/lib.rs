@@ -60,7 +60,19 @@ pub struct Config {
     /// Maximum number of processes per sandbox (cgroup pids limit); stops
     /// fork bombs from taking the host down. `0` disables the limit.
     pub pids_limit: i64,
+    /// Make cloud metadata services unreachable from sandboxes (review
+    /// T1.3). A one-shot helper container with `NET_ADMIN` adds blackhole
+    /// routes inside the sandbox's network namespace before any of its code
+    /// runs; the sandbox itself lacks `NET_ADMIN` and cannot remove them.
+    pub block_metadata: bool,
 }
+
+/// Cloud metadata endpoints: link-local (AWS, GCP, Azure, Oracle IMDS and
+/// the ECS task endpoint), Azure's wire server and Alibaba's metadata
+/// address. The same set the Firecracker backend drops.
+pub const METADATA_V4: &[&str] = &["169.254.0.0/16", "168.63.129.16/32", "100.100.100.200/32"];
+/// AWS's IPv6 metadata endpoint.
+pub const METADATA_V6: &[&str] = &["fd00:ec2::254/128"];
 
 impl Default for Config {
     fn default() -> Self {
@@ -70,6 +82,7 @@ impl Default for Config {
             host: None,
             probe_image: "alpine:3.20".into(),
             pids_limit: 4096,
+            block_metadata: true,
         }
     }
 }
@@ -175,6 +188,88 @@ impl DockerBackend {
         }
     }
 
+    /// Add blackhole routes for the metadata endpoints inside the network
+    /// namespace of container `cid`.
+    async fn block_metadata(&self, cid: &str) -> Result<()> {
+        use bollard::query_parameters::RemoveContainerOptionsBuilder;
+        let image = &self.config.probe_image;
+        self.ensure_image(image).await?;
+        // IPv6 routes fail on a container without IPv6; nothing to block then.
+        let script = METADATA_V4
+            .iter()
+            .map(|a| format!("ip route add blackhole {a}"))
+            .chain(
+                METADATA_V6
+                    .iter()
+                    .map(|a| format!("{{ ip -6 route add blackhole {a} 2>/dev/null || true; }}")),
+            )
+            .collect::<Vec<_>>()
+            .join(" && ");
+        let body = bollard::models::ContainerCreateBody {
+            image: Some(image.clone()),
+            cmd: Some(vec!["sh".into(), "-c".into(), script]),
+            labels: Some(HashMap::from([
+                (LABEL_MANAGED.to_string(), "true".to_string()),
+                (LABEL_ROLE.to_string(), "netguard".to_string()),
+            ])),
+            host_config: Some(bollard::models::HostConfig {
+                network_mode: Some(format!("container:{cid}")),
+                cap_add: Some(vec!["NET_ADMIN".into()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let helper = self
+            .docker
+            .create_container(
+                None::<bollard::query_parameters::CreateContainerOptions>,
+                body,
+            )
+            .await
+            .map_err(engine_err)?;
+        let result: Result<i64> = async {
+            self.docker
+                .start_container(&helper.id, None)
+                .await
+                .map_err(engine_err)?;
+            let mut wait = self.docker.wait_container(
+                &helper.id,
+                None::<bollard::query_parameters::WaitContainerOptions>,
+            );
+            let mut code = 0;
+            while let Some(w) = wait.next().await {
+                match w {
+                    Ok(r) => code = r.status_code,
+                    // bollard reports a non-zero exit as an error.
+                    Err(bollard::errors::Error::DockerContainerWaitError { code: c, .. }) => {
+                        code = c
+                    }
+                    Err(e) => return Err(engine_err(e)),
+                }
+            }
+            Ok(code)
+        }
+        .await;
+        let _ = self
+            .docker
+            .remove_container(
+                &helper.id,
+                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+            )
+            .await;
+        match result? {
+            0 => Ok(()),
+            code => Err(Error::Engine {
+                backend: BACKEND_NAME,
+                message: format!(
+                    "blocking cloud metadata for the sandbox failed (helper exited {code}); \
+                     set [docker] block_metadata = false to run without it"
+                ),
+                source: None,
+            }),
+        }
+    }
+
     /// Engine version string (e.g. `29.5.2`), for `SnapshotRef::engine_version`.
     pub async fn engine_version(&self) -> Result<String> {
         let v = self.docker.version().await.map_err(engine_err)?;
@@ -234,7 +329,7 @@ impl DockerBackend {
             binds: Some(binds),
             memory: Some(i64::from(spec.memory_mib) * 1024 * 1024),
             nano_cpus: Some(i64::from(spec.vcpus) * 1_000_000_000),
-            network_mode: Some(network_mode),
+            network_mode: Some(network_mode.clone()),
             init: Some(true),
             pids_limit: (self.config.pids_limit > 0).then_some(self.config.pids_limit),
             ..Default::default()
@@ -262,6 +357,22 @@ impl DockerBackend {
             .start_container(&created.id, None)
             .await
             .map_err(engine_err)?;
+        if self.config.block_metadata && network_mode != "none" {
+            if let Err(e) = self.block_metadata(&created.id).await {
+                let _ = self
+                    .docker
+                    .remove_container(
+                        &created.id,
+                        Some(
+                            bollard::query_parameters::RemoveContainerOptionsBuilder::new()
+                                .force(true)
+                                .build(),
+                        ),
+                    )
+                    .await;
+                return Err(e);
+            }
+        }
         let handle = DockerSandbox::new(
             self.docker.clone(),
             self.config.clone(),

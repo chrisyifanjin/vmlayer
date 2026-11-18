@@ -37,6 +37,7 @@ impl Registry {
                 socat_image: cfg.docker.socat_image.clone(),
                 probe_image: cfg.docker.probe_image.clone(),
                 pids_limit: cfg.docker.pids_limit,
+                block_metadata: cfg.docker.block_metadata,
             };
             match vmlayer_backend_docker::DockerBackend::connect(dc) {
                 Ok(be) => {
@@ -97,7 +98,10 @@ impl Registry {
                         "firecracker".to_string(),
                         BackendEntry {
                             backend: be,
-                            resolver: Arc::new(crate::images::MicrovmImageResolver::new(images)),
+                            resolver: Arc::new(
+                                crate::images::MicrovmImageResolver::new(images)
+                                    .with_image_dirs(cfg.firecracker.image_dirs.clone()),
+                            ),
                             engine_version: version,
                             unavailable,
                         },

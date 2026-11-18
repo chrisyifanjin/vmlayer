@@ -14,6 +14,10 @@ export class DaemonUnavailable extends VmlayerError {}
 export class InvalidArgument extends VmlayerError {}
 /** The daemon's host is full (admission control), or no host in a cluster has room. */
 export class ResourceExhausted extends VmlayerError {}
+/** The daemon did not accept the token. */
+export class Unauthenticated extends VmlayerError {}
+/** The token's role does not allow this call. */
+export class PermissionDenied extends VmlayerError {}
 /** A file or process was not found. */
 export class NotFound extends VmlayerError {}
 export class SandboxNotFound extends NotFound {}

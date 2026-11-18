@@ -40,8 +40,9 @@ pub const TAP: &str = "tap0";
 pub const DNS_PORT: u16 = 53;
 /// Never reachable from a guest: the link-local range that holds every major
 /// cloud's instance metadata service (169.254.169.254), and Azure's
-/// platform endpoint. Metadata hands out the host's cloud credentials.
-const METADATA: &str = "169.254.0.0/16, 168.63.129.16";
+/// platform endpoint, and Alibaba's. Metadata hands out the host's cloud
+/// credentials.
+const METADATA: &str = "169.254.0.0/16, 168.63.129.16, 100.100.100.200";
 const VETH_NS: &str = "veth0";
 
 /// Host side address space for the veth pairs: one /30 per VM.

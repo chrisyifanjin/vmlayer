@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, TypeVar
@@ -40,11 +41,54 @@ def default_endpoint() -> str:
     return f"unix://{Path.home() / '.vmlayer' / 'vmlayerd.sock'}"
 
 
+@dataclass(frozen=True)
+class TLS:
+    """TLS settings for a ``tls://`` endpoint.
+
+    Each field is a path to a PEM file or the PEM bytes themselves.
+    ``ca`` is the CA bundle that signed the daemon's certificate (default:
+    the system roots); ``cert`` and ``key`` are this client's certificate
+    for daemons that require mutual TLS. ``server_name`` overrides the name
+    checked against the daemon's certificate.
+
+    ``TLS.from_env()`` reads ``VMLAYER_TLS_CA``, ``VMLAYER_TLS_CERT`` and
+    ``VMLAYER_TLS_KEY``.
+    """
+
+    ca: str | Path | bytes | None = None
+    cert: str | Path | bytes | None = None
+    key: str | Path | bytes | None = None
+    server_name: str | None = None
+
+    @classmethod
+    def from_env(cls) -> TLS | None:
+        ca, cert, key = (os.environ.get(f"VMLAYER_TLS_{n}") for n in ("CA", "CERT", "KEY"))
+        if not (ca or cert or key):
+            return None
+        return cls(ca=ca, cert=cert, key=key)
+
+    def credentials(self) -> grpc.ChannelCredentials:
+        if (self.cert is None) != (self.key is None):
+            raise ValueError("TLS cert and key go together")
+        return grpc.ssl_channel_credentials(
+            root_certificates=_pem(self.ca),
+            private_key=_pem(self.key),
+            certificate_chain=_pem(self.cert),
+        )
+
+
+def _pem(v: str | Path | bytes | None) -> bytes | None:
+    if v is None or isinstance(v, bytes):
+        return v
+    return Path(v).read_bytes()
+
+
 def grpc_target(endpoint: str) -> str:
     if endpoint.startswith("unix://"):
         return "unix:" + endpoint[len("unix://") :]
-    if endpoint.startswith("tcp://"):
-        return endpoint[len("tcp://") :]
+    for scheme in ("tcp://", "tls://"):
+        if endpoint.startswith(scheme):
+            return endpoint[len(scheme) :]
     if endpoint.startswith("/"):
         return "unix:" + endpoint
     return endpoint
@@ -61,8 +105,18 @@ class _TokenPlugin(grpc.AuthMetadataPlugin):  # type: ignore[misc]
 class Connection:
     """One channel and its stubs."""
 
-    def __init__(self, endpoint: str | None, token: str | None, timeout: timedelta) -> None:
+    def __init__(
+        self,
+        endpoint: str | None,
+        token: str | None,
+        timeout: timedelta,
+        tls: TLS | None = None,
+    ) -> None:
         self.endpoint = endpoint or default_endpoint()
+        if token is None:
+            token = os.environ.get("VMLAYER_TOKEN") or None
+        if tls is None and self.endpoint.startswith("tls://"):
+            tls = TLS.from_env() or TLS()
         self.timeout = timeout.total_seconds()
         target = grpc_target(self.endpoint)
         options: list[tuple[str, Any]] = [
@@ -73,7 +127,18 @@ class Connection:
             # grpc-python derives :authority from the socket path, which HTTP/2
             # servers reject as malformed; pin it to something valid.
             options.append(("grpc.default_authority", "localhost"))
-        if token:
+        if tls is not None:
+            if tls.server_name:
+                options.append(("grpc.ssl_target_name_override", tls.server_name))
+            creds = tls.credentials()
+            if token:
+                creds = grpc.composite_channel_credentials(
+                    creds, grpc.metadata_call_credentials(_TokenPlugin(token))
+                )
+            self.channel = grpc.secure_channel(target, creds, options=options)
+        elif token:
+            # Plaintext: grpc only sends tokens over a local connection
+            # (a unix socket or loopback TCP). Remote daemons need tls://.
             creds = grpc.composite_channel_credentials(
                 grpc.local_channel_credentials(),
                 grpc.metadata_call_credentials(_TokenPlugin(token)),
@@ -121,7 +186,9 @@ def translate(e: grpc.RpcError) -> errors.VmlayerError:
     if code == grpc.StatusCode.UNAVAILABLE:
         return errors.DaemonUnavailable(message)
     if code == grpc.StatusCode.UNAUTHENTICATED:
-        return errors.VmlayerError(f"unauthenticated: {message}")
+        return errors.Unauthenticated(message)
+    if code == grpc.StatusCode.PERMISSION_DENIED:
+        return errors.PermissionDenied(message)
     if kind == "sandbox_not_found":
         return errors.SandboxNotFound(message)
     if kind == "volume_not_found":

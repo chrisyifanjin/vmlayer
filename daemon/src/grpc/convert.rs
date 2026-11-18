@@ -171,10 +171,14 @@ pub fn sandbox(v: &SandboxView) -> pb::Sandbox {
     }
 }
 
-pub fn volume(v: &VolumeRow) -> pb::Volume {
+pub fn volume(p: &crate::auth::Principal, v: &VolumeRow) -> pb::Volume {
     pb::Volume {
         id: v.id.0.clone(),
-        name: v.name.clone().unwrap_or_default(),
+        name: v
+            .name
+            .as_deref()
+            .map(|n| p.volume_name(n).to_string())
+            .unwrap_or_default(),
         size_mib: v.size_mib,
         labels: labels(&v.labels),
         attached_to: v

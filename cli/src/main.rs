@@ -19,13 +19,23 @@ use vmlayer_proto::v1 as pb;
     about = "Sandboxes for agents: Firecracker, libkrun or Docker behind one API."
 )]
 struct Cli {
-    /// Daemon endpoint: unix:///path or tcp://host:port. Defaults to the
+    /// Daemon endpoint: unix:///path, tcp://host:port or tls://host:port. Defaults to the
     /// local socket (VMLAYER_ENDPOINT).
     #[arg(long, global = true, env = "VMLAYER_ENDPOINT")]
     endpoint: Option<String>,
-    /// Bearer token for tcp endpoints.
+    /// Bearer token for tcp:// and tls:// endpoints.
     #[arg(long, global = true, env = "VMLAYER_TOKEN")]
     token: Option<String>,
+    /// CA bundle (PEM) that signed the daemon's certificate; default: the
+    /// system roots. Implies TLS.
+    #[arg(long, global = true, env = "VMLAYER_TLS_CA")]
+    tls_ca: Option<std::path::PathBuf>,
+    /// Client certificate (PEM) for daemons that require mutual TLS.
+    #[arg(long, global = true, env = "VMLAYER_TLS_CERT")]
+    tls_cert: Option<std::path::PathBuf>,
+    /// Client private key (PEM).
+    #[arg(long, global = true, env = "VMLAYER_TLS_KEY")]
+    tls_key: Option<std::path::PathBuf>,
     /// Print JSON instead of tables.
     #[arg(long, global = true)]
     json: bool,
@@ -255,7 +265,12 @@ async fn pump_exec(mut stream: tonic::Streaming<pb::ExecEvent>) -> anyhow::Resul
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut c = connect::connect(cli.endpoint.as_deref(), cli.token.as_deref()).await?;
+    let tls = connect::Tls {
+        ca: cli.tls_ca.clone(),
+        cert: cli.tls_cert.clone(),
+        key: cli.tls_key.clone(),
+    };
+    let mut c = connect::connect(cli.endpoint.as_deref(), cli.token.as_deref(), &tls).await?;
     let json = cli.json;
     match cli.cmd {
         Cmd::Info => {

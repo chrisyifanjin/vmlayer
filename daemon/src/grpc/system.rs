@@ -5,10 +5,13 @@ use vmlayer_proto::v1::system_server::System;
 
 use super::convert::{self, status};
 use super::Services;
+use crate::auth::Principal;
 
 #[tonic::async_trait]
 impl System for Services {
-    async fn info(&self, _req: Request<pb::Empty>) -> Result<Response<pb::SystemInfo>, Status> {
+    async fn info(&self, req: Request<pb::Empty>) -> Result<Response<pb::SystemInfo>, Status> {
+        // Host layout is the operator's business, not a tenant's.
+        let operator = Principal::of(&req).tenant.is_none();
         let backends = self
             .daemon
             .registry
@@ -24,11 +27,16 @@ impl System for Services {
             daemon_version: crate::VERSION.to_string(),
             backends,
             default_backend: self.daemon.registry.default_name(),
-            data_dir: self.daemon.cfg.data_dir.display().to_string(),
+            data_dir: if operator {
+                self.daemon.cfg.data_dir.display().to_string()
+            } else {
+                String::new()
+            },
             blob_store: self
                 .daemon
                 .volumes
                 .remote()
+                .filter(|_| operator)
                 .map(|r| r.describe().to_string())
                 .unwrap_or_default(),
         }))
@@ -36,11 +44,12 @@ impl System for Services {
 
     async fn list_hosts(
         &self,
-        _req: Request<pb::Empty>,
+        req: Request<pb::Empty>,
     ) -> Result<Response<pb::ListHostsResponse>, Status> {
+        let p = Principal::of(&req);
         let hosts = self.daemon.list_hosts().await.map_err(status)?;
         Ok(Response::new(pb::ListHostsResponse {
-            hosts: hosts.into_iter().map(host_info).collect(),
+            hosts: hosts.into_iter().map(|h| host_info(&p, h)).collect(),
         }))
     }
 
@@ -48,6 +57,7 @@ impl System for Services {
         &self,
         req: Request<pb::PlaceSandboxRequest>,
     ) -> Result<Response<pb::HostInfo>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         let vcpus = if r.vcpus == 0 {
             self.daemon.cfg.defaults.vcpus
@@ -70,7 +80,7 @@ impl System for Services {
             )
             .await
             .map_err(status)?;
-        Ok(Response::new(host_info(host)))
+        Ok(Response::new(host_info(&p, host)))
     }
 
     async fn collect_garbage(
@@ -104,8 +114,10 @@ impl System for Services {
         &self,
         req: Request<pb::ListSnapshotsRequest>,
     ) -> Result<Response<pb::ListSnapshotsResponse>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
-        let labels = convert::labels_from(&r.labels);
+        let mut labels = convert::labels_from(&r.labels);
+        p.stamp(&mut labels);
         let snaps = if r.remote {
             self.daemon
                 .list_remote_snapshots()
@@ -149,7 +161,9 @@ impl System for Services {
         &self,
         req: Request<pb::DeleteSnapshotRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
+        self.snapshot_labels(&p, &r.id).await?;
         self.daemon
             .delete_snapshot(&SnapshotId(r.id), r.local_only)
             .await
@@ -158,7 +172,8 @@ impl System for Services {
     }
 }
 
-fn host_info(h: crate::cluster::HostDoc) -> pb::HostInfo {
+/// A host as `p` may see it: tenants do not see other tenants' sandbox IDs.
+fn host_info(p: &Principal, h: crate::cluster::HostDoc) -> pb::HostInfo {
     pb::HostInfo {
         host_id: h.host_id,
         endpoint: h.endpoint,
@@ -168,7 +183,11 @@ fn host_info(h: crate::cluster::HostDoc) -> pb::HostInfo {
         memory_mib: h.memory_mib,
         allocated_vcpus: h.allocated_vcpus,
         allocated_memory_mib: h.allocated_memory_mib,
-        sandbox_ids: h.sandboxes,
+        sandbox_ids: if p.tenant.is_none() {
+            h.sandboxes
+        } else {
+            Vec::new()
+        },
         labels: h.labels.into_iter().collect(),
         updated_at: convert::ts(
             std::time::UNIX_EPOCH + std::time::Duration::from_millis(h.updated_at),

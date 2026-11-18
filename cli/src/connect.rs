@@ -1,10 +1,11 @@
-//! Channel setup mirroring the SDK: unix socket by default, tcp with a token.
+//! Channel setup mirroring the SDK: unix socket by default; tcp:// or
+//! tls:// with a token.
 
 use std::path::PathBuf;
 
 use anyhow::Context;
 use futures::StreamExt;
-use tonic::transport::{Channel, Endpoint, Uri};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity, Uri};
 use vmlayer_proto::v1 as pb;
 use vmlayer_proto::v1::{
     files_client::FilesClient, processes_client::ProcessesClient,
@@ -45,7 +46,43 @@ pub struct Clients {
     pub system: SystemClient<Svc>,
 }
 
-pub async fn connect(endpoint: Option<&str>, token: Option<&str>) -> anyhow::Result<Clients> {
+/// TLS files for a `tls://` endpoint (PEM paths).
+#[derive(Clone, Debug, Default)]
+pub struct Tls {
+    /// CA bundle that signed the daemon's certificate; default: system roots.
+    pub ca: Option<PathBuf>,
+    /// Client certificate and key, for daemons that require mutual TLS.
+    pub cert: Option<PathBuf>,
+    pub key: Option<PathBuf>,
+}
+
+impl Tls {
+    fn is_set(&self) -> bool {
+        self.ca.is_some() || self.cert.is_some() || self.key.is_some()
+    }
+
+    fn config(&self) -> anyhow::Result<ClientTlsConfig> {
+        let read =
+            |p: &PathBuf| std::fs::read(p).with_context(|| format!("reading {}", p.display()));
+        let mut cfg = ClientTlsConfig::new();
+        cfg = match &self.ca {
+            Some(ca) => cfg.ca_certificate(Certificate::from_pem(read(ca)?)),
+            None => cfg.with_native_roots(),
+        };
+        match (&self.cert, &self.key) {
+            (Some(c), Some(k)) => cfg = cfg.identity(Identity::from_pem(read(c)?, read(k)?)),
+            (None, None) => {}
+            _ => anyhow::bail!("--tls-cert and --tls-key go together"),
+        }
+        Ok(cfg)
+    }
+}
+
+pub async fn connect(
+    endpoint: Option<&str>,
+    token: Option<&str>,
+    tls: &Tls,
+) -> anyhow::Result<Clients> {
     let endpoint = endpoint.map(String::from).unwrap_or_else(default_endpoint);
     let channel = if let Some(path) = endpoint.strip_prefix("unix://") {
         let path = path.to_string();
@@ -59,6 +96,16 @@ pub async fn connect(endpoint: Option<&str>, token: Option<&str>) -> anyhow::Res
             }))
             .await
             .with_context(|| format!("connecting to {endpoint} (is vmlayerd running?)"))?
+    } else if endpoint.starts_with("tls://") || tls.is_set() {
+        let addr = endpoint
+            .strip_prefix("tls://")
+            .or_else(|| endpoint.strip_prefix("tcp://"))
+            .unwrap_or(&endpoint);
+        Endpoint::try_from(format!("https://{addr}"))?
+            .tls_config(tls.config()?)?
+            .connect()
+            .await
+            .with_context(|| format!("connecting to {endpoint}"))?
     } else {
         let addr = endpoint.strip_prefix("tcp://").unwrap_or(&endpoint);
         Endpoint::try_from(format!("http://{addr}"))?

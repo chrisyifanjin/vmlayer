@@ -3,6 +3,7 @@
 //! gRPC API. See ADR 0002 and 0007.
 
 pub mod admission;
+pub mod auth;
 pub mod cluster;
 pub mod config;
 pub mod durable;

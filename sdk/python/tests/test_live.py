@@ -251,3 +251,16 @@ def test_egress_and_limits_need_an_enforcing_backend(daemon: vmlayer.Client) -> 
         Sandbox.create(ALPINE, egress=["not a rule"])
     with pytest.raises(TypeError):
         Sandbox.create(ALPINE, egress="pypi.org")  # type: ignore[arg-type]
+
+
+def test_cloud_metadata_is_unreachable(daemon: vmlayer.Client) -> None:
+    """Review T1.3: no sandbox reaches 169.254.169.254, and none can undo the block."""
+    with Sandbox.create(ALPINE, timeout=timedelta(minutes=2)) as sb:
+        if sb.backend != "docker":
+            pytest.skip("the Firecracker suite covers microVMs")
+        r = sb.exec("wget -T 3 -q -O- http://169.254.169.254/latest/meta-data/")
+        assert r.exit_code != 0
+        assert "blackhole 169.254.0.0/16" in sb.exec("ip route").stdout
+        assert sb.exec("ip route del blackhole 169.254.0.0/16").exit_code != 0
+        # Everything else still routes.
+        assert sb.exec("ip route get 1.1.1.1").exit_code == 0

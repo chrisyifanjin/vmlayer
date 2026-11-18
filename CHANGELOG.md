@@ -114,6 +114,16 @@ versions; every change to the SDK surface is listed.
 - Host leases and ownership records with epochs replace per-sandbox lease
   objects (decision 0014 update): store writes scale with hosts, and a
   stale owner cannot overwrite a newer one.
+- TLS and mutual TLS on TCP listeners (`[tls]`, `--tls-cert`, `--tls-key`,
+  `--tls-client-ca`), and tokens with a tenant and a role (`[[auth.tokens]]`
+  by SHA-256; roles `read`, `write`, `admin`). A tenant sees only its own
+  sandboxes, volumes and snapshots, and its volume names are its own
+  (decision 0020). Clients use `tls://` endpoints: `vmlayer.TLS` in
+  Python, `tls` options in TypeScript, `--tls-ca`/`--tls-cert`/`--tls-key`
+  in the CLI. New `Unauthenticated` and `PermissionDenied` errors.
+- Docker sandboxes cannot reach cloud metadata services
+  (`[docker] block_metadata`, on by default): blackhole routes in the
+  sandbox's network namespace, added before its code runs.
 
 ### Fixed
 - From the first external review: sandbox restore attached a partly
@@ -136,6 +146,10 @@ versions; every change to the SDK surface is listed.
   sandbox address pool in Docker's `DOCKER-USER` chain when it exists.
 
 ### Changed
+- Host-path images (an absolute path to an ext4 file) are refused unless
+  their directory is listed in `[firecracker] image_dirs` (review T1.2):
+  any caller could boot any host file as a disk.
+- The SDKs read `VMLAYER_TOKEN` when no token is passed.
 - Python SDK now requires `protobuf>=5.26` and `grpcio>=1.68` (was
   effectively protobuf 7.35+) and imports under protobuf 5, 6 and 7, so it
   installs next to frameworks that pin protobuf (decision 0010).

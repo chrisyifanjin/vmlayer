@@ -7,12 +7,13 @@ use futures::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
-use vmlayer_core::{ExecRequest, PtySize, SandboxId};
+use vmlayer_core::{ExecRequest, PtySize};
 use vmlayer_proto::v1 as pb;
 use vmlayer_proto::v1::processes_server::Processes;
 
 use super::convert::{self, status};
 use super::Services;
+use crate::auth::Principal;
 use vmlayer_procs::grpc::follow;
 
 type EventStream = Pin<Box<dyn Stream<Item = Result<pb::ExecEvent, Status>> + Send>>;
@@ -47,12 +48,13 @@ impl Processes for Services {
         &self,
         req: Request<pb::ExecRequest>,
     ) -> Result<Response<Self::ExecStream>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         convert::require_id(&r.sandbox_id, "sandbox_id")?;
         let er = exec_request(r.argv, r.cwd, r.env, r.timeout, None)?;
         let (_, entry) = self
             .daemon
-            .exec(&SandboxId(r.sandbox_id), er)
+            .exec(&self.sandbox(&p, &r.sandbox_id)?, er)
             .await
             .map_err(status)?;
         if !r.stdin.is_empty() {
@@ -83,10 +85,11 @@ impl Processes for Services {
         &self,
         req: Request<pb::OutputRequest>,
     ) -> Result<Response<Self::OutputStream>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         let (_, entry) = self
             .daemon
-            .process(&SandboxId(r.sandbox_id), r.pid)
+            .process(&self.sandbox(&p, &r.sandbox_id)?, r.pid)
             .await
             .map_err(status)?;
         let (tx, rx) = mpsc::channel(256);
@@ -98,6 +101,7 @@ impl Processes for Services {
         &self,
         req: Request<Streaming<pb::StdinChunk>>,
     ) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let mut inbound = req.into_inner();
         let first = inbound
             .next()
@@ -105,7 +109,7 @@ impl Processes for Services {
             .ok_or_else(|| Status::invalid_argument("empty stdin stream"))??;
         let (_, entry) = self
             .daemon
-            .process(&SandboxId(first.sandbox_id), first.pid)
+            .process(&self.sandbox(&p, &first.sandbox_id)?, first.pid)
             .await
             .map_err(status)?;
         if !first.data.is_empty() {
@@ -131,10 +135,11 @@ impl Processes for Services {
         &self,
         req: Request<pb::WaitRequest>,
     ) -> Result<Response<pb::ExitStatus>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         let (_, entry) = self
             .daemon
-            .process(&SandboxId(r.sandbox_id), r.pid)
+            .process(&self.sandbox(&p, &r.sandbox_id)?, r.pid)
             .await
             .map_err(status)?;
         let st = entry
@@ -148,10 +153,11 @@ impl Processes for Services {
         &self,
         req: Request<pb::KillProcessRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
+        let p = Principal::of(&req);
         let r = req.into_inner();
         let (_, entry) = self
             .daemon
-            .process(&SandboxId(r.sandbox_id), r.pid)
+            .process(&self.sandbox(&p, &r.sandbox_id)?, r.pid)
             .await
             .map_err(status)?;
         let signal = if r.signal == 0 { 9 } else { r.signal };
@@ -163,7 +169,8 @@ impl Processes for Services {
         &self,
         req: Request<pb::ListProcessesRequest>,
     ) -> Result<Response<pb::ListProcessesResponse>, Status> {
-        let id = SandboxId(req.into_inner().sandbox_id);
+        let p = Principal::of(&req);
+        let id = self.sandbox(&p, &req.into_inner().sandbox_id)?;
         let live = self.daemon.live(&id).await.map_err(status)?;
         // Backend-tracked (entrypoint) plus daemon-tracked, deduplicated by pid.
         let mut by_pid: BTreeMap<u32, pb::ProcessInfo> = BTreeMap::new();
@@ -187,6 +194,7 @@ impl Processes for Services {
         &self,
         req: Request<Streaming<pb::PtyInput>>,
     ) -> Result<Response<Self::PtyStream>, Status> {
+        let p = Principal::of(&req);
         let mut inbound = req.into_inner();
         let first = inbound
             .next()
@@ -211,7 +219,7 @@ impl Processes for Services {
         let er = exec_request(argv, open.cwd, open.env, None, Some(size))?;
         let mut pty = self
             .daemon
-            .pty(&SandboxId(open.sandbox_id), er)
+            .pty(&self.sandbox(&p, &open.sandbox_id)?, er)
             .await
             .map_err(status)?;
         let mut output = pty.output();

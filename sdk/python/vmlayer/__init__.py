@@ -31,6 +31,7 @@ Quick tour::
         sb.exec("pytest")                    # same files, new sandbox
 """
 
+from ._rpc import TLS
 from .client import Client, default_client, set_default_client
 from .cluster import Cluster, NoCapacity
 from .errors import (
@@ -39,11 +40,13 @@ from .errors import (
     ExecTimeout,
     InvalidArgument,
     NotFound,
+    PermissionDenied,
     ResourceExhausted,
     SandboxNotFound,
     SnapshotIncompatible,
     SnapshotNotFound,
     TimeoutError,
+    Unauthenticated,
     VmlayerError,
     VolumeBusy,
     VolumeNotFound,
@@ -73,6 +76,7 @@ from .volume import Snapshot, Volume, VolumeSnapshot
 
 __all__ = [
     "AUTO",
+    "TLS",
     "Backend",
     "BackendInfo",
     "BackendUnsupported",
@@ -93,6 +97,7 @@ __all__ = [
     "NoCapacity",
     "NotFound",
     "OutputChunk",
+    "PermissionDenied",
     "Process",
     "ProcessInfo",
     "Pty",
@@ -106,6 +111,7 @@ __all__ = [
     "SnapshotNotFound",
     "SystemInfo",
     "TimeoutError",
+    "Unauthenticated",
     "VmlayerError",
     "Volume",
     "VolumeBusy",

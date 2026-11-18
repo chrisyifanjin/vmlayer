@@ -74,8 +74,18 @@ fast:
 vmlayer pull python:3.12 --backend firecracker
 ```
 
-An absolute path to an existing ext4 file is also accepted and used as is,
-for hand-built images.
+An absolute path to an ext4 file can also serve as the image, for
+hand-built images, but only from directories the operator lists:
+
+```toml
+[firecracker]
+image_dirs = ["/var/lib/vmlayer/root-images"]
+```
+
+The list is empty by default, so host paths are refused. Otherwise any
+caller could boot any file on the host (a key, another tenant's volume) as
+a disk and read it from inside the guest. Paths are checked after symlinks
+and `..` are resolved.
 
 Either way the daemon caches a prepared ext4 image with the guest agent at
 `/vmlayer-guest-agent`, then clones that image for each sandbox. The kernel

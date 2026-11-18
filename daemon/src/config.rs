@@ -10,8 +10,13 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     /// `unix:///path/to.sock` or `tcp://host:port`.
     pub listen: String,
-    /// Required for TCP listeners; ignored for unix sockets.
+    /// One administrator token for TCP listeners; ignored for unix
+    /// sockets. `[auth] tokens` adds tokens with a tenant and a role.
     pub token: Option<String>,
+    /// Tokens with a tenant and a role (decision 0020).
+    pub auth: crate::auth::AuthConfig,
+    /// TLS and mutual TLS for TCP listeners.
+    pub tls: crate::auth::TlsConfig,
     pub data_dir: PathBuf,
     /// Backend used for `backend = "auto"`; `None` picks the strongest
     /// available (firecracker, libkrun, docker).
@@ -126,6 +131,9 @@ pub struct FirecrackerConfig {
     pub template_limit: usize,
     /// The per-VM helper (`vmlayer-shim`); default: next to `vmlayerd`.
     pub shim_bin: Option<PathBuf>,
+    /// Directories whose ext4 files callers may name as an image by
+    /// absolute path. Empty (the default) refuses host-path images.
+    pub image_dirs: Vec<PathBuf>,
     /// Copy all of a restored guest's memory into place right away
     /// (userfaultfd) instead of faulting it in on first touch.
     pub prefetch_memory: bool,
@@ -153,6 +161,7 @@ impl Default for FirecrackerConfig {
             template_warmup_argv: Vec::new(),
             template_limit: 4,
             shim_bin: None,
+            image_dirs: Vec::new(),
             prefetch_memory: true,
             max_concurrent_boots: 0,
             boot_timeout_secs: 30,
@@ -184,6 +193,8 @@ pub struct DockerConfig {
     pub verify_mounts: bool,
     /// Maximum processes per sandbox; 0 disables the limit.
     pub pids_limit: i64,
+    /// Make cloud metadata services unreachable from containers.
+    pub block_metadata: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -241,6 +252,8 @@ impl Default for Config {
         Self {
             listen: format!("unix://{}", default_socket_path().display()),
             token: None,
+            auth: Default::default(),
+            tls: Default::default(),
             data_dir: default_data_dir(),
             default_backend: None,
             defaults: Defaults::default(),
@@ -276,6 +289,7 @@ impl Default for DockerConfig {
             probe_image: "alpine:3.20".into(),
             verify_mounts: true,
             pids_limit: 4096,
+            block_metadata: true,
         }
     }
 }

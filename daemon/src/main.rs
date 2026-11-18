@@ -4,7 +4,7 @@ use std::sync::Arc;
 use clap::Parser;
 use vmlayerd::config::Config;
 use vmlayerd::manager::Daemon;
-use vmlayerd::server::{parse_listen, serve};
+use vmlayerd::server::{parse_listen, serve, Security};
 
 /// vmlayerd: the vmlayer host daemon.
 #[derive(Parser, Debug)]
@@ -16,9 +16,19 @@ struct Args {
     /// unix:///path/to.sock or tcp://host:port
     #[arg(long, env = "VMLAYER_LISTEN")]
     listen: Option<String>,
-    /// Bearer token, required for tcp listeners.
+    /// Administrator bearer token for tcp listeners. `[auth] tokens` in the
+    /// config file adds tokens with a tenant and a role.
     #[arg(long, env = "VMLAYER_TOKEN")]
     token: Option<String>,
+    /// PEM certificate for TLS on tcp listeners.
+    #[arg(long, env = "VMLAYER_TLS_CERT")]
+    tls_cert: Option<PathBuf>,
+    /// PEM private key for TLS on tcp listeners.
+    #[arg(long, env = "VMLAYER_TLS_KEY")]
+    tls_key: Option<PathBuf>,
+    /// PEM CA bundle; callers must present a certificate it signed.
+    #[arg(long, env = "VMLAYER_TLS_CLIENT_CA")]
+    tls_client_ca: Option<PathBuf>,
     #[arg(long, env = "VMLAYER_DATA_DIR")]
     data_dir: Option<PathBuf>,
     /// pretty or json
@@ -52,6 +62,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Two TLS crypto providers are linked (object_store brings aws-lc-rs);
+    // rustls refuses to guess, so pick one for the whole process.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args = Args::parse();
     let mut cfg = Config::load(args.config.as_deref())?;
     if let Some(l) = args.listen {
@@ -59,6 +72,15 @@ async fn main() -> anyhow::Result<()> {
     }
     if args.token.is_some() {
         cfg.token = args.token;
+    }
+    if args.tls_cert.is_some() {
+        cfg.tls.cert = args.tls_cert;
+    }
+    if args.tls_key.is_some() {
+        cfg.tls.key = args.tls_key;
+    }
+    if args.tls_client_ca.is_some() {
+        cfg.tls.client_ca = args.tls_client_ca;
     }
     if let Some(d) = args.data_dir {
         cfg.data_dir = d;
@@ -107,7 +129,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(version = vmlayerd::VERSION, data_dir = %cfg.data_dir.display(), "starting vmlayerd");
 
     let listen = parse_listen(&cfg.listen)?;
-    let token = cfg.token.clone();
+    let security = Security {
+        token: cfg.token.clone(),
+        auth: cfg.auth.clone(),
+        tls: cfg.tls.clone(),
+    };
     let daemon: Arc<Daemon> = Daemon::new(cfg).await?;
 
     let shutdown = async {
@@ -128,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
         }
         tracing::info!("shutting down");
     };
-    let result = serve(daemon.clone(), listen, token, shutdown).await;
+    let result = serve(daemon.clone(), listen, security, shutdown).await;
     daemon.withdraw_heartbeat().await;
     result
 }

@@ -13,6 +13,7 @@
 import { Client } from "./client.js";
 import { NotFound, ResourceExhausted } from "./errors.js";
 import { Sandbox, type CreateOptions } from "./sandbox.js";
+import type { TlsOptions } from "./rpc.js";
 import type { Backend, HostInfo } from "./types.js";
 
 export interface PlaceOptions {
@@ -29,13 +30,17 @@ export class Cluster {
 
   constructor(
     seed: Client | string,
-    private readonly opts: { token?: string } = {},
+    private readonly opts: { token?: string; tls?: TlsOptions } = {},
   ) {
-    this.seed = typeof seed === "string" ? new Client(seed, this.tokenOpts()) : seed;
+    this.seed = typeof seed === "string" ? new Client(seed, this.connOpts()) : seed;
   }
 
-  private tokenOpts(): { token?: string } {
-    return this.opts.token === undefined ? {} : { token: this.opts.token };
+  /** The token and TLS settings, used for every host reached through the registry. */
+  private connOpts(): { token?: string; tls?: TlsOptions } {
+    return {
+      ...(this.opts.token === undefined ? {} : { token: this.opts.token }),
+      ...(this.opts.tls === undefined ? {} : { tls: this.opts.tls }),
+    };
   }
 
   hosts(): Promise<HostInfo[]> {
@@ -47,7 +52,7 @@ export class Cluster {
     if (endpoint === this.seed.endpoint) return this.seed;
     let c = this.clients.get(endpoint);
     if (!c) {
-      c = new Client(endpoint, this.tokenOpts());
+      c = new Client(endpoint, this.connOpts());
       this.clients.set(endpoint, c);
     }
     return c;

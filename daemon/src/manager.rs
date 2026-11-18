@@ -256,6 +256,7 @@ impl Daemon {
         workspace: &WorkspaceSpec,
         workdir: &str,
         extra: &[MountParam],
+        anonymous_labels: BTreeMap<String, String>,
     ) -> Result<(Option<VolumeId>, Vec<Mount>, Vec<MountRow>)> {
         let mut mounts = Vec::new();
         let mut rows = Vec::new();
@@ -278,7 +279,7 @@ impl Daemon {
             WorkspaceSpec::Anonymous => {
                 let v = self
                     .volumes
-                    .create_kind(kind, None, None, BTreeMap::new(), true)
+                    .create_kind(kind, None, None, anonymous_labels, true)
                     .await?;
                 self.volumes.attach(&v.id, id, false)?;
                 attached.push(v.id.clone());
@@ -393,6 +394,7 @@ impl Daemon {
                 &p.workspace,
                 &workdir,
                 &p.mounts,
+                crate::auth::tenant_only(&p.labels),
             )
             .await?;
         let mut env = resolved.env.clone();
@@ -522,10 +524,14 @@ impl Daemon {
         let mut mounts = Vec::new();
         let mut rows = Vec::new();
         let mut workspace_id = None;
+        // The new volumes belong to the restored sandbox's tenant.
+        let mut owner = snap.spec.labels.clone();
+        owner.extend(labels.clone());
+        let volume_labels = crate::auth::tenant_only(&owner);
         for vs in &snap.volumes {
             let vol = self
                 .volumes
-                .from_snapshot(&vs.id, None, BTreeMap::new(), true)
+                .from_snapshot(&vs.id, None, volume_labels.clone(), true)
                 .await?;
             let guest_path = vs.guest_path.clone().unwrap_or_default();
             let read_only = snap
@@ -721,7 +727,7 @@ impl Daemon {
     pub async fn snapshot(
         &self,
         id: &SandboxId,
-        labels: BTreeMap<String, String>,
+        mut labels: BTreeMap<String, String>,
         stay_paused: bool,
         durable: bool,
     ) -> Result<SnapshotRef> {
@@ -732,6 +738,7 @@ impl Daemon {
         }
         let live = self.live(id).await?;
         let row = self.store.get_sandbox(id).map_err(store_err)?;
+        crate::auth::inherit_tenant(&mut labels, &row.labels);
         let engine_version = self
             .registry
             .get(&row.backend)

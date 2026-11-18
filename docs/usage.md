@@ -14,14 +14,26 @@ daemon runs on the same machine with defaults; otherwise:
 import vmlayer
 
 client = vmlayer.Client("unix:///run/vmlayer/vmlayerd.sock")
-client = vmlayer.Client("tcp://10.0.0.5:7443", token="...")   # remote daemon
+client = vmlayer.Client(                                        # remote daemon over TLS
+    "tls://10.0.0.5:7443",
+    token="...",
+    tls=vmlayer.TLS(ca="ca.pem", cert="client.pem", key="client.key"),  # private CA, mutual TLS
+)
 vmlayer.set_default_client(client)                              # used by Sandbox.create etc.
 
 client.info()                 # daemon version, backends, engine versions
 client.available_backends()   # {Backend.DOCKER: "29.5.2"}
 ```
 
-`VMLAYER_ENDPOINT` sets the default endpoint without code changes.
+`VMLAYER_ENDPOINT`, `VMLAYER_TOKEN` and `VMLAYER_TLS_CA` / `_CERT` /
+`_KEY` set the defaults without code changes. A `tcp://` endpoint is
+plaintext, and grpc only sends a token over it to a local address; use
+`tls://` for a remote daemon. In TypeScript:
+`new Client("tls://10.0.0.5:7443", { token, tls: { ca: "ca.pem" } })`.
+
+A token may be limited to one tenant and a role (see
+[deploy.md](deploy.md#remote-access)). A tenant's calls see only its own
+sandboxes, volumes and snapshots, and its volume names are its own.
 
 Pulling an image ahead of time makes the first `create` fast (on microVM
 backends it also builds the root filesystem):
@@ -152,10 +164,36 @@ every name under a domain, each with optional ports. `egress=[]` blocks all
 outbound traffic; `network=False` removes the network device entirely.
 DNS from the sandbox goes through a resolver that answers only allowed
 names, whichever server the guest asks, and opens each answer's addresses
-for the record's lifetime. The Docker backend cannot enforce `egress` or
-`limits` and raises `BackendUnsupported`; check
-`sandbox.capabilities.egress_policy` and `io_limits`. Details are in
+for the record's lifetime. Details are in
 [decision 0012](decisions/0012-network-isolation-egress-and-io-limits.md).
+
+#### What the Docker backend does not isolate
+
+The Docker backend is for laptops and CI, where there is no KVM. It gives
+container isolation, which is weaker in ways that matter for untrusted
+code:
+
+- **Kernel.** Containers share the host's kernel. A kernel exploit in the
+  sandbox owns the host. Firecracker guests run their own kernel behind a
+  hypervisor and a jailer.
+- **Cloud metadata: blocked.** Before any of a sandbox's code runs, a
+  short-lived helper container adds blackhole routes inside the sandbox's
+  network namespace for the link-local range (AWS, GCP, Azure and Oracle
+  metadata, the ECS task endpoint), Azure's wire server and Alibaba's
+  metadata address. The sandbox lacks `NET_ADMIN`, so it cannot remove
+  them. `[docker] block_metadata = false` turns this off.
+- **The host and other containers: not blocked.** A sandbox on the
+  default bridge can reach the host's bridge address, services published
+  on the host, and other containers on the same bridge. Put sandboxes on
+  a dedicated network (`[docker] network`) and firewall it if that
+  matters.
+- **Egress allowlists and rate limits: not enforced.** Containers share
+  the host's network stack configuration. Enforcing these would need the
+  daemon to own host firewall rules, so the backend refuses `egress` and
+  `limits` with `BackendUnsupported` rather than pretend. Check
+  `sandbox.capabilities.egress_policy` and `io_limits`.
+- **Resources.** Memory, CPU and process limits come from cgroups through
+  Docker. Disk usage of the writable layer is not limited.
 
 ### Several hosts
 
@@ -266,7 +304,9 @@ All exceptions derive from `vmlayer.VmlayerError`:
 
 | Exception | When |
 |---|---|
-| `DaemonUnavailable` | no daemon at the endpoint |
+| `DaemonUnavailable` | no daemon at the endpoint (or the TLS handshake failed) |
+| `Unauthenticated` | missing or unknown token |
+| `PermissionDenied` | the token's role does not allow the call |
 | `SandboxNotFound`, `VolumeNotFound`, `SnapshotNotFound` | bad or stale id |
 | `VolumeBusy` | single-writer rule |
 | `BackendUnsupported` | the backend lacks the feature (`.backend`, `.feature`) |

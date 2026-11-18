@@ -26,7 +26,9 @@ export function defaultEndpoint(): string {
 
 export function grpcTarget(endpoint: string): string {
   if (endpoint.startsWith("unix://")) return "unix:" + endpoint.slice("unix://".length);
-  if (endpoint.startsWith("tcp://")) return endpoint.slice("tcp://".length);
+  for (const scheme of ["tcp://", "tls://"]) {
+    if (endpoint.startsWith(scheme)) return endpoint.slice(scheme.length);
+  }
   if (endpoint.startsWith("/")) return "unix:" + endpoint;
   return endpoint;
 }
@@ -68,10 +70,45 @@ function pkg(): any {
   return (loaded as any).vmlayer.v1;
 }
 
+/**
+ * TLS settings for a `tls://` endpoint. Each field is a path to a PEM file
+ * or the PEM contents. `ca` is the CA bundle that signed the daemon's
+ * certificate (default: the system roots); `cert` and `key` are this
+ * client's certificate for daemons that require mutual TLS. `serverName`
+ * overrides the name checked against the daemon's certificate.
+ * Unset fields fall back to `VMLAYER_TLS_CA`, `VMLAYER_TLS_CERT` and
+ * `VMLAYER_TLS_KEY`.
+ */
+export interface TlsOptions {
+  ca?: string | Buffer;
+  cert?: string | Buffer;
+  key?: string | Buffer;
+  serverName?: string;
+}
+
 export interface ConnectionOptions {
+  /** `unix:///path`, `tcp://host:port` (plaintext) or `tls://host:port`. */
   endpoint?: string;
+  /** Bearer token; defaults to `VMLAYER_TOKEN`. */
   token?: string;
+  /** TLS settings; setting them also turns TLS on for a `tcp://` endpoint. */
+  tls?: TlsOptions;
   timeoutMs?: number;
+}
+
+function pem(v: string | Buffer | undefined): Buffer | null {
+  if (v === undefined) return null;
+  if (Buffer.isBuffer(v)) return v;
+  return v.includes("-----BEGIN") ? Buffer.from(v) : require("node:fs").readFileSync(v);
+}
+
+function tlsFromEnv(): TlsOptions | undefined {
+  const env = process.env;
+  const opts: TlsOptions = {};
+  if (env.VMLAYER_TLS_CA) opts.ca = env.VMLAYER_TLS_CA;
+  if (env.VMLAYER_TLS_CERT) opts.cert = env.VMLAYER_TLS_CERT;
+  if (env.VMLAYER_TLS_KEY) opts.key = env.VMLAYER_TLS_KEY;
+  return Object.keys(opts).length > 0 ? opts : undefined;
 }
 
 export class Connection {
@@ -94,15 +131,25 @@ export class Connection {
     };
     // grpc-js derives :authority from the socket path, which the server rejects.
     if (target.startsWith("unix:")) options["grpc.default_authority"] = "localhost";
-    let creds = grpc.credentials.createInsecure();
-    if (opts.token) {
-      const token = opts.token;
+    let tls = opts.tls;
+    if (tls === undefined && this.endpoint.startsWith("tls://")) tls = tlsFromEnv() ?? {};
+    let channel = grpc.credentials.createInsecure();
+    if (tls !== undefined) {
+      if ((tls.cert === undefined) !== (tls.key === undefined)) {
+        throw new errors.VmlayerError("TLS cert and key go together");
+      }
+      channel = grpc.credentials.createSsl(pem(tls.ca), pem(tls.key), pem(tls.cert));
+      if (tls.serverName) options["grpc.ssl_target_name_override"] = tls.serverName;
+    }
+    let creds = channel;
+    const token = opts.token ?? process.env.VMLAYER_TOKEN;
+    if (token) {
       const call = grpc.credentials.createFromMetadataGenerator((_, cb) => {
         const md = new grpc.Metadata();
         md.set("authorization", `Bearer ${token}`);
         cb(null, md);
       });
-      creds = grpc.credentials.combineChannelCredentials(grpc.credentials.createInsecure(), call);
+      creds = grpc.credentials.combineChannelCredentials(channel, call);
     }
     const p = pkg();
     this.sandboxes = new p.Sandboxes(target, creds, options);
@@ -168,6 +215,8 @@ export function translate(e: grpc.ServiceError | Error): errors.VmlayerError {
     /* no metadata */
   }
   if (code === grpc.status.UNAVAILABLE) return new errors.DaemonUnavailable(message);
+  if (code === grpc.status.UNAUTHENTICATED) return new errors.Unauthenticated(message);
+  if (code === grpc.status.PERMISSION_DENIED) return new errors.PermissionDenied(message);
   if (kind === "sandbox_not_found") return new errors.SandboxNotFound(message);
   if (kind === "volume_not_found") return new errors.VolumeNotFound(message);
   if (kind === "snapshot_not_found") return new errors.SnapshotNotFound(message);

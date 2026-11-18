@@ -53,9 +53,14 @@ class Client:
         endpoint: str | None = None,
         *,
         token: str | None = None,
+        tls: _rpc.TLS | None = None,
         timeout: timedelta = timedelta(seconds=30),
     ) -> None:
-        self._conn = _rpc.Connection(endpoint, token, timeout)
+        """``endpoint`` is ``unix:///path``, ``tcp://host:port`` (plaintext,
+        loopback only with a token) or ``tls://host:port``. ``tls`` adds a
+        CA bundle and a client certificate (mutual TLS); setting it also
+        turns TLS on for a ``tcp://`` endpoint."""
+        self._conn = _rpc.Connection(endpoint, token, timeout, tls)
 
     @property
     def endpoint(self) -> str:

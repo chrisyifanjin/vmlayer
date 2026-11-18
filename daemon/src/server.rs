@@ -1,4 +1,5 @@
-//! Listener setup: unix socket (default) or TCP with a bearer token.
+//! Listener setup: unix socket (default) or TCP with bearer tokens and,
+//! optionally, TLS or mutual TLS.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -29,31 +30,32 @@ pub fn parse_listen(s: &str) -> anyhow::Result<Listen> {
     anyhow::bail!("listen must be unix:///path or tcp://host:port, got {s:?}")
 }
 
-fn auth_interceptor(
-    token: String,
-) -> impl Fn(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> + Clone {
-    move |req: tonic::Request<()>| {
-        let ok = req
-            .metadata()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|t| t == token)
-            .unwrap_or(false);
-        if ok {
-            Ok(req)
-        } else {
-            Err(tonic::Status::unauthenticated(
-                "missing or invalid bearer token",
-            ))
-        }
+/// How TCP callers authenticate (decision 0020).
+#[derive(Clone, Debug, Default)]
+pub struct Security {
+    /// The single administrator token (`--token`).
+    pub token: Option<String>,
+    pub auth: crate::auth::AuthConfig,
+    pub tls: crate::auth::TlsConfig,
+}
+
+fn tls_config(tls: &crate::auth::TlsConfig) -> anyhow::Result<tonic::transport::ServerTlsConfig> {
+    use tonic::transport::{Certificate, Identity, ServerTlsConfig};
+    let read = |p: &Path| std::fs::read(p).with_context(|| format!("reading {}", p.display()));
+    let (Some(cert), Some(key)) = (&tls.cert, &tls.key) else {
+        anyhow::bail!("[tls] needs both cert and key");
+    };
+    let mut cfg = ServerTlsConfig::new().identity(Identity::from_pem(read(cert)?, read(key)?));
+    if let Some(ca) = &tls.client_ca {
+        cfg = cfg.client_ca_root(Certificate::from_pem(read(ca)?));
     }
+    Ok(cfg)
 }
 
 pub async fn serve(
     daemon: Arc<Daemon>,
     listen: Listen,
-    token: Option<String>,
+    security: Security,
     shutdown: impl std::future::Future<Output = ()>,
 ) -> anyhow::Result<()> {
     let routes = crate::grpc::router(daemon);
@@ -77,16 +79,39 @@ pub async fn serve(
             result.context("serving")
         }
         Listen::Tcp(addr) => {
-            let token = token.ok_or_else(|| {
-                anyhow::anyhow!("a token is required for tcp listeners (--token)")
-            })?;
-            tracing::info!(%addr, "listening (tcp, bearer token required)");
+            let tokens = crate::auth::Tokens::new(security.token.as_deref(), &security.auth)?;
+            anyhow::ensure!(
+                !tokens.is_empty(),
+                "tcp listeners need a token (--token or [auth] tokens)"
+            );
+            let mut builder = Server::builder();
+            let transport = if security.tls.enabled() {
+                builder = builder
+                    .tls_config(tls_config(&security.tls)?)
+                    .context("configuring TLS")?;
+                if security.tls.client_ca.is_some() {
+                    "mutual TLS"
+                } else {
+                    "TLS"
+                }
+            } else {
+                if !addr.ip().is_loopback() {
+                    tracing::warn!(
+                        %addr,
+                        "serving plaintext on a non-loopback address: tokens and data cross \
+                         the network unencrypted; set [tls] cert and key"
+                    );
+                }
+                "plaintext"
+            };
+            tracing::info!(%addr, transport, "listening (tcp, bearer token required)");
             let routes = routes
                 .into_axum_router()
-                .layer(tonic::service::InterceptorLayer::new(auth_interceptor(
-                    token,
-                )));
-            Server::builder()
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::new(tokens),
+                    crate::auth::authenticate,
+                ));
+            builder
                 .add_routes(tonic::service::Routes::from(routes))
                 .serve_with_shutdown(addr, shutdown)
                 .await

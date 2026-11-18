@@ -566,11 +566,12 @@ impl VolumeStore {
         &self,
         id: &VolumeId,
         guest_path: Option<String>,
-        labels: BTreeMap<String, String>,
+        mut labels: BTreeMap<String, String>,
         durable: bool,
     ) -> Result<VolumeSnapshotRow> {
         self.complete(id).await?;
         let row = self.get(&id.0)?;
+        crate::auth::inherit_tenant(&mut labels, &row.labels);
         let remote = if durable {
             Some(self.require_remote()?)
         } else {
@@ -647,6 +648,16 @@ impl VolumeStore {
         })
     }
 
+    /// Labels of a volume snapshot, here or in the blob store; `None` if
+    /// neither has it.
+    pub async fn snapshot_labels(&self, id: &VolumeSnapshotId) -> Option<BTreeMap<String, String>> {
+        if let Ok(s) = self.get_snapshot(id) {
+            return Some(s.labels);
+        }
+        let remote = self.remote.as_ref()?;
+        remote.manifest(&id.0).await.ok().map(|m| m.labels)
+    }
+
     pub fn list_snapshots(&self) -> Result<Vec<VolumeSnapshotRow>> {
         self.store.list_volume_snapshots().map_err(store_err)
     }
@@ -691,7 +702,7 @@ impl VolumeStore {
         &self,
         snapshot: &VolumeSnapshotId,
         name: Option<String>,
-        labels: BTreeMap<String, String>,
+        mut labels: BTreeMap<String, String>,
         anonymous: bool,
     ) -> Result<VolumeRow> {
         let local = self.get_snapshot(snapshot);
@@ -710,6 +721,7 @@ impl VolumeStore {
             Err(e) => return Err(e),
             Ok(_) => unreachable!("guarded above"),
         };
+        crate::auth::inherit_tenant(&mut labels, &snap.labels);
         let src_vol = self.get(&snap.volume_id.0).ok();
         let row = self
             .create(name, src_vol.map(|v| v.size_mib), labels, anonymous)
@@ -726,11 +738,12 @@ impl VolumeStore {
         &self,
         snapshot: &VolumeSnapshotId,
         name: Option<String>,
-        labels: BTreeMap<String, String>,
+        mut labels: BTreeMap<String, String>,
         anonymous: bool,
     ) -> Result<VolumeRow> {
         let remote = self.require_remote()?;
         let manifest = remote.manifest(&snapshot.0).await.map_err(blob_err)?;
+        crate::auth::inherit_tenant(&mut labels, &manifest.labels);
         // An empty directory; the snapshot brings the image for block volumes.
         let row = self
             .create(name, Some(manifest.size_mib), labels, anonymous)
