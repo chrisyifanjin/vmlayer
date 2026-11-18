@@ -290,3 +290,24 @@ async fn sandbox_snapshot_files_live_apart_and_survive_gc() {
     assert_eq!(std::fs::read(out).unwrap(), std::fs::read(&image).unwrap());
     assert!(remote.files_of("../x").is_err());
 }
+
+#[tokio::test]
+async fn reused_chunks_are_verified_after_the_manifest() {
+    let (remote, store) = memory();
+    let dir = tempfile::tempdir().unwrap();
+    let image = sparse_image(dir.path());
+    let (a, _) = remote.push_block(&image, &meta("vsnap-a")).await.unwrap();
+    assert!(remote.missing_chunks(&a.chunks).await.unwrap().is_empty());
+    // As if a garbage collection deleted a chunk the next upload reuses.
+    store
+        .delete(&remote.key(&chunk::chunk_rel(&a.chunks[0].hash)))
+        .await
+        .unwrap();
+    assert_eq!(
+        remote.missing_chunks(&a.chunks).await.unwrap(),
+        vec![a.chunks[0].hash.clone()]
+    );
+    // A fresh push re-uploads what is missing and succeeds.
+    let (_, b) = remote.push_block(&image, &meta("vsnap-b")).await.unwrap();
+    assert_eq!(b.uploaded_chunks, 1);
+}

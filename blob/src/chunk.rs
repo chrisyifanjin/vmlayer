@@ -66,6 +66,19 @@ impl Remote {
         now - modified_unix > (self.gc_grace / 2).as_secs() as i64
     }
 
+    /// Hashes of `chunks` that are not in the store.
+    pub(crate) async fn missing_chunks(&self, chunks: &[ChunkRef]) -> Result<Vec<String>> {
+        let mut missing = Vec::new();
+        for c in chunks {
+            match self.store.head(&self.key(&chunk_rel(&c.hash))).await {
+                Ok(_) => {}
+                Err(object_store::Error::NotFound { .. }) => missing.push(c.hash.clone()),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(missing)
+    }
+
     /// Download, decompress and verify one chunk.
     pub(crate) async fn get_chunk(&self, chunk: &ChunkRef) -> Result<Vec<u8>> {
         let key = self.key(&chunk_rel(&chunk.hash));

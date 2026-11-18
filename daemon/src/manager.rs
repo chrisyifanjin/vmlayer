@@ -506,6 +506,10 @@ impl Daemon {
                 .volumes
                 .from_snapshot(&vs.id, None, BTreeMap::new(), true)
                 .await?;
+            // A volume restored from the blob store may still be downloading:
+            // attach it through its block device, never as a partial file
+            // (review T0.1).
+            self.volumes.prepare(&vol).await?;
             let guest_path = vs.guest_path.clone().unwrap_or_default();
             let read_only = snap
                 .spec
@@ -868,6 +872,10 @@ impl Daemon {
                     self.volumes.get(&m.volume_id.0)
                 } else {
                     self.volumes.clone_volume(&m.volume_id, None, true).await
+                };
+                let vol = match vol {
+                    Ok(v) => self.volumes.prepare(&v).await.map(|_| v),
+                    Err(e) => Err(e),
                 };
                 let vol = match vol
                     .and_then(|v| self.volumes.attach(&v.id, &cid, m.read_only).map(|_| v))

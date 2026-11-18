@@ -7,7 +7,7 @@ use futures::{StreamExt, TryStreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::chunk::{BLOCK_CHUNK, CDC_AVG, CDC_MAX, CDC_MIN};
-use crate::{Chunking, Error, Kind, Manifest, Remote, Result, SnapshotMeta};
+use crate::{ChunkRef, Chunking, Error, Kind, Manifest, Remote, Result, SnapshotMeta};
 
 /// What a push sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -136,10 +136,21 @@ impl Remote {
             uploaded_bytes: stored.iter().map(|s| s.uploaded).sum(),
             logical_bytes: logical,
         };
+        let reused: Vec<ChunkRef> = stored
+            .iter()
+            .filter(|s| s.uploaded == 0)
+            .map(|s| s.chunk.clone())
+            .collect();
         let chunks = stored.into_iter().map(|s| s.chunk).collect();
         let manifest = Manifest::new(meta, kind, chunking, logical, chunks);
         // Last: a manifest in the store implies all of its chunks are there.
         self.put_manifest(&manifest).await?;
+        // A chunk reused (not uploaded) may have been collected between our
+        // check and the manifest write. Verify, and withdraw if one is gone.
+        if let Some(gone) = self.missing_chunks(&reused).await?.into_iter().next() {
+            let _ = self.delete(&manifest.id).await;
+            return Err(Error::Raced(gone));
+        }
         tracing::info!(
             snapshot = %manifest.id,
             store = %self.display,

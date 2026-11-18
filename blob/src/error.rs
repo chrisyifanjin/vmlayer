@@ -12,6 +12,11 @@ pub enum Error {
     Manifest(String),
     #[error("blob store: {0}")]
     Store(#[from] object_store::Error),
+    /// A chunk this upload reused was deleted (by a concurrent garbage
+    /// collection) before the manifest was written; the upload was
+    /// withdrawn and can simply be retried.
+    #[error("chunk {0} vanished during the upload; retry")]
+    Raced(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

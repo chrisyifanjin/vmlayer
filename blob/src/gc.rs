@@ -64,6 +64,17 @@ impl Remote {
                 stats.recent += 1;
                 continue;
             }
+            // The listing may be stale: an upload can have renewed this chunk
+            // since. Judge its age again right before deleting it.
+            match self.store.head(&meta.location).await {
+                Ok(fresh) if fresh.last_modified.timestamp() > cutoff => {
+                    stats.recent += 1;
+                    continue;
+                }
+                Err(object_store::Error::NotFound { .. }) => continue,
+                Ok(_) => {}
+                Err(e) => return Err(e.into()),
+            }
             if !dry_run {
                 match self.store.delete(&meta.location).await {
                     Ok(()) | Err(object_store::Error::NotFound { .. }) => {}

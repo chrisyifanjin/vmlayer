@@ -234,46 +234,63 @@ impl VolumeStore {
 
     /// Resume downloads interrupted by a daemon restart.
     pub async fn resume_lazy(&self) {
-        let Some(remote) = self.remote.clone() else {
-            return;
-        };
         for row in self.list().unwrap_or_default() {
-            let Ok(text) = std::fs::read_to_string(row.path.join(LAZY_FILE)) else {
-                continue;
-            };
-            let Some(snapshot) = serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .and_then(|v| v["snapshot"].as_str().map(String::from))
-            else {
-                continue;
-            };
-            match remote.manifest(&snapshot).await {
-                Ok(m) => match vmlayer_blob::LazyImage::open(
-                    remote.clone(),
-                    &m,
-                    &row.path.join(IMAGE_FILE),
-                ) {
-                    Ok(img) => {
-                        self.lazy
-                            .lock()
-                            .unwrap()
-                            .insert(row.id.clone(), img.clone());
-                        self.spawn_hydrate(row.id.clone(), img);
-                        tracing::info!(volume = %row.id, "resumed lazy download");
-                    }
-                    Err(e) => {
-                        tracing::warn!(volume = %row.id, error = %e, "cannot resume lazy volume")
-                    }
-                },
-                Err(e) => tracing::warn!(volume = %row.id, error = %e, "cannot resume lazy volume"),
+            if let Err(e) = self.lazy_image(&row).await {
+                // The marker stays, so the volume keeps being refused (and
+                // resumption is retried) instead of passing as complete.
+                tracing::warn!(volume = %row.id, error = %e, "lazy volume cannot resume yet");
             }
         }
     }
 
+    /// The download state of a volume restored lazily: `None` once it is
+    /// complete (or was never lazy). A volume whose download was interrupted
+    /// is resumed here; if that is impossible right now the volume is
+    /// refused rather than used with missing blocks (review T0.2).
+    async fn lazy_image(
+        &self,
+        row: &VolumeRow,
+    ) -> Result<Option<std::sync::Arc<vmlayer_blob::LazyImage>>> {
+        if let Some(img) = self.lazy.lock().unwrap().get(&row.id).cloned() {
+            return Ok(Some(img));
+        }
+        let marker = row.path.join(LAZY_FILE);
+        let Ok(text) = tokio::fs::read_to_string(&marker).await else {
+            return Ok(None);
+        };
+        let incomplete = |why: String| {
+            Error::Guest(format!(
+                "volume {} is incomplete and its download cannot resume: {why}",
+                row.id
+            ))
+        };
+        let snapshot = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v["snapshot"].as_str().map(String::from))
+            .ok_or_else(|| incomplete(format!("unreadable marker {}", marker.display())))?;
+        let remote = self
+            .remote
+            .clone()
+            .ok_or_else(|| incomplete("no blob store is configured".into()))?;
+        let manifest = remote
+            .manifest(&snapshot)
+            .await
+            .map_err(|e| incomplete(e.to_string()))?;
+        let img = vmlayer_blob::LazyImage::open(remote, &manifest, &row.path.join(IMAGE_FILE))
+            .map_err(|e| incomplete(e.to_string()))?;
+        let img = {
+            let mut lazy = self.lazy.lock().unwrap();
+            lazy.entry(row.id.clone()).or_insert(img).clone()
+        };
+        self.spawn_hydrate(row.id.clone(), img.clone());
+        tracing::info!(volume = %row.id, "resumed lazy download");
+        Ok(Some(img))
+    }
+
     /// Wait until a lazily restored volume is fully local.
     pub async fn complete(&self, id: &VolumeId) -> Result<()> {
-        let img = self.lazy.lock().unwrap().get(id).cloned();
-        if let Some(img) = img {
+        let row = self.get(&id.0)?;
+        if let Some(img) = self.lazy_image(&row).await? {
             img.hydrate(16).await.map_err(blob_err)?;
             self.forget_lazy_if_idle(id);
         }
@@ -283,8 +300,9 @@ impl VolumeStore {
     /// Get a volume ready to be attached: a lazy volume is exported as a
     /// block device, or downloaded first where that is not possible.
     pub async fn prepare(&self, row: &VolumeRow) -> Result<()> {
-        let img = self.lazy.lock().unwrap().get(&row.id).cloned();
-        let Some(img) = img else { return Ok(()) };
+        let Some(img) = self.lazy_image(row).await? else {
+            return Ok(());
+        };
         if img.is_complete() || !self.can_export() {
             return self.complete(&row.id).await;
         }
@@ -591,12 +609,22 @@ impl VolumeStore {
             created_at: unix_secs(snap.created_at),
         };
         let image = snap.path.join(IMAGE_FILE);
-        let pushed = if image.is_file() {
-            remote.push_block(&image, &meta).await
-        } else {
-            remote.push_dir(&snap.path, &meta).await
-        };
-        pushed.map(|_| ()).map_err(blob_err)
+        for attempt in 0..3 {
+            let pushed = if image.is_file() {
+                remote.push_block(&image, &meta).await
+            } else {
+                remote.push_dir(&snap.path, &meta).await
+            };
+            match pushed {
+                Ok(_) => return Ok(()),
+                // A concurrent garbage collection took a chunk we reused.
+                Err(vmlayer_blob::Error::Raced(chunk)) if attempt < 2 => {
+                    tracing::info!(snapshot = %snap.id, %chunk, "upload raced a garbage collection; retrying");
+                }
+                Err(e) => return Err(blob_err(e)),
+            }
+        }
+        unreachable!("the last attempt returns")
     }
 
     /// Snapshots in the blob store, from any daemon that shares it.
@@ -829,6 +857,71 @@ mod tests {
             .is_err());
         vs.delete_snapshot(&snap.id, false).await.unwrap();
         assert!(!snap.path.exists());
+    }
+
+    #[tokio::test]
+    async fn interrupted_lazy_volumes_are_refused_until_they_resume() {
+        let blobs = tempfile::tempdir().unwrap();
+        let url = format!("file://{}", blobs.path().display());
+        let remote = Remote::open(&url, &BTreeMap::new()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let vs = VolumeStore::new(dir.path(), Store::open_in_memory().unwrap(), 64)
+            .with_remote(Some(remote.clone()))
+            .with_lazy_restore(true);
+        // A block volume whose download was interrupted by a restart, with
+        // its snapshot manifest unreachable.
+        let v = vs
+            .create(None, Some(8), BTreeMap::new(), false)
+            .await
+            .unwrap();
+        let src = dir.path().join("src.ext4");
+        std::fs::File::create(&src)
+            .unwrap()
+            .set_len(8 << 20)
+            .unwrap();
+        std::fs::write(&src, b"real data").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&src)
+            .unwrap()
+            .set_len(8 << 20)
+            .unwrap();
+        let meta = vmlayer_blob::SnapshotMeta {
+            id: "vsnap-gone".into(),
+            size_mib: 8,
+            ..Default::default()
+        };
+        let (manifest, _) = remote.push_block(&src, &meta).await.unwrap();
+        let image = v.path.join(IMAGE_FILE);
+        std::fs::File::create(&image)
+            .unwrap()
+            .set_len(8 << 20)
+            .unwrap();
+        std::fs::write(v.path.join(LAZY_FILE), r#"{"snapshot":"vsnap-gone"}"#).unwrap();
+        remote.delete("vsnap-gone").await.unwrap();
+
+        vs.resume_lazy().await; // logs, does not pretend
+        let err = vs.prepare(&v).await.unwrap_err();
+        assert!(err.to_string().contains("incomplete"), "{err}");
+        assert!(vs
+            .snapshot(&v.id, None, BTreeMap::new(), false)
+            .await
+            .is_err());
+
+        // Once the manifest is reachable again the volume resumes and completes.
+        let (_, _) = remote
+            .push_block(
+                &src,
+                &vmlayer_blob::SnapshotMeta {
+                    id: manifest.id.clone(),
+                    size_mib: 8,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        vs.complete(&v.id).await.unwrap();
+        assert_eq!(&std::fs::read(&image).unwrap()[..9], b"real data");
     }
 
     #[tokio::test]
