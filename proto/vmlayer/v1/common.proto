@@ -58,6 +58,12 @@ enum NetworkMode {
 message Endpoint {
   string host = 1;
   uint32 port = 2;
+  // With ExposeRequest.gateway: the port's URL on the daemon's HTTPS
+  // gateway, and the token a request must carry (Authorization: Bearer,
+  // the X-Vmlayer-Token header, or ?vmlayer_token= once, which sets a
+  // cookie). The token is returned only by Expose.
+  string url = 3;
+  string token = 4;
 }
 
 message Mount {

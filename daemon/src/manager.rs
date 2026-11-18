@@ -1013,8 +1013,27 @@ impl Daemon {
         Ok(ep)
     }
 
+    /// Expose `port` and publish it on the HTTPS gateway: returns the host
+    /// endpoint, the gateway URL and the token (decision 0021).
+    pub async fn expose_gateway(
+        &self,
+        id: &SandboxId,
+        port: u16,
+    ) -> Result<(Endpoint, String, String)> {
+        if !self.cfg.gateway.enabled() {
+            return Err(Error::Guest(
+                "the port gateway is off (set [gateway] listen and domain)".into(),
+            ));
+        }
+        let ep = self.expose(id, port).await?;
+        let (token, hash) = crate::gateway::new_token();
+        self.store.put_route(id, port, &hash).map_err(store_err)?;
+        Ok((ep, self.cfg.gateway.url(id, port), token))
+    }
+
     pub async fn unexpose(&self, id: &SandboxId, port: u16) -> Result<()> {
         let live = self.live(id).await?;
+        self.store.delete_route(id, port).map_err(store_err)?;
         live.handle.unexpose(port).await?;
         live.exposed.lock().await.remove(&port);
         Ok(())

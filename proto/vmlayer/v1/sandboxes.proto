@@ -116,6 +116,9 @@ message ForkSandboxResponse { repeated Sandbox children = 1; }
 message ExposeRequest {
   string id = 1;
   uint32 guest_port = 2;
+  // Also publish the port on the daemon's authenticated HTTPS gateway
+  // ([gateway] in the daemon config); fails if the gateway is off.
+  bool gateway = 3;
 }
 message UnexposeRequest {
   string id = 1;

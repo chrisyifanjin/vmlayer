@@ -60,6 +60,14 @@ const MIGRATIONS: &[&str] = &[
         labels TEXT NOT NULL,
         reference TEXT NOT NULL
     );",
+    // 2: ports published on the HTTPS gateway (decision 0021), by the
+    // SHA-256 of their token; the token itself is never stored.
+    "CREATE TABLE gateway_routes (
+        sandbox_id TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        token_sha256 BLOB NOT NULL,
+        PRIMARY KEY (sandbox_id, port)
+    );",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -226,7 +234,44 @@ impl Store {
     pub fn delete_sandbox(&self, id: &SandboxId) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM mounts WHERE sandbox_id = ?1", params![id.0])?;
+        conn.execute(
+            "DELETE FROM gateway_routes WHERE sandbox_id = ?1",
+            params![id.0],
+        )?;
         conn.execute("DELETE FROM sandboxes WHERE id = ?1", params![id.0])?;
+        Ok(())
+    }
+
+    // -- gateway routes ---------------------------------------------------
+
+    pub fn put_route(&self, sandbox: &SandboxId, port: u16, token_sha256: &[u8; 32]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO gateway_routes (sandbox_id, port, token_sha256) VALUES (?1, ?2, ?3)",
+            params![sandbox.0, port, token_sha256.as_slice()],
+        )?;
+        Ok(())
+    }
+
+    /// The token hash of a published port, if it is published.
+    pub fn route(&self, sandbox: &SandboxId, port: u16) -> Result<Option<[u8; 32]>> {
+        let conn = self.conn.lock().unwrap();
+        let hash: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT token_sha256 FROM gateway_routes WHERE sandbox_id = ?1 AND port = ?2",
+                params![sandbox.0, port],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(hash.and_then(|h| h.try_into().ok()))
+    }
+
+    pub fn delete_route(&self, sandbox: &SandboxId, port: u16) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM gateway_routes WHERE sandbox_id = ?1 AND port = ?2",
+            params![sandbox.0, port],
+        )?;
         Ok(())
     }
 

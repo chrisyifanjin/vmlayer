@@ -125,6 +125,11 @@ versions; every change to the SDK surface is listed.
   `AsyncFiles`, `AsyncProcess`) on native `grpc.aio`, sharing request
   building and result parsing with the synchronous SDK. `OutputChunk.text`
   decodes a chunk.
+- Port gateway (`[gateway]`, decision 0021): `expose(port, gateway=True)`
+  publishes a port at `https://<port>-<sandbox-id>.<domain>` with its own
+  token; HTTP and WebSocket are proxied and the token never reaches the
+  sandbox. `Endpoint` gains `gateway_url`/`token` (Python) and `token`
+  (TypeScript).
 - Harbor environment, `vmlayer.integrations.harbor.VmlayerEnvironment`
   (`vmlayer[harbor]`, Python 3.12+): Harbor agents and datasets run on
   vmlayer sandboxes; network policies map to the sandbox's network.

@@ -128,6 +128,10 @@ enum Cmd {
     Expose {
         sandbox: String,
         port: u32,
+        /// Also publish it on the daemon's HTTPS gateway; prints the URL
+        /// and its token.
+        #[arg(long)]
+        gateway: bool,
     },
     /// Block until something listens on a guest port.
     WaitPort {
@@ -458,16 +462,25 @@ async fn main() -> anyhow::Result<()> {
                 .into_inner();
             println!("{}", sb.id);
         }
-        Cmd::Expose { sandbox, port } => {
+        Cmd::Expose {
+            sandbox,
+            port,
+            gateway,
+        } => {
             let ep = c
                 .sandboxes
                 .expose(pb::ExposeRequest {
                     id: sandbox,
                     guest_port: port,
+                    gateway,
                 })
                 .await?
                 .into_inner();
-            println!("{}:{}", ep.host, ep.port);
+            if gateway {
+                println!("{}\ntoken: {}", ep.url, ep.token);
+            } else {
+                println!("{}:{}", ep.host, ep.port);
+            }
         }
         Cmd::WaitPort {
             sandbox,

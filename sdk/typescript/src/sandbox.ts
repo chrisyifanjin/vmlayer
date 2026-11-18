@@ -329,14 +329,19 @@ export class Sandbox {
 
   // -- network --------------------------------------------------------------
 
-  async expose(port: number): Promise<Endpoint> {
+  /**
+   * Make a guest port reachable from the host. `{ gateway: true }` also
+   * publishes it on the daemon's authenticated HTTPS gateway: `url` is then
+   * the gateway URL and `token` the credential to send.
+   */
+  async expose(port: number, opts: { gateway?: boolean } = {}): Promise<Endpoint> {
     const e: any = await this.client.conn.call(
       this.client.conn.sandboxes,
       "Expose",
-      { id: this.id, guest_port: port },
+      { id: this.id, guest_port: port, gateway: opts.gateway ?? false },
       120_000,
     );
-    return endpoint(e.host, e.port);
+    return endpoint(e.host, e.port, e.url, e.token);
   }
 
   async unexpose(port: number): Promise<void> {
@@ -362,6 +367,8 @@ export class Sandbox {
   }
 }
 
-function endpoint(host: string, port: number): Endpoint {
-  return { host, port, url: `http://${host}:${port}` };
+function endpoint(host: string, port: number, url?: string, token?: string): Endpoint {
+  const e: Endpoint = { host, port, url: url || `http://${host}:${port}` };
+  if (token) e.token = token;
+  return e;
 }

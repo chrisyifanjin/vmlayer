@@ -191,6 +191,26 @@ vmlayer --endpoint tls://10.0.0.5:7443 --token "$TOKEN" \
   --tls-ca ca.pem --tls-cert client.pem --tls-key client.key info
 ```
 
+## Port gateway
+
+Sandboxes can publish ports at `https://<port>-<sandbox-id>.<domain>`,
+each with its own token (decision 0021). Point a wildcard DNS record at
+the daemon and give it a wildcard certificate:
+
+```toml
+[gateway]
+listen = "0.0.0.0:443"
+domain = "sandboxes.example.com"     # DNS: *.sandboxes.example.com -> this host
+cert = "/etc/vmlayer/tls/wildcard.pem"
+key = "/etc/vmlayer/tls/wildcard.key"
+# public_port = 443                  # behind a load balancer on another port
+```
+
+Without `cert` and `key` the gateway speaks plain HTTP, for use behind a
+TLS-terminating load balancer that forwards `Host` unchanged. Ports are
+published only on request (`expose(port, gateway=True)`), and the gateway
+stores only a hash of each token.
+
 ## Data directory
 
 ```

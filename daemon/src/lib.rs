@@ -7,6 +7,7 @@ pub mod auth;
 pub mod cluster;
 pub mod config;
 pub mod durable;
+pub mod gateway;
 pub mod grpc;
 pub mod images;
 pub mod manager;

@@ -17,6 +17,7 @@ Format: context, options considered (with evidence), decision, consequences.
 | [0007](0007-daemon-stack.md) | Daemon stack: tonic gRPC over unix socket, SQLite, bollard for Docker | accepted |
 | [0008](0008-firecracker-backend-design.md) | Firecracker: jailed VMs with fixed drive names, one netns each, gRPC guest agent over vsock, fork = snapshot + restores | accepted |
 | [0009](0009-image-pipeline.md) | Image pipeline: pull OCI layers in the daemon, unpack with whiteouts, one cached ext4 per digest via `mkfs.ext4 -d` | accepted |
+| [0021](0021-port-gateway.md) | Exposed ports on an authenticated HTTPS gateway in the daemon: `<port>-<sandbox>.<domain>`, a token per port (hash stored), cookies for browsers, upgrades proxied | accepted |
 | [0020](0020-callers-tenants-and-tls.md) | Callers: the unix socket is the operator; TCP tokens map to a tenant and a role (read, write, admin); tenancy is a reserved label inherited by derived resources; TLS and mutual TLS on TCP | accepted |
 | [0019](0019-per-vm-shim.md) | A shim process per microVM owns its data path (lazy disk, memory fill, DNS, proxies) and its fencing deadline; the daemon only gives orders | accepted |
 | [0018](0018-durable-memory-snapshots.md) | Durable memory snapshots: snapshot files in the chunk store, imported on restore by any daemon of the same CPU model and engine release | accepted |

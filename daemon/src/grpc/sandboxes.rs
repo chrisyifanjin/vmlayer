@@ -200,11 +200,21 @@ impl Sandboxes for Services {
     ) -> Result<Response<pb::Endpoint>, Status> {
         let p = Principal::of(&req);
         let r = req.into_inner();
-        let ep = self
-            .daemon
-            .expose(&self.sandbox(&p, &r.id)?, port(r.guest_port)?)
-            .await
-            .map_err(status)?;
+        let id = self.sandbox(&p, &r.id)?;
+        let guest_port = port(r.guest_port)?;
+        if r.gateway {
+            let (ep, url, token) = self
+                .daemon
+                .expose_gateway(&id, guest_port)
+                .await
+                .map_err(status)?;
+            return Ok(Response::new(pb::Endpoint {
+                url,
+                token,
+                ..convert::endpoint(&ep)
+            }));
+        }
+        let ep = self.daemon.expose(&id, guest_port).await.map_err(status)?;
         Ok(Response::new(convert::endpoint(&ep)))
     }
 

@@ -135,6 +135,7 @@ pub fn endpoint(e: &Endpoint) -> pb::Endpoint {
     pb::Endpoint {
         host: e.host.clone(),
         port: u32::from(e.port),
+        ..Default::default()
     }
 }
 

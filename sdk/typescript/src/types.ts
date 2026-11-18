@@ -72,7 +72,10 @@ export interface PtySize {
 export interface Endpoint {
   host: string;
   port: number;
+  /** The gateway URL for `expose(port, { gateway: true })`, else `http://host:port`. */
   url: string;
+  /** The gateway credential, returned only by `expose`. */
+  token?: string;
 }
 
 export interface BackendInfo {

@@ -84,12 +84,16 @@ class IoLimits(_message.Message):
     def __init__(self, network_mbps: _Optional[int] = ..., disk_mbps: _Optional[int] = ..., disk_iops: _Optional[int] = ...) -> None: ...
 
 class Endpoint(_message.Message):
-    __slots__ = ("host", "port")
+    __slots__ = ("host", "port", "url", "token")
     HOST_FIELD_NUMBER: _ClassVar[int]
     PORT_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
     host: str
     port: int
-    def __init__(self, host: _Optional[str] = ..., port: _Optional[int] = ...) -> None: ...
+    url: str
+    token: str
+    def __init__(self, host: _Optional[str] = ..., port: _Optional[int] = ..., url: _Optional[str] = ..., token: _Optional[str] = ...) -> None: ...
 
 class Mount(_message.Message):
     __slots__ = ("volume_id", "guest_path", "read_only")

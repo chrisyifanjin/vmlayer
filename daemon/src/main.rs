@@ -154,7 +154,25 @@ async fn main() -> anyhow::Result<()> {
         }
         tracing::info!("shutting down");
     };
-    let result = serve(daemon.clone(), listen, security, shutdown).await;
+    let serving = serve(daemon.clone(), listen, security, shutdown);
+    let result = if daemon.cfg.gateway.enabled() {
+        // The gateway serves until the process exits; it only returns on a
+        // startup error, which stops the daemon too.
+        let gateway = tokio::spawn(vmlayerd::gateway::serve(
+            daemon.clone(),
+            daemon.cfg.gateway.clone(),
+        ));
+        tokio::select! {
+            r = serving => r,
+            r = gateway => match r {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(e.context("port gateway")),
+                Err(e) => Err(anyhow::anyhow!("port gateway: {e}")),
+            },
+        }
+    } else {
+        serving.await
+    };
     daemon.withdraw_heartbeat().await;
     result
 }

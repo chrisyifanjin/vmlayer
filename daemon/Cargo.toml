@@ -37,6 +37,11 @@ toml = { workspace = true }
 tonic = { workspace = true, features = ["tls-ring"] }
 axum = { workspace = true }
 rustls = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }

@@ -17,6 +17,8 @@ pub struct Config {
     pub auth: crate::auth::AuthConfig,
     /// TLS and mutual TLS for TCP listeners.
     pub tls: crate::auth::TlsConfig,
+    /// Authenticated HTTPS gateway for exposed ports (decision 0021).
+    pub gateway: crate::gateway::GatewayConfig,
     pub data_dir: PathBuf,
     /// Backend used for `backend = "auto"`; `None` picks the strongest
     /// available (firecracker, libkrun, docker).
@@ -254,6 +256,7 @@ impl Default for Config {
             token: None,
             auth: Default::default(),
             tls: Default::default(),
+            gateway: Default::default(),
             data_dir: default_data_dir(),
             default_backend: None,
             defaults: Defaults::default(),

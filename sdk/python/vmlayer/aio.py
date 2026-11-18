@@ -34,7 +34,14 @@ from .client import _system_info
 from .errors import NotFound
 from .files import CHUNK, _info
 from .process import _chunk, _Collector
-from .sandbox import _create_request, _exec_request, _ExecFold, _Fields, _process_info
+from .sandbox import (
+    _create_request,
+    _endpoint,
+    _exec_request,
+    _ExecFold,
+    _Fields,
+    _process_info,
+)
 from .types import (
     AUTO,
     Backend,
@@ -387,11 +394,11 @@ class AsyncSandbox(_Fields):
 
     # -- network --------------------------------------------------------------
 
-    async def expose(self, port: int) -> Endpoint:
+    async def expose(self, port: int, *, gateway: bool = False) -> Endpoint:
+        """See ``vmlayer.Sandbox.expose``."""
         c = self._client._conn
-        req = sandboxes_pb2.ExposeRequest(id=self.id, guest_port=port)
-        e = await c.call(c.sandboxes.Expose, req, timeout=120)
-        return Endpoint(e.host, e.port)
+        req = sandboxes_pb2.ExposeRequest(id=self.id, guest_port=port, gateway=gateway)
+        return _endpoint(await c.call(c.sandboxes.Expose, req, timeout=120))
 
     async def unexpose(self, port: int) -> None:
         c = self._client._conn

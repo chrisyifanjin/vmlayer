@@ -164,6 +164,10 @@ class _ExecFold:
         return result
 
 
+def _endpoint(e: common_pb2.Endpoint) -> Endpoint:
+    return Endpoint(e.host, e.port, gateway_url=e.url or None, token=e.token or None)
+
+
 def _process_info(p: common_pb2.ProcessInfo) -> ProcessInfo:
     return ProcessInfo(
         pid=p.pid,
@@ -549,15 +553,20 @@ class Sandbox(_Fields):
 
     # -- network --------------------------------------------------------------
 
-    def expose(self, port: int) -> Endpoint:
-        """Make a guest port reachable from the host. Requires ``capabilities.expose_port``."""
+    def expose(self, port: int, *, gateway: bool = False) -> Endpoint:
+        """Make a guest port reachable from the host. Requires ``capabilities.expose_port``.
+
+        ``gateway=True`` also publishes it on the daemon's authenticated
+        HTTPS gateway: the result's ``url`` is then
+        ``https://<port>-<sandbox-id>.<domain>`` and ``token`` the credential
+        to send. Needs ``[gateway]`` in the daemon config."""
         c = self._client._conn
         e = c.call(
             c.sandboxes.Expose,
-            sandboxes_pb2.ExposeRequest(id=self.id, guest_port=port),
+            sandboxes_pb2.ExposeRequest(id=self.id, guest_port=port, gateway=gateway),
             timeout=120,
         )
-        return Endpoint(e.host, e.port)
+        return _endpoint(e)
 
     def unexpose(self, port: int) -> None:
         c = self._client._conn

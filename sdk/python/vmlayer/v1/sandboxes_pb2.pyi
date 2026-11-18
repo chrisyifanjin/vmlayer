@@ -179,12 +179,14 @@ class ForkSandboxResponse(_message.Message):
     def __init__(self, children: _Optional[_Iterable[_Union[_common_pb2.Sandbox, _Mapping]]] = ...) -> None: ...
 
 class ExposeRequest(_message.Message):
-    __slots__ = ("id", "guest_port")
+    __slots__ = ("id", "guest_port", "gateway")
     ID_FIELD_NUMBER: _ClassVar[int]
     GUEST_PORT_FIELD_NUMBER: _ClassVar[int]
+    GATEWAY_FIELD_NUMBER: _ClassVar[int]
     id: str
     guest_port: int
-    def __init__(self, id: _Optional[str] = ..., guest_port: _Optional[int] = ...) -> None: ...
+    gateway: bool
+    def __init__(self, id: _Optional[str] = ..., guest_port: _Optional[int] = ..., gateway: bool = ...) -> None: ...
 
 class UnexposeRequest(_message.Message):
     __slots__ = ("id", "guest_port")

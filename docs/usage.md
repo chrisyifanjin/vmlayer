@@ -137,6 +137,19 @@ url = sb.expose(8888).url          # http://127.0.0.1:PORT on the host
 sb.process(1).wait()               # the entrypoint's output
 ```
 
+To reach a port from outside the host, publish it on the daemon's
+authenticated HTTPS gateway (`[gateway]` in the daemon config, see
+[deploy.md](deploy.md#port-gateway)):
+
+```python
+ep = sb.expose(8888, gateway=True)
+ep.url      # https://8888-sb-0193....sandboxes.example.com
+ep.token    # send as "Authorization: Bearer <token>", or open f"{ep.url}/?vmlayer_token={ep.token}" in a browser
+```
+
+Requests without the token get `401`; the token never reaches the sandbox.
+WebSockets work. `unexpose` withdraws the URL.
+
 ### Pause, snapshot, restore
 
 ```python

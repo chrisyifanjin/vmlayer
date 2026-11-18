@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Literal
 
@@ -138,14 +138,22 @@ DEFAULT_PTY_SIZE = PtySize()
 
 @dataclass(frozen=True)
 class Endpoint:
-    """A host-reachable address for a port inside the sandbox."""
+    """A host-reachable address for a port inside the sandbox.
+
+    With ``expose(port, gateway=True)``, ``gateway_url`` is the port's URL on
+    the daemon's authenticated HTTPS gateway and ``token`` the credential a
+    request must carry (``Authorization: Bearer``, ``X-Vmlayer-Token``, or
+    ``?vmlayer_token=`` once in a browser). ``url`` prefers the gateway.
+    """
 
     host: str
     port: int
+    gateway_url: str | None = field(default=None, compare=False)
+    token: str | None = field(default=None, compare=False, repr=False)
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return self.gateway_url or f"http://{self.host}:{self.port}"
 
 
 @dataclass(frozen=True)
