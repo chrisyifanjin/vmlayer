@@ -318,8 +318,24 @@ All exceptions derive from `vmlayer.VmlayerError`:
 ## Concurrency
 
 The SDK is thread-safe and the daemon serves many concurrent calls. Each
-`Process` and `Pty` holds its own stream. An `asyncio` client is planned;
-until then `asyncio.to_thread(sb.exec, ...)` works.
+`Process` and `Pty` holds its own stream.
+
+For asyncio code, `vmlayer.aio` has the same API with `await`, on native
+`grpc.aio` (no threads):
+
+```python
+from vmlayer.aio import AsyncSandbox
+
+async with await AsyncSandbox.create("python:3.12") as sb:
+    results = await asyncio.gather(*(sb.exec(f"echo {i}") for i in range(8)))
+    await sb.files.write("/work/main.py", "print('hi')")
+    async for chunk in await sb.spawn("python /work/main.py"):
+        print(chunk.text, end="")
+```
+
+`AsyncClient` takes the same endpoint, token and TLS settings as `Client`;
+without one, each event loop gets a default client from the environment.
+Interactive terminals and volume management are sync-only for now.
 
 If the same process also starts subprocesses and captures their stderr (an
 agent framework that shells out to `docker` or `git`, for example), gRPC's

@@ -102,6 +102,43 @@ class _TokenPlugin(grpc.AuthMetadataPlugin):  # type: ignore[misc]
         callback((("authorization", f"Bearer {self._token}"),), None)
 
 
+class ChannelSpec:
+    """Where and how to connect: shared by the sync and asyncio clients."""
+
+    def __init__(self, endpoint: str | None, token: str | None, tls: TLS | None) -> None:
+        self.endpoint = endpoint or default_endpoint()
+        if token is None:
+            token = os.environ.get("VMLAYER_TOKEN") or None
+        if tls is None and self.endpoint.startswith("tls://"):
+            tls = TLS.from_env() or TLS()
+        self.target = grpc_target(self.endpoint)
+        self.options: list[tuple[str, Any]] = [
+            ("grpc.max_receive_message_length", 64 * 1024 * 1024),
+            ("grpc.max_send_message_length", 64 * 1024 * 1024),
+        ]
+        if self.target.startswith("unix:"):
+            # grpc-python derives :authority from the socket path, which HTTP/2
+            # servers reject as malformed; pin it to something valid.
+            self.options.append(("grpc.default_authority", "localhost"))
+        self.credentials: grpc.ChannelCredentials | None = None
+        if tls is not None:
+            if tls.server_name:
+                self.options.append(("grpc.ssl_target_name_override", tls.server_name))
+            creds = tls.credentials()
+            if token:
+                creds = grpc.composite_channel_credentials(
+                    creds, grpc.metadata_call_credentials(_TokenPlugin(token))
+                )
+            self.credentials = creds
+        elif token:
+            # Plaintext: grpc only sends tokens over a local connection
+            # (a unix socket or loopback TCP). Remote daemons need tls://.
+            self.credentials = grpc.composite_channel_credentials(
+                grpc.local_channel_credentials(),
+                grpc.metadata_call_credentials(_TokenPlugin(token)),
+            )
+
+
 class Connection:
     """One channel and its stubs."""
 
@@ -112,40 +149,13 @@ class Connection:
         timeout: timedelta,
         tls: TLS | None = None,
     ) -> None:
-        self.endpoint = endpoint or default_endpoint()
-        if token is None:
-            token = os.environ.get("VMLAYER_TOKEN") or None
-        if tls is None and self.endpoint.startswith("tls://"):
-            tls = TLS.from_env() or TLS()
+        spec = ChannelSpec(endpoint, token, tls)
+        self.endpoint = spec.endpoint
         self.timeout = timeout.total_seconds()
-        target = grpc_target(self.endpoint)
-        options: list[tuple[str, Any]] = [
-            ("grpc.max_receive_message_length", 64 * 1024 * 1024),
-            ("grpc.max_send_message_length", 64 * 1024 * 1024),
-        ]
-        if target.startswith("unix:"):
-            # grpc-python derives :authority from the socket path, which HTTP/2
-            # servers reject as malformed; pin it to something valid.
-            options.append(("grpc.default_authority", "localhost"))
-        if tls is not None:
-            if tls.server_name:
-                options.append(("grpc.ssl_target_name_override", tls.server_name))
-            creds = tls.credentials()
-            if token:
-                creds = grpc.composite_channel_credentials(
-                    creds, grpc.metadata_call_credentials(_TokenPlugin(token))
-                )
-            self.channel = grpc.secure_channel(target, creds, options=options)
-        elif token:
-            # Plaintext: grpc only sends tokens over a local connection
-            # (a unix socket or loopback TCP). Remote daemons need tls://.
-            creds = grpc.composite_channel_credentials(
-                grpc.local_channel_credentials(),
-                grpc.metadata_call_credentials(_TokenPlugin(token)),
-            )
-            self.channel = grpc.secure_channel(target, creds, options=options)
+        if spec.credentials is not None:
+            self.channel = grpc.secure_channel(spec.target, spec.credentials, options=spec.options)
         else:
-            self.channel = grpc.insecure_channel(target, options=options)
+            self.channel = grpc.insecure_channel(spec.target, options=spec.options)
         self.sandboxes = sandboxes_pb2_grpc.SandboxesStub(self.channel)  # type: ignore[no-untyped-call]
         self.processes = processes_pb2_grpc.ProcessesStub(self.channel)  # type: ignore[no-untyped-call]
         self.files = files_pb2_grpc.FilesStub(self.channel)  # type: ignore[no-untyped-call]

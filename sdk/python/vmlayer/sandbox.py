@@ -48,23 +48,134 @@ def _argv(cmd: str | Sequence[str]) -> list[str]:
     return argv
 
 
-class Sandbox:
-    """One isolated environment. Create with ``Sandbox.create``, restore with
-    ``Sandbox.restore``, attach to an existing one with ``Sandbox.connect``.
+def _create_request(
+    image: str,
+    *,
+    cpus: int | None,
+    memory_mb: int | None,
+    disk_mb: int | None,
+    env: Mapping[str, str] | None,
+    workdir: str | None,
+    workspace: Volume | str | type[AUTO] | None,
+    mounts: Mapping[str, Volume | tuple[Volume, Literal["ro", "rw"]]] | None,
+    entrypoint: Sequence[str] | type[AUTO] | None,
+    timeout: timedelta | None,
+    backend: Backend,
+    network: bool,
+    egress: Sequence[str] | None,
+    limits: IoLimits | None,
+    lease: str | None,
+    reschedule: bool,
+    labels: Mapping[str, str] | None,
+) -> sandboxes_pb2.CreateSandboxRequest:
+    """The Create request for ``Sandbox.create``; shared with ``vmlayer.aio``."""
+    req = sandboxes_pb2.CreateSandboxRequest(
+        image=image,
+        vcpus=cpus or 0,
+        memory_mib=memory_mb or 0,
+        env=dict(env or {}),
+        workdir=workdir or "",
+        backend=backend.value,
+        network=common_pb2.NETWORK_MODE_EGRESS_AND_EXPOSE
+        if network
+        else common_pb2.NETWORK_MODE_NONE,
+        labels=_rpc.labels_arg(labels),
+        ttl=_rpc.to_duration(timeout),
+    )
+    if disk_mb is not None:
+        req.disk_mib = disk_mb
+    if lease:
+        req.lease = lease
+    req.reschedule = reschedule
+    if egress is not None:
+        if isinstance(egress, str):
+            raise TypeError("egress takes a list of rules, not a string")
+        req.egress.allow.extend(egress)
+        req.egress.SetInParent()
+    if limits is not None:
+        for name in ("network_mbps", "disk_mbps", "disk_iops"):
+            value = getattr(limits, name)
+            if value is not None:
+                setattr(req.limits, name, value)
+        req.limits.SetInParent()
+    if workspace is AUTO:
+        req.workspace.anonymous.SetInParent()
+    elif workspace is None:
+        req.workspace.none.SetInParent()
+    else:
+        req.workspace.volume = workspace if isinstance(workspace, str) else workspace.id  # type: ignore[union-attr]
+    for path, spec in (mounts or {}).items():
+        vol, mode = spec if isinstance(spec, tuple) else (spec, "rw")
+        req.mounts.append(
+            common_pb2.Mount(volume_id=vol.id, guest_path=path, read_only=(mode == "ro"))
+        )
+    if entrypoint is AUTO:
+        req.entrypoint.image_default.SetInParent()
+    elif entrypoint is None:
+        req.entrypoint.none.SetInParent()
+    else:
+        req.entrypoint.argv.argv.extend(list(entrypoint))  # type: ignore[arg-type]
+    return req
 
-    Works as a context manager; leaving the block calls ``kill``.
-    """
 
-    def __init__(self, client: Client, pb: common_pb2.Sandbox) -> None:
-        self._client = client
-        self._pb = pb
-        self.files = Files(client, pb.id)
+def _exec_request(
+    sandbox_id: str,
+    cmd: str | Sequence[str],
+    *,
+    cwd: str | None,
+    env: Mapping[str, str] | None,
+    timeout: timedelta | None,
+    stdin: bytes | None = None,
+    detach: bool = False,
+) -> processes_pb2.ExecRequest:
+    return processes_pb2.ExecRequest(
+        sandbox_id=sandbox_id,
+        argv=_argv(cmd),
+        cwd=cwd or "",
+        env=dict(env or {}),
+        timeout=_rpc.to_duration(timeout),
+        stdin=stdin or b"",
+        detach=detach,
+    )
 
-    @classmethod
-    def _from_pb(cls, client: Client, pb: common_pb2.Sandbox) -> Sandbox:
-        return cls(client, pb)
 
-    # -- attributes ---------------------------------------------------------
+class _ExecFold:
+    """Folds the events of an Exec stream into an ``ExecResult``."""
+
+    def __init__(self) -> None:
+        self._collector = _Collector()
+        self._status: common_pb2.ExitStatus | None = None
+
+    def feed(self, ev: processes_pb2.ExecEvent) -> None:
+        kind = ev.WhichOneof("event")
+        if kind == "output":
+            self._collector.add(_chunk(ev.output))
+        elif kind == "exited":
+            self._status = ev.exited
+
+    def result(self, timeout: timedelta | None) -> ExecResult:
+        if self._status is None:
+            raise RuntimeError("exec stream ended without an exit status")
+        result = self._collector.result(self._status)
+        if self._status.timed_out and timeout is not None:
+            raise ExecTimeout(timeout, result)
+        return result
+
+
+def _process_info(p: common_pb2.ProcessInfo) -> ProcessInfo:
+    return ProcessInfo(
+        pid=p.pid,
+        argv=tuple(p.argv),
+        started_at=_rpc.from_timestamp(p.started_at),
+        is_entrypoint=p.is_entrypoint,
+    )
+
+
+class _Fields:
+    """Attributes read from the daemon's view of a sandbox; shared with
+    ``vmlayer.aio.AsyncSandbox``."""
+
+    _pb: common_pb2.Sandbox
 
     @property
     def id(self) -> str:
@@ -94,6 +205,36 @@ class Sandbox:
         return dict(self._pb.labels)
 
     @property
+    def created_at(self) -> float:
+        """Unix timestamp, seconds."""
+        return _rpc.from_timestamp(self._pb.created_at)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Fields) and other.id == self.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+
+class Sandbox(_Fields):
+    """One isolated environment. Create with ``Sandbox.create``, restore with
+    ``Sandbox.restore``, attach to an existing one with ``Sandbox.connect``.
+
+    Works as a context manager; leaving the block calls ``kill``.
+    """
+
+    def __init__(self, client: Client, pb: common_pb2.Sandbox) -> None:
+        self._client = client
+        self._pb = pb
+        self.files = Files(client, pb.id)
+
+    @classmethod
+    def _from_pb(cls, client: Client, pb: common_pb2.Sandbox) -> Sandbox:
+        return cls(client, pb)
+
+    # -- attributes ---------------------------------------------------------
+
+    @property
     def workspace(self) -> Volume | None:
         """The volume mounted at ``workdir``, or ``None`` if created with
         ``workspace=None``."""
@@ -112,11 +253,6 @@ class Sandbox:
         return _STATES.get(self._pb.state, SandboxState.FAILED)
 
     @property
-    def created_at(self) -> float:
-        """Unix timestamp, seconds."""
-        return _rpc.from_timestamp(self._pb.created_at)
-
-    @property
     def exposed(self) -> Mapping[int, Endpoint]:
         """Guest ports currently exposed, by guest port."""
         self.refresh()
@@ -129,12 +265,6 @@ class Sandbox:
 
     def __repr__(self) -> str:
         return f"Sandbox(id={self.id!r}, image={self.image!r}, backend={self._pb.backend!r})"
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, Sandbox) and other.id == self.id
-
-    def __hash__(self) -> int:
-        return hash(self.id)
 
     # -- construction -------------------------------------------------------
 
@@ -212,52 +342,25 @@ class Sandbox:
         fresh: memory state and writes after the last checkpoint are lost.
         """
         c = _client(client)
-        req = sandboxes_pb2.CreateSandboxRequest(
-            image=image,
-            vcpus=cpus or 0,
-            memory_mib=memory_mb or 0,
-            env=dict(env or {}),
-            workdir=workdir or "",
-            backend=backend.value,
-            network=common_pb2.NETWORK_MODE_EGRESS_AND_EXPOSE
-            if network
-            else common_pb2.NETWORK_MODE_NONE,
-            labels=_rpc.labels_arg(labels),
-            ttl=_rpc.to_duration(timeout),
+        req = _create_request(
+            image,
+            cpus=cpus,
+            memory_mb=memory_mb,
+            disk_mb=disk_mb,
+            env=env,
+            workdir=workdir,
+            workspace=workspace,
+            mounts=mounts,
+            entrypoint=entrypoint,
+            timeout=timeout,
+            backend=backend,
+            network=network,
+            egress=egress,
+            limits=limits,
+            lease=lease,
+            reschedule=reschedule,
+            labels=labels,
         )
-        if disk_mb is not None:
-            req.disk_mib = disk_mb
-        if lease:
-            req.lease = lease
-        req.reschedule = reschedule
-        if egress is not None:
-            if isinstance(egress, str):
-                raise TypeError("egress takes a list of rules, not a string")
-            req.egress.allow.extend(egress)
-            req.egress.SetInParent()
-        if limits is not None:
-            for name in ("network_mbps", "disk_mbps", "disk_iops"):
-                value = getattr(limits, name)
-                if value is not None:
-                    setattr(req.limits, name, value)
-            req.limits.SetInParent()
-        if workspace is AUTO:
-            req.workspace.anonymous.SetInParent()
-        elif workspace is None:
-            req.workspace.none.SetInParent()
-        else:
-            req.workspace.volume = workspace if isinstance(workspace, str) else workspace.id  # type: ignore[union-attr]
-        for path, spec in (mounts or {}).items():
-            vol, mode = spec if isinstance(spec, tuple) else (spec, "rw")
-            req.mounts.append(
-                common_pb2.Mount(volume_id=vol.id, guest_path=path, read_only=(mode == "ro"))
-            )
-        if entrypoint is AUTO:
-            req.entrypoint.image_default.SetInParent()
-        elif entrypoint is None:
-            req.entrypoint.none.SetInParent()
-        else:
-            req.entrypoint.argv.argv.extend(list(entrypoint))  # type: ignore[arg-type]
         pb = c._conn.call(c._conn.sandboxes.Create, req, timeout=600)
         return cls(c, pb)
 
@@ -310,29 +413,12 @@ class Sandbox:
         *not* an exception; check ``result.ok``.
         """
         c = self._client._conn
-        req = processes_pb2.ExecRequest(
-            sandbox_id=self.id,
-            argv=_argv(cmd),
-            cwd=cwd or "",
-            env=dict(env or {}),
-            timeout=_rpc.to_duration(timeout),
-            stdin=stdin or b"",
-        )
-        collector = _Collector()
-        status: common_pb2.ExitStatus | None = None
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin)
+        fold = _ExecFold()
         rpc_timeout = (timeout.total_seconds() + 30) if timeout else None
         for ev in c.stream(c.processes.Exec, req, timeout=rpc_timeout):
-            kind = ev.WhichOneof("event")
-            if kind == "output":
-                collector.add(_chunk(ev.output))
-            elif kind == "exited":
-                status = ev.exited
-        if status is None:
-            raise RuntimeError("exec stream ended without an exit status")
-        result = collector.result(status)
-        if status.timed_out and timeout is not None:
-            raise ExecTimeout(timeout, result)
-        return result
+            fold.feed(ev)
+        return fold.result(timeout)
 
     def spawn(
         self,
@@ -344,14 +430,7 @@ class Sandbox:
     ) -> Process:
         """Start a command and return immediately with a streaming handle."""
         c = self._client._conn
-        req = processes_pb2.ExecRequest(
-            sandbox_id=self.id,
-            argv=_argv(cmd),
-            cwd=cwd or "",
-            env=dict(env or {}),
-            timeout=_rpc.to_duration(timeout),
-            detach=True,
-        )
+        req = _exec_request(self.id, cmd, cwd=cwd, env=env, timeout=timeout, detach=True)
         pid = 0
         for ev in c.stream(c.processes.Exec, req, timeout=c.timeout):
             if ev.WhichOneof("event") == "started":
@@ -364,15 +443,7 @@ class Sandbox:
         including the entrypoint."""
         c = self._client._conn
         r = c.call(c.processes.List, processes_pb2.ListProcessesRequest(sandbox_id=self.id))
-        return [
-            ProcessInfo(
-                pid=p.pid,
-                argv=tuple(p.argv),
-                started_at=_rpc.from_timestamp(p.started_at),
-                is_entrypoint=p.is_entrypoint,
-            )
-            for p in r.processes
-        ]
+        return [_process_info(p) for p in r.processes]
 
     def process(self, pid: int) -> Process:
         """Re-attach to a running process by pid. ``process(1)`` is the entrypoint."""

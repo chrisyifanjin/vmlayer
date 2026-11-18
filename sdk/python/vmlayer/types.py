@@ -98,6 +98,12 @@ class OutputChunk:
     stream: Literal["stdout", "stderr"]
     data: bytes
 
+    @property
+    def text(self) -> str:
+        """``data`` decoded as UTF-8; invalid bytes become U+FFFD. A chunk may
+        end inside a multi-byte character, so join ``data`` for exact text."""
+        return self.data.decode("utf-8", "replace")
+
 
 @dataclass(frozen=True)
 class FileInfo:

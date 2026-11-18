@@ -121,6 +121,10 @@ versions; every change to the SDK surface is listed.
   (decision 0020). Clients use `tls://` endpoints: `vmlayer.TLS` in
   Python, `tls` options in TypeScript, `--tls-ca`/`--tls-cert`/`--tls-key`
   in the CLI. New `Unauthenticated` and `PermissionDenied` errors.
+- `vmlayer.aio`: an asyncio client (`AsyncClient`, `AsyncSandbox`,
+  `AsyncFiles`, `AsyncProcess`) on native `grpc.aio`, sharing request
+  building and result parsing with the synchronous SDK. `OutputChunk.text`
+  decodes a chunk.
 - Docker sandboxes cannot reach cloud metadata services
   (`[docker] block_metadata`, on by default): blackhole routes in the
   sandbox's network namespace, added before its code runs.

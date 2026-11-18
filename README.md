@@ -49,7 +49,9 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Several hosts without a scheduler service: host registry and leases in the blob store, placement in the SDK (`vmlayer.Cluster`), single-instance sandboxes (`lease=`) with fencing | working, tested end to end with two daemons ([usage](docs/usage.md#several-hosts), [design](docs/decisions/0014-hosts-placement-and-leases.md)) |
 | Automatic rescheduling from dead hosts: periodic workspace checkpoints, any daemon with `--rescue` recreates the sandbox (`reschedule=True`) | working, tested end to end by killing a host ([design](docs/decisions/0015-rescheduling.md)) |
 | Lazy restore: Firecracker volumes from the blob store are usable at once, fetched on demand through NBD | working, tested end to end on KVM ([design](docs/decisions/0016-lazy-volume-restore.md)) |
-| asyncio client, more adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
+| asyncio client (`vmlayer.aio`, native `grpc.aio`) | working, tested against the daemon |
+| Callers: TLS and mutual TLS, tokens with a tenant and a role (read, write, admin) | working, tested with a mutual-TLS daemon serving two tenants ([deploy](docs/deploy.md#remote-access), [design](docs/decisions/0020-callers-tenants-and-tls.md)) |
+| More adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
 with `BackendUnsupported`, never approximates. `Sandbox.capabilities` says

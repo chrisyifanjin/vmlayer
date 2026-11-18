@@ -39,6 +39,24 @@ def _capabilities(c: common_pb2.Capabilities) -> Capabilities:
     )
 
 
+def _system_info(r: system_pb2.SystemInfo) -> SystemInfo:
+    return SystemInfo(
+        daemon_version=r.daemon_version,
+        backends=tuple(
+            BackendInfo(
+                name=b.name,
+                engine_version=b.engine_version,
+                capabilities=_capabilities(b.capabilities),
+                unavailable_reason=b.unavailable_reason,
+            )
+            for b in r.backends
+        ),
+        default_backend=r.default_backend,
+        data_dir=r.data_dir,
+        blob_store=r.blob_store or None,
+    )
+
+
 class Client:
     """Connection to a ``vmlayerd`` daemon.
 
@@ -67,22 +85,7 @@ class Client:
         return self._conn.endpoint
 
     def info(self) -> SystemInfo:
-        r = self._conn.call(self._conn.system.Info, common_pb2.Empty())
-        return SystemInfo(
-            daemon_version=r.daemon_version,
-            backends=tuple(
-                BackendInfo(
-                    name=b.name,
-                    engine_version=b.engine_version,
-                    capabilities=_capabilities(b.capabilities),
-                    unavailable_reason=b.unavailable_reason,
-                )
-                for b in r.backends
-            ),
-            default_backend=r.default_backend,
-            data_dir=r.data_dir,
-            blob_store=r.blob_store or None,
-        )
+        return _system_info(self._conn.call(self._conn.system.Info, common_pb2.Empty()))
 
     def health(self) -> bool:
         return bool(self._conn.call(self._conn.system.Health, common_pb2.Empty()).ok)
