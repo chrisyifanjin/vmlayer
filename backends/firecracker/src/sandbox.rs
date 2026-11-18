@@ -308,6 +308,9 @@ impl FirecrackerSandbox {
         mounts: &[(String, String)],
     ) -> Result<()> {
         for (dev, path) in mounts {
+            if path.is_empty() {
+                continue; // a template's placeholder drive: never mounted
+            }
             let ro = spec
                 .mounts
                 .iter()
@@ -455,11 +458,16 @@ impl FirecrackerSandbox {
                 .volumes
                 .iter()
                 .map(|(_, path)| {
-                    spec.mounts
-                        .iter()
-                        .find(|m| &m.guest_path == path)
+                    // A template's placeholder drive (no guest path) takes
+                    // the sandbox's workspace volume (review A4).
+                    let found = if path.is_empty() {
+                        spec.mounts.iter().find(|m| m.guest_path == spec.workdir)
+                    } else {
+                        spec.mounts.iter().find(|m| &m.guest_path == path)
+                    };
+                    found
                         .cloned()
-                        .ok_or_else(|| err(format!("restore is missing a volume for {path}")))
+                        .ok_or_else(|| err(format!("restore is missing a volume for {path:?}")))
                 })
                 .collect::<Result<_>>()?;
             let mounts =
@@ -581,8 +589,22 @@ impl FirecrackerSandbox {
         lease: Lease,
     ) -> Result<Self> {
         let sandbox = Self::restore(config, pool, spec, snapshot, lease).await?;
-        let mut agent = sandbox.link.agent();
-        if let Err(error) = Self::configure_guest(&mut agent, &sandbox.spec, &[]).await {
+        let configured = async {
+            // The workspace took the placeholder drive's place: have
+            // Firecracker reopen it so the guest sees its real size, then
+            // mount it (review A4).
+            if !sandbox.mounts.is_empty() {
+                let vmm = sandbox.vm.lock().await;
+                for (i, _) in sandbox.mounts.iter().enumerate() {
+                    vmm.api
+                        .update_drive(&format!("vol{i}"), &format!("/{}", vm::vol_disk(i)))
+                        .await?;
+                }
+            }
+            let mut agent = sandbox.link.agent();
+            Self::configure_guest(&mut agent, &sandbox.spec, &sandbox.mounts).await
+        };
+        if let Err(error) = configured.await {
             let _ = sandbox.kill().await;
             return Err(error);
         }

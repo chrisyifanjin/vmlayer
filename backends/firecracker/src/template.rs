@@ -52,6 +52,8 @@ impl FirecrackerBackend {
             hasher.update(size.to_le_bytes());
             hasher.update(modified.to_le_bytes());
         }
+        // Templates for sandboxes with a workspace carry a placeholder drive.
+        hasher.update([u8::from(!spec.mounts.is_empty())]);
         hasher.update(spec.vcpus.to_le_bytes());
         hasher.update(spec.memory_mib.to_le_bytes());
         hasher.update(format!("{:?}", spec.network));
@@ -144,6 +146,26 @@ impl FirecrackerBackend {
         let mut blank = spec.clone();
         blank.id = SandboxId(format!("template-{}", Uuid::now_v7().simple()));
         blank.mounts.clear();
+        if !spec.mounts.is_empty() {
+            // An empty, never-mounted drive in the workspace's slot: a restore
+            // puts the real volume at the same drive path (review A4).
+            let placeholder = self
+                .config
+                .data_dir
+                .join("templates")
+                .join("placeholder.img");
+            if !placeholder.exists() {
+                tokio::fs::create_dir_all(placeholder.parent().expect("has a parent")).await?;
+                let f = tokio::fs::File::create(&placeholder).await?;
+                f.set_len(1 << 20).await?;
+            }
+            blank.mounts.push(vmlayer_core::Mount {
+                volume: vmlayer_core::VolumeId("placeholder".into()),
+                source: vmlayer_core::VolumeSource::BlockImage { path: placeholder },
+                guest_path: String::new(),
+                read_only: false,
+            });
+        }
         blank.egress = None;
         blank.limits = Default::default();
         blank.env.clear();

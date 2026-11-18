@@ -279,9 +279,15 @@ impl Backend for FirecrackerBackend {
             }
         };
         // A template carries device settings (rate limiters) in its snapshot,
-        // so only sandboxes without volumes or limits can use one.
-        let eligible =
-            self.config.template_snapshots && spec.mounts.is_empty() && spec.limits.is_empty();
+        // so sandboxes with limits cold-boot.
+        // Without volumes, or with exactly one read-write workspace volume,
+        // which takes the template's placeholder drive (review A4).
+        let workspace_only = spec.mounts.len() == 1
+            && spec.mounts[0].guest_path == spec.workdir
+            && !spec.mounts[0].read_only;
+        let eligible = self.config.template_snapshots
+            && (spec.mounts.is_empty() || workspace_only)
+            && spec.limits.is_empty();
         if eligible {
             let path = self.template_ref_path(&spec, &base);
             if let Some(snapshot) = self.cached_template(&path).await {

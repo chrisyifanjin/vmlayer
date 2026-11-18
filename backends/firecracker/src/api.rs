@@ -93,6 +93,24 @@ impl Client {
             .map(|_| ())
     }
 
+    /// Point a drive at its backing file again after boot or restore;
+    /// Firecracker re-reads the size and notifies the guest.
+    pub async fn update_drive(&self, drive_id: &str, path_on_host: &str) -> Result<()> {
+        #[derive(Serialize)]
+        struct DriveUpdate<'a> {
+            drive_id: &'a str,
+            path_on_host: &'a str,
+        }
+        self.patch(
+            &format!("/drives/{drive_id}"),
+            &DriveUpdate {
+                drive_id,
+                path_on_host,
+            },
+        )
+        .await
+    }
+
     pub async fn patch<T: Serialize>(&self, path: &str, body: &T) -> Result<()> {
         let json = serde_json::to_string(body).map_err(|e| err(e.to_string()))?;
         self.expect_ok(hyper::Method::PATCH, path, Some(json))

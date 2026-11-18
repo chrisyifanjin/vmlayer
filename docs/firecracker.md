@@ -36,7 +36,7 @@ host_subnet = "10.200.0.0/16"
 dns = ["1.1.1.1", "8.8.8.8"]
 max_concurrent_boots = 0      # cold boots at once; 0 = one per host CPU
 boot_timeout_secs = 30        # for the guest agent to come up after boot
-template_snapshots = false    # restore volume-less creates from a boot template
+template_snapshots = false    # restore creates (with or without a workspace) from a boot template
 template_limit = 4            # boot templates kept on disk, most recently used first
 prefetch_memory = true        # copy a restored guest's memory in at once (decision 0013)
 ```

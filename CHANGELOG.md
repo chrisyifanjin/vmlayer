@@ -102,6 +102,10 @@ versions; every change to the SDK surface is listed.
   proxies and fencing deadline, so a daemon crash or restart no longer
   interrupts any of them. Install it next to `vmlayerd`
   (`[firecracker] shim_bin` to override).
+- Boot templates now serve sandboxes with a workspace volume (review A4):
+  the template carries a placeholder drive that the real volume replaces
+  on restore. A create with a workspace went from 1.3 s to 0.2-0.3 s on
+  nested KVM.
 - Admission control in every daemon (`[admission]`): creates, restores and
   forks reserve resources up front and are refused with `ResourceExhausted`
   when the host is full. Placement moved into the daemons

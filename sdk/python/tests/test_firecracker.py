@@ -395,6 +395,26 @@ def test_sandboxes_without_a_volume_keep_their_own_identity(fc: vmlayer.Client) 
             time.sleep(8)  # let the background template build finish
 
 
+def test_templates_serve_sandboxes_with_a_workspace(fc: vmlayer.Client) -> None:
+    """Review A4: the fast path also covers the common case, a workspace."""
+    times = []
+    for i in range(3):
+        start = time.perf_counter()
+        with create(fc, env={"N": str(i)}) as sb:  # default anonymous workspace
+            times.append(time.perf_counter() - start)
+            assert sb.exec("echo $N").stdout == f"{i}\n"
+            sb.exec("echo kept > /work/f")
+            assert sb.exec("cat /work/f").stdout == "kept\n"
+            # The guest sees the real volume, not the template's placeholder.
+            size_mb = int(sb.exec("df -m /work | awk 'NR==2 {print $2}'").stdout)
+            assert size_mb > 100, size_mb
+        if i == 0:
+            time.sleep(10)  # the first create builds the template
+    cold, warm = times[0], ", ".join(f"{t:.2f}s" for t in times[1:])
+    print(f"create with workspace: cold {cold:.2f}s, from template {warm}")
+    assert min(times[1:]) < times[0]
+
+
 def test_burst_of_creates_beyond_the_cpu_count(fc: vmlayer.Client) -> None:
     # Twice the vCPUs of the CI runner and the scripts/kvm-vm VM (4 each).
     count = int(os.environ.get("VMLAYER_BURST", "8"))

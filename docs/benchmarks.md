@@ -162,6 +162,17 @@ The existing controller's warm-pool path is faster in this local latency
 probe, at the cost of keeping a pod running. The on-demand template comparison
 below uses the direct Kubernetes API, without a warm pool.
 
+### Templates with a workspace volume
+
+Boot templates first applied only to sandboxes without a volume, which
+real agent sessions rarely are. A template now carries an empty
+placeholder drive in the workspace's slot; a create puts the real volume
+at that drive path, restores, tells Firecracker to reopen the drive (the
+guest sees its real size) and mounts it. On the nested-KVM host, a create
+with the default workspace volume took 1.30 s cold and 0.30 s and 0.20 s
+from the template (`tests/test_firecracker.py`,
+`test_templates_serve_sandboxes_with_a_workspace`).
+
 ### On-demand VMs from an on-disk boot template
 
 An optional Firecracker backend setting, `template_snapshots = true`, now
