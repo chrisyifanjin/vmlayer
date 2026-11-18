@@ -10,7 +10,7 @@
 # Docker backend if /var/run/docker.sock is mounted.
 
 FROM rust:1-bookworm AS build
-RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler musl-tools \
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev musl-tools \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup target add "$(uname -m)-unknown-linux-musl"
 WORKDIR /src
