@@ -1,7 +1,10 @@
 """Two daemons sharing one blob store: host registry, placement, leases.
 
-Both daemons run on this machine with their own data directories and a
-shared directory as the blob store, standing in for two hosts and S3.
+Both daemons run on this machine with their own data directories. The blob
+store is a shared directory, or with ``VMLAYER_TEST_BLOB_STORE`` (for
+example ``s3://vmlayer-test/cluster`` with the ``AWS_*`` settings from
+``scripts/blob-test-stores.sh``) a fresh prefix in object storage, where
+leases and ownership records use real conditional writes.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import _daemon_bin
@@ -31,8 +35,31 @@ def eventually(check: Callable[[], bool], within: float = 15) -> None:
         time.sleep(0.25)
 
 
+class Store:
+    """The blob store test daemons share."""
+
+    def __init__(self, tmp: Path) -> None:
+        base = os.environ.get("VMLAYER_TEST_BLOB_STORE")
+        self.dir = tmp / "blobs"
+        self.url = f"{base.rstrip('/')}/{tmp.name}" if base else f"file://{self.dir}"
+
+    def read_json(self, key: str) -> Any:
+        """A document in the store, or ``None`` if this test cannot read it."""
+        if self.url.startswith("file://"):
+            return json.loads((self.dir / key).read_text())
+        if self.url.startswith("s3://") and shutil.which("aws"):
+            endpoint = os.environ.get("AWS_ENDPOINT")
+            out = subprocess.run(
+                ["aws", "s3", "cp", f"{self.url}/{key}", "-",
+                 *(["--endpoint-url", endpoint] if endpoint else [])],
+                capture_output=True, check=True,
+            )  # fmt: skip
+            return json.loads(out.stdout)
+        return None
+
+
 class Host:
-    def __init__(self, root: Path, name: str, store: Path, extra: list[str] | None = None) -> None:
+    def __init__(self, root: Path, name: str, store: Store, extra: list[str] | None = None) -> None:
         self.dir = root / name
         self.dir.mkdir()
         sock = self.dir / "d.sock"
@@ -41,7 +68,7 @@ class Host:
                 str(_daemon_bin()),
                 "--listen", self.endpoint,
                 "--data-dir", str(self.dir / "data"),
-                "--blob-store", f"file://{store}",
+                "--blob-store", store.url,
                 "--host-id", name,
                 "--advertise", self.endpoint,
                 "--heartbeat-secs", "1",
@@ -76,10 +103,10 @@ class Host:
 
 
 @pytest.fixture(scope="module")
-def hosts(daemon: vmlayer.Client) -> Iterator[tuple[Host, Host, Path]]:
+def hosts(daemon: vmlayer.Client) -> Iterator[tuple[Host, Host, Store]]:
     root = Path(os.environ.get("VMLAYER_TEST_ROOT", Path.home() / ".vmlayer-tests"))
     tmp = Path(tempfile.mkdtemp(prefix="cluster-", dir=root))
-    store = tmp / "blobs"
+    store = Store(tmp)
     a, b = Host(tmp, "host-a", store), Host(tmp, "host-b", store)
     try:
         yield a, b, store
@@ -91,7 +118,7 @@ def hosts(daemon: vmlayer.Client) -> Iterator[tuple[Host, Host, Path]]:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_registry_placement_and_lookup(hosts: tuple[Host, Host, Path]) -> None:
+def test_registry_placement_and_lookup(hosts: tuple[Host, Host, Store]) -> None:
     a, b, _ = hosts
     cluster = Cluster(a.client)
     eventually(lambda: {h.host_id for h in cluster.hosts()} == {"host-a", "host-b"})
@@ -122,7 +149,7 @@ def test_admission_and_placement(daemon: vmlayer.Client) -> None:
     """A full host refuses creates; placement in the daemons routes around it."""
     root = Path(os.environ.get("VMLAYER_TEST_ROOT", Path.home() / ".vmlayer-tests"))
     tmp = Path(tempfile.mkdtemp(prefix="admit-", dir=root))
-    store = tmp / "blobs"
+    store = Store(tmp)
     # host-small admits a single vCPU in total.
     ratio = 1.0 / (os.cpu_count() or 1) + 1e-6
     (tmp / "small.toml").write_text(f"[admission]\nvcpu_overcommit = {ratio}\n")
@@ -153,7 +180,7 @@ def test_admission_and_placement(daemon: vmlayer.Client) -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_lease_allows_one_sandbox_cluster_wide(hosts: tuple[Host, Host, Path]) -> None:
+def test_lease_allows_one_sandbox_cluster_wide(hosts: tuple[Host, Host, Store]) -> None:
     a, b, store = hosts
     first = Sandbox.create(ALPINE, lease="job-1", client=a.client)
     with pytest.raises(vmlayer.VmlayerError, match="held by host-a/"):
@@ -164,13 +191,15 @@ def test_lease_allows_one_sandbox_cluster_wide(hosts: tuple[Host, Host, Path]) -
     # Host B dies without releasing anything. Its host lease (TTL 3 s) stops
     # being renewed, after which host A may take the name over, at a higher
     # epoch so anything B still tried to write would be rejected.
-    owner = json.loads((store / "owners" / "job-1.json").read_text())
-    assert (owner["host"], owner["sandbox_id"]) == ("host-b", second.id)
+    owner = store.read_json("owners/job-1.json")
+    if owner is not None:
+        assert (owner["host"], owner["sandbox_id"]) == ("host-b", second.id)
     b.proc.kill()
     b.proc.wait()
     eventually(lambda: _claim(a), within=15)
-    after = json.loads((store / "owners" / "job-1.json").read_text())
-    assert after["host"] == "host-a" and after["epoch"] > owner["epoch"]
+    after = store.read_json("owners/job-1.json")
+    if owner is not None:
+        assert after["host"] == "host-a" and after["epoch"] > owner["epoch"]
     # A Docker sandbox has no shim to fence it: remove host B's leftover.
     subprocess.run(["docker", "rm", "-f", f"vmlayer-{second.id}"], capture_output=True, check=False)
     b.restart()
@@ -184,7 +213,7 @@ def _claim(host: Host) -> bool:
         return False
 
 
-def test_stopped_host_leaves_the_registry(hosts: tuple[Host, Host, Path]) -> None:
+def test_stopped_host_leaves_the_registry(hosts: tuple[Host, Host, Store]) -> None:
     a, b, _ = hosts
     b.stop()
     eventually(lambda: [h.host_id for h in Cluster(a.client).hosts()] == ["host-a"])

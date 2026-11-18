@@ -63,6 +63,10 @@ pub struct Remote {
     gc_grace: Duration,
     /// Where this handle's manifests live (see [`Remote::files_of`]).
     manifest_dir: String,
+    /// A `file://` directory: no compare-and-swap, so leases and ownership
+    /// records fall back to delete-then-create. Every other store must do
+    /// real conditional writes or the write fails.
+    local_dir: bool,
 }
 
 /// Root of the per-file manifests of sandbox (memory) snapshots.
@@ -96,7 +100,10 @@ impl Remote {
         let _ = display.set_username("");
         let _ = display.set_password(None);
         display.set_query(None);
-        Ok(Self::from_store(Arc::from(store), prefix.as_ref()).with_display(display.to_string()))
+        let mut remote =
+            Self::from_store(Arc::from(store), prefix.as_ref()).with_display(display.to_string());
+        remote.local_dir = parsed.scheme() == "file";
+        Ok(remote)
     }
 
     /// Wrap an existing store; keys are placed under `prefix`.
@@ -108,6 +115,7 @@ impl Remote {
             concurrency: 16,
             gc_grace: Duration::from_secs(24 * 3600),
             manifest_dir: manifest::MANIFEST_DIR.to_string(),
+            local_dir: false,
         }
     }
 

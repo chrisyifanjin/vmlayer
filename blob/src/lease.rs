@@ -8,10 +8,12 @@
 //! `PutMode::Update` in `object_store`). An expired lease can be taken over by
 //! anyone, so a crashed holder blocks its name for at most one TTL.
 //!
-//! A store without conditional updates (a `file://` directory) falls back to
+//! A `file://` directory has no conditional updates and falls back to
 //! delete-then-create for takeover and a checked overwrite for renewal. That
 //! is safe against crashes but not against two takers racing on an expired
 //! lease within milliseconds; use object storage for multi-host deployments.
+//! Any other store that cannot do a conditional update fails the write
+//! instead of silently losing the guarantee.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -21,6 +23,17 @@ use serde::{Deserialize, Serialize};
 use crate::{manifest, Error, Remote, Result};
 
 const LEASE_DIR: &str = "leases";
+
+impl Remote {
+    fn no_cas(&self) -> Error {
+        Error::Config(format!(
+            "{}: this store does not support conditional writes, which leases and \
+             ownership records need (on S3-compatible stores, check that the server \
+             supports If-Match and that aws_conditional_put is not disabled)",
+            self.display
+        ))
+    }
+}
 
 /// An opaque object version for [`Remote::put_if`].
 #[derive(Clone, Debug)]
@@ -120,7 +133,7 @@ impl Remote {
                 | object_store::Error::Precondition { .. },
             ) => Ok(false),
             Err(object_store::Error::NotImplemented { .. })
-                if matches!(mode, PutMode::Update(_)) =>
+                if matches!(mode, PutMode::Update(_)) && self.local_dir =>
             {
                 // No compare-and-swap here: replace by delete-then-create.
                 match self.store.delete(&key).await {
@@ -129,6 +142,7 @@ impl Remote {
                 }
                 Box::pin(self.write_lease(record, Put::Absent)).await
             }
+            Err(object_store::Error::NotImplemented { .. }) => Err(self.no_cas()),
             Err(e) => Err(e.into()),
         }
     }
@@ -289,7 +303,7 @@ impl Remote {
             // No compare-and-swap (a directory store): best effort, see the
             // module docs.
             Err(object_store::Error::NotImplemented { .. })
-                if matches!(mode, PutMode::Update(_)) =>
+                if matches!(mode, PutMode::Update(_)) && self.local_dir =>
             {
                 match self.store.delete(&key).await {
                     Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
@@ -305,6 +319,7 @@ impl Remote {
                     Err(e) => Err(e.into()),
                 }
             }
+            Err(object_store::Error::NotImplemented { .. }) => Err(self.no_cas()),
             Err(e) => Err(e.into()),
         }
     }

@@ -138,6 +138,38 @@ async fn exercise(url: &str) {
     for r in racers.into_iter().flatten() {
         remote.release_lease("it-race", &r.holder).await.unwrap();
     }
+
+    // Ownership records (decision 0014): compare-and-swap with real
+    // conditional writes. Only `file://` may fall back to delete-then-create,
+    // so passing here proves the store honours If-None-Match and If-Match.
+    assert!(remote.put_if("owners", "it", b"1", None).await.unwrap());
+    assert!(
+        !remote.put_if("owners", "it", b"2", None).await.unwrap(),
+        "{url}: create overwrote an existing record"
+    );
+    let (_, v1) = remote.get_versioned("owners", "it").await.unwrap().unwrap();
+    assert!(remote
+        .put_if("owners", "it", b"2", Some(v1.clone()))
+        .await
+        .unwrap());
+    assert!(
+        !remote.put_if("owners", "it", b"3", Some(v1)).await.unwrap(),
+        "{url}: a stale version overwrote a newer record"
+    );
+    let (now, v2) = remote.get_versioned("owners", "it").await.unwrap().unwrap();
+    assert_eq!(now, b"2");
+    // Racing writers on one version: exactly one wins.
+    let wins = futures::future::join_all((0..8u8).map(|i| {
+        let (r, v) = (remote.clone(), v2.clone());
+        async move {
+            r.put_if("owners", "it", &[b'a' + i], Some(v))
+                .await
+                .unwrap()
+        }
+    }))
+    .await;
+    assert_eq!(wins.iter().filter(|w| **w).count(), 1, "{url}: {wins:?}");
+    remote.delete_doc("owners", "it").await.unwrap();
 }
 
 #[tokio::test]

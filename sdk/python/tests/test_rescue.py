@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from test_cluster import Host, eventually
+from test_cluster import Host, Store, eventually
 
 import vmlayer
 from vmlayer import Sandbox
@@ -23,7 +23,7 @@ ALPINE = "alpine:3.20"
 def pair(daemon: vmlayer.Client) -> Iterator[tuple[Host, Host]]:
     root = Path(os.environ.get("VMLAYER_TEST_ROOT", Path.home() / ".vmlayer-tests"))
     tmp = Path(tempfile.mkdtemp(prefix="rescue-", dir=root))
-    store = tmp / "blobs"
+    store = Store(tmp)
     extra = ["--checkpoint-secs", "1"]
     a = Host(tmp, "host-a", store, extra)
     b = Host(tmp, "host-b", store, [*extra, "--rescue"])

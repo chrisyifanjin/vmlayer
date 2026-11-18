@@ -602,7 +602,7 @@ mod rule_tests {
         let r = netns_rules(&lease(), None);
         assert!(r.contains("ip daddr 10.200.0.6 dnat to 172.16.0.2"), "{r}");
         assert!(
-            r.contains("ip daddr { 169.254.0.0/16, 168.63.129.16 } counter drop"),
+            r.contains("ip daddr { 169.254.0.0/16, 168.63.129.16, 100.100.100.200 } counter drop"),
             "{r}"
         );
         assert!(!r.contains("reject"), "{r}");
