@@ -48,10 +48,12 @@ vmlayer treats the host as "a Linux machine", full stop. Concretely:
    for NAT and egress policy, and optionally a CNI plugin. Exposing a port
    means a host port, nothing more. Load balancers and public ingress are the
    operator's business.
-5. **Packaging is cloud-neutral**: one static musl binary plus a systemd unit,
-   and a container image for those who prefer it. The installer probes for
-   KVM, cgroup v2, vsock and reflink support on the data directory, and
-   reports what it found. No Terraform in the core repo; per-cloud examples
+5. **Packaging is cloud-neutral**: release binaries for Linux and macOS plus
+   a systemd unit (`docs/deploy.md`), a container image (`Dockerfile`) and a
+   Kubernetes DaemonSet (`deploy/kubernetes/`). Only the guest agent is a
+   static musl binary, since it runs inside arbitrary images. The installer
+   checks the host for KVM, the `vhost_vsock` and `nbd` modules, cgroup v2
+   and nftables, and reports what it found. No Terraform in the core repo; per-cloud examples
    can live in `examples/` later.
 6. **Host probe at startup.** `Backend::probe()` (already in the trait) decides
    the `Auto` preference list from what the machine actually exposes, never

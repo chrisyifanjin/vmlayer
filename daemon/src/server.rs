@@ -58,7 +58,11 @@ pub async fn serve(
     security: Security,
     shutdown: impl std::future::Future<Output = ()>,
 ) -> anyhow::Result<()> {
-    let routes = crate::grpc::router(daemon);
+    let metrics = daemon.metrics.clone();
+    let routes =
+        tonic::service::Routes::from(crate::grpc::router(daemon).into_axum_router().layer(
+            axum::middleware::from_fn_with_state(metrics, crate::metrics::trace),
+        ));
     match listen {
         Listen::Unix(path) => {
             prepare_socket_path(&path)?;

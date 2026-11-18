@@ -91,6 +91,38 @@ jobs:
         env:
           VMLAYERD_BIN: ${{ github.workspace }}/target/debug/vmlayerd
 
+  container:
+    name: Container image and Kubernetes manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: vmlayerd:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The image's binaries run
+        run: |
+          docker run --rm vmlayerd:ci --version
+          docker run --rm --entrypoint vmlayer vmlayerd:ci --version
+          docker run --rm --entrypoint firecracker vmlayerd:ci --version
+          docker run --rm --entrypoint sh vmlayerd:ci -c 'test -s /opt/vmlayer/kernel/vmlinux && test -x /opt/vmlayer/bin/vmlayer-shim && test -x /opt/vmlayer/bin/vmlayer-guest-agent'
+      - name: The daemon starts and serves with the default config (Docker backend)
+        run: |
+          # The data dir has the same path on the host and in the container,
+          # so the sandboxes' bind mounts resolve on the host's engine.
+          sudo mkdir -p /var/lib/vmlayer
+          docker run -d --name vmlayerd -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /var/lib/vmlayer:/var/lib/vmlayer -v /tmp/vmlayer-run:/run/vmlayer vmlayerd:ci
+          for i in $(seq 1 30); do docker exec vmlayerd vmlayer info && break; sleep 1; done
+          docker exec vmlayerd vmlayer info | grep -E "docker +ready"
+          docker logs vmlayerd | tail -20
+      - name: Kubernetes manifest is valid
+        run: docker run --rm -v "$PWD/deploy/kubernetes":/w ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /w/vmlayer.yaml
+
   typescript:
     name: TypeScript (build, lint, e2e)
     runs-on: ubuntu-latest

@@ -12,6 +12,7 @@ pub mod gateway;
 pub mod grpc;
 pub mod images;
 pub mod manager;
+pub mod metrics;
 pub mod registry;
 pub mod rescue;
 pub mod server;

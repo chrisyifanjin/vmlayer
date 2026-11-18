@@ -1,0 +1,16 @@
+# Default config of the vmlayerd container image. Mount your own at
+# /etc/vmlayer/vmlayerd.toml, or override with flags and VMLAYER_* variables.
+data_dir = "/var/lib/vmlayer"
+listen = "unix:///run/vmlayer/vmlayerd.sock"
+
+[firecracker]
+enabled = true
+firecracker_bin = "/opt/vmlayer/bin/firecracker"
+jailer_bin = "/opt/vmlayer/bin/jailer"
+kernel = "/opt/vmlayer/kernel/vmlinux"
+guest_agent = "/opt/vmlayer/bin/vmlayer-guest-agent"
+template_snapshots = true
+
+[docker]
+# Used when /var/run/docker.sock is mounted and the host has no KVM.
+enabled = true

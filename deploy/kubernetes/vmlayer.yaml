@@ -1,0 +1,116 @@
+# vmlayerd on every KVM node, as a DaemonSet (review T3.2).
+#
+#   kubectl label node <node> vmlayer.dev/kvm=true      # nodes with /dev/kvm
+#   kubectl create namespace vmlayer
+#   kubectl -n vmlayer create secret generic vmlayerd-tokens \
+#     --from-literal=admin="$(openssl rand -hex 32)"
+#   kubectl apply -f deploy/kubernetes/vmlayer.yaml
+#
+# Clients reach each node at tcp://<node-ip>:7070 with the token. Add [tls]
+# to the ConfigMap and a TLS Secret before exposing it beyond the cluster
+# network, and [[auth.tokens]] for tenant-scoped tokens (decision 0020).
+# See deploy/kubernetes/README.md for what each privilege is for.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmlayerd
+  namespace: vmlayer
+data:
+  vmlayerd.toml: |
+    data_dir = "/var/lib/vmlayer"
+    listen = "tcp://0.0.0.0:7070"
+
+    [firecracker]
+    enabled = true
+    firecracker_bin = "/opt/vmlayer/bin/firecracker"
+    jailer_bin = "/opt/vmlayer/bin/jailer"
+    kernel = "/opt/vmlayer/kernel/vmlinux"
+    guest_agent = "/opt/vmlayer/bin/vmlayer-guest-agent"
+    template_snapshots = true
+
+    [docker]
+    enabled = false
+
+    [metrics]
+    listen = "0.0.0.0:9464"
+
+    # Several nodes sharing a bucket (placement, leases, durable snapshots):
+    # set the URL here and uncomment VMLAYER_ADVERTISE below.
+    # [blob_store]
+    # url = "s3://my-bucket/vmlayer"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vmlayerd
+  namespace: vmlayer
+  labels: { app.kubernetes.io/name: vmlayerd }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: vmlayerd }
+  updateStrategy:
+    # Replacing the pod stops the node's microVMs (see README.md): roll one
+    # node at a time, after draining its sandboxes.
+    type: OnDelete
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: vmlayerd }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+    spec:
+      nodeSelector:
+        vmlayer.dev/kvm: "true"
+      # Per-VM network namespaces, nftables rules and veth pairs live in the
+      # node's network; the jailer needs the node's cgroups.
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: modules
+          image: ghcr.io/chrisyifanjin/vmlayerd:latest
+          command: ["sh", "-c", "modprobe nbd nbds_max=64 || echo 'nbd unavailable: lazy restore downloads volumes first'"]
+          securityContext: { privileged: true }
+          volumeMounts:
+            - { name: modules, mountPath: /lib/modules, readOnly: true }
+      containers:
+        - name: vmlayerd
+          image: ghcr.io/chrisyifanjin/vmlayerd:latest
+          args: ["--config", "/etc/vmlayer/vmlayerd.toml"]
+          env:
+            - name: NODE_IP
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+            - name: VMLAYER_HOST_ID
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            - name: VMLAYER_TOKEN
+              valueFrom: { secretKeyRef: { name: vmlayerd-tokens, key: admin } }
+            # - name: VMLAYER_ADVERTISE
+            #   value: "tcp://$(NODE_IP):7070"
+          ports:
+            - { name: grpc, containerPort: 7070 }
+            - { name: metrics, containerPort: 9464 }
+          readinessProbe:
+            tcpSocket: { port: grpc }
+            periodSeconds: 10
+          securityContext:
+            # /dev/kvm, /dev/net/tun, /dev/nbd*, network namespaces, nftables
+            # and the jailer's chroot and cgroups.
+            privileged: true
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/vmlayer }
+            - { name: data, mountPath: /var/lib/vmlayer }
+            - { name: run, mountPath: /run/vmlayer }
+            - { name: netns, mountPath: /run/netns, mountPropagation: Bidirectional }
+            - { name: cgroup, mountPath: /sys/fs/cgroup }
+            - { name: dev, mountPath: /dev }
+      volumes:
+        - { name: config, configMap: { name: vmlayerd } }
+        - { name: data, hostPath: { path: /var/lib/vmlayer, type: DirectoryOrCreate } }
+        - { name: run, hostPath: { path: /run/vmlayer, type: DirectoryOrCreate } }
+        - { name: netns, hostPath: { path: /run/netns, type: DirectoryOrCreate } }
+        - { name: cgroup, hostPath: { path: /sys/fs/cgroup } }
+        - { name: dev, hostPath: { path: /dev } }
+        - { name: modules, hostPath: { path: /lib/modules } }

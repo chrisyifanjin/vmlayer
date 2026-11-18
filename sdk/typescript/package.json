@@ -1,7 +1,7 @@
 {
   "name": "vmlayer",
   "version": "0.1.0",
-  "description": "The layer between agent runtimes and microVMs: one sandbox API over Firecracker, libkrun and Docker.",
+  "description": "The layer between agent runtimes and microVMs: one sandbox API over Firecracker and Docker (libkrun planned).",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/chrisyifanjin/vmlayer", "directory": "sdk/typescript" },
   "type": "module",

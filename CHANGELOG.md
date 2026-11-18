@@ -125,6 +125,13 @@ versions; every change to the SDK surface is listed.
   `AsyncFiles`, `AsyncProcess`) on native `grpc.aio`, sharing request
   building and result parsing with the synchronous SDK. `OutputChunk.text`
   decodes a chunk.
+- Deployment: a container image (`Dockerfile`; published to
+  `ghcr.io/<owner>/vmlayerd` on release), a Kubernetes DaemonSet
+  (`deploy/kubernetes/`), Prometheus metrics (`[metrics] listen`), and an
+  `x-request-id` on every RPC with spans carrying sandbox IDs. Image pulls
+  use Docker credential helpers (`credHelpers`, `credsStore`), so ECR, GCR,
+  Artifact Registry and ACR work with their standard helpers. The installer
+  reports what the host supports.
 - Credential proxy (`[credential_proxy]`, decision 0022): sandboxes
   created with `credentials=[...]` get placeholders and base URLs; the
   daemon swaps in the real secrets on the way out, streaming included.

@@ -158,6 +158,14 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn({
         let daemon = daemon.clone();
         async move {
+            if let Err(e) = vmlayerd::metrics::serve(daemon).await {
+                tracing::error!(error = %format!("{e:#}"), "metrics endpoint stopped");
+            }
+        }
+    });
+    tokio::spawn({
+        let daemon = daemon.clone();
+        async move {
             if let Err(e) = vmlayerd::credentials::serve(daemon).await {
                 tracing::error!(error = %format!("{e:#}"), "credential proxy stopped");
             }

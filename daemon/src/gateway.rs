@@ -210,7 +210,16 @@ struct Gateway {
 }
 
 impl Gateway {
-    async fn handle(self: Arc<Self>, mut req: Request<Incoming>) -> Response<Body> {
+    async fn handle(self: Arc<Self>, req: Request<Incoming>) -> Response<Body> {
+        let resp = self.clone().route(req).await;
+        self.daemon.metrics.inc(
+            "vmlayer_gateway_requests_total",
+            &[("status", resp.status().as_str())],
+        );
+        resp
+    }
+
+    async fn route(self: Arc<Self>, mut req: Request<Incoming>) -> Response<Body> {
         let host = req
             .headers()
             .get(header::HOST)

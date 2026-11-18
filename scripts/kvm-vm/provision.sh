@@ -21,32 +21,7 @@ rustup target add "$ARCH-unknown-linux-musl" >/dev/null
 sudo mkdir -p "$PREFIX/bin" "$PREFIX/kernel"
 sudo chown -R "$(id -u):$(id -g)" "$PREFIX"
 
-# Firecracker + jailer from the official release.
-if [ ! -x "$PREFIX/bin/firecracker" ]; then
-  rel="https://github.com/firecracker-microvm/firecracker/releases"
-  ver="${FIRECRACKER_VERSION:-$(basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$rel/latest")")}"
-  echo "firecracker $ver"
-  curl -fsSL "$rel/download/$ver/firecracker-$ver-$ARCH.tgz" | tar -xz -C /tmp
-  cp "/tmp/release-$ver-$ARCH/firecracker-$ver-$ARCH" "$PREFIX/bin/firecracker"
-  cp "/tmp/release-$ver-$ARCH/jailer-$ver-$ARCH" "$PREFIX/bin/jailer"
-  echo "$ver" > "$PREFIX/firecracker.version"
-fi
-
-# Guest kernel from Firecracker's own CI bucket. Kernels are published per
-# release line and not for every line, so take the newest line that has one.
-if [ ! -f "$PREFIX/kernel/vmlinux" ]; then
-  bucket="http://spec.ccfc.min.s3.amazonaws.com"
-  key=""
-  for line in $(curl -fsSL "$bucket/?prefix=firecracker-ci/&delimiter=/&list-type=2" \
-      | grep -oE 'firecracker-ci/v[0-9]+\.[0-9]+/' | sort -rV); do
-    key="$(curl -fsSL "$bucket/?prefix=${line}$ARCH/vmlinux-&list-type=2" \
-      | grep -oE "${line}$ARCH/vmlinux-[0-9]+\.[0-9]+\.[0-9]+" | sort -V | tail -1 || true)"
-    [ -n "$key" ] && break
-  done
-  [ -n "$key" ] || { echo "no guest kernel found in $bucket" >&2; exit 1; }
-  echo "kernel $key"
-  curl -fsSL "https://s3.amazonaws.com/spec.ccfc.min/$key" -o "$PREFIX/kernel/vmlinux"
-fi
+PREFIX="$PREFIX" bash "$REPO/scripts/fetch-firecracker.sh"
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/target}"
 cd "$REPO"

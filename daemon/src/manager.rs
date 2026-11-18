@@ -98,6 +98,7 @@ pub struct Daemon {
     live: RwLock<HashMap<SandboxId, Arc<Live>>>,
     pub(crate) cluster: crate::cluster::ClusterState,
     pub(crate) admission: Arc<crate::admission::Admission>,
+    pub metrics: Arc<crate::metrics::Metrics>,
 }
 
 pub(crate) fn store_err(e: StoreError) -> Error {
@@ -139,6 +140,7 @@ impl Daemon {
             live: RwLock::new(HashMap::new()),
             cluster: Default::default(),
             admission: Default::default(),
+            metrics: Default::default(),
         });
         d.reattach().await;
         d.start_host_lease();
@@ -347,7 +349,31 @@ impl Daemon {
             .any(|s| s.workspace_volume_id.as_ref() == Some(vol))
     }
 
-    pub async fn create(self: &Arc<Self>, mut p: CreateParams) -> Result<SandboxView> {
+    /// Names of the backends of the sandboxes running here, one per sandbox.
+    pub async fn live_backends(&self) -> Vec<String> {
+        self.live
+            .read()
+            .await
+            .values()
+            .map(|l| l.backend.clone())
+            .collect()
+    }
+
+    pub async fn create(self: &Arc<Self>, p: CreateParams) -> Result<SandboxView> {
+        let started = std::time::Instant::now();
+        let backend = self
+            .registry
+            .pick(&p.backend)
+            .map(|(name, _)| name)
+            .unwrap_or_else(|_| p.backend.clone());
+        let result = self.create_inner(p).await;
+        self.metrics
+            .operation("create", &backend, started, result.is_ok());
+        result
+    }
+
+    #[tracing::instrument(skip_all, fields(sandbox = tracing::field::Empty))]
+    async fn create_inner(self: &Arc<Self>, mut p: CreateParams) -> Result<SandboxView> {
         let (backend_name, entry) = self.registry.pick(&p.backend)?;
         if !p.credentials.is_empty() {
             // Placeholders and proxy URLs only; the secrets stay in the
@@ -396,6 +422,7 @@ impl Daemon {
         let _ticket = self.admit(vcpus, u64::from(memory_mib)).await?;
         let resolved = entry.resolver.resolve(&p.image).await?;
         let id = SandboxId(new_id("sb"));
+        tracing::Span::current().record("sandbox", tracing::field::display(&id));
         // The image's WORKDIR is only a useful workspace mount point when it
         // is a real directory; `/` or unset falls back to the daemon default.
         let workdir = p
@@ -517,6 +544,24 @@ impl Daemon {
     }
 
     pub async fn restore(
+        self: &Arc<Self>,
+        snapshot_id: &SnapshotId,
+        ttl: Option<Duration>,
+        labels: BTreeMap<String, String>,
+    ) -> Result<SandboxView> {
+        let started = std::time::Instant::now();
+        let result = self.restore_inner(snapshot_id, ttl, labels).await;
+        let backend = match &result {
+            Ok(v) => v.row.backend.clone(),
+            Err(_) => "unknown".into(),
+        };
+        self.metrics
+            .operation("restore", &backend, started, result.is_ok());
+        result
+    }
+
+    #[tracing::instrument(skip_all, fields(snapshot = %snapshot_id))]
+    async fn restore_inner(
         self: &Arc<Self>,
         snapshot_id: &SnapshotId,
         ttl: Option<Duration>,
@@ -669,6 +714,7 @@ impl Daemon {
 
     // -- lifecycle ----------------------------------------------------------
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn kill(&self, id: &SandboxId) -> Result<()> {
         let live = self.live.write().await.remove(id);
         if let Some(live) = &live {
@@ -731,6 +777,7 @@ impl Daemon {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn pause(&self, id: &SandboxId) -> Result<()> {
         let live = self.live(id).await?;
         live.handle.pause().await?;
@@ -739,6 +786,7 @@ impl Daemon {
             .map_err(store_err)
     }
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn resume(&self, id: &SandboxId) -> Result<()> {
         let live = self.live(id).await?;
         live.handle.resume().await?;
@@ -747,6 +795,7 @@ impl Daemon {
             .map_err(store_err)
     }
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn snapshot(
         &self,
         id: &SandboxId,
@@ -890,6 +939,20 @@ impl Daemon {
     /// disks match the memory image exactly; then the parent resumes and the
     /// children are restored from the snapshot, which is discarded at the end.
     pub async fn fork(self: &Arc<Self>, id: &SandboxId, count: u32) -> Result<Vec<SandboxView>> {
+        let started = std::time::Instant::now();
+        let backend = self
+            .live(id)
+            .await
+            .map(|l| l.backend.clone())
+            .unwrap_or_else(|_| "unknown".into());
+        let result = self.fork_inner(id, count).await;
+        self.metrics
+            .operation("fork", &backend, started, result.is_ok());
+        result
+    }
+
+    #[tracing::instrument(skip_all, fields(sandbox = %id, count))]
+    async fn fork_inner(self: &Arc<Self>, id: &SandboxId, count: u32) -> Result<Vec<SandboxView>> {
         let live = self.live(id).await?;
         let row = self.store.get_sandbox(id).map_err(store_err)?;
         let entry = self
@@ -1029,6 +1092,7 @@ impl Daemon {
 
     // -- network -------------------------------------------------------------
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn expose(&self, id: &SandboxId, port: u16) -> Result<Endpoint> {
         let live = self.live(id).await?;
         let ep = live.handle.expose(port).await?;
@@ -1054,6 +1118,7 @@ impl Daemon {
         Ok((ep, self.cfg.gateway.url(id, port), token))
     }
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn unexpose(&self, id: &SandboxId, port: u16) -> Result<()> {
         let live = self.live(id).await?;
         self.store.delete_route(id, port).map_err(store_err)?;
@@ -1064,6 +1129,7 @@ impl Daemon {
 
     // -- processes -----------------------------------------------------------
 
+    #[tracing::instrument(skip_all, fields(sandbox = %id))]
     pub async fn exec(&self, id: &SandboxId, req: ExecRequest) -> Result<(Arc<Live>, Arc<Entry>)> {
         let live = self.live(id).await?;
         let timeout = req.timeout;

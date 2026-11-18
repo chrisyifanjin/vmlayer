@@ -12,7 +12,8 @@ class Backend(str, enum.Enum):
     """Which isolation engine runs the sandbox.
 
     ``AUTO`` picks the strongest backend available on the host: Firecracker on
-    Linux with KVM, libkrun on macOS, Docker otherwise.
+    Linux with KVM, Docker otherwise. ``LIBKRUN`` is reserved for the planned
+    macOS microVM backend.
     """
 
     AUTO = "auto"

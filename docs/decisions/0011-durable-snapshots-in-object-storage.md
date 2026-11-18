@@ -82,8 +82,8 @@ metadata, IRSA, workload and managed identity). Chosen over three SDKs.
 ## Consequences
 
 - Restore downloads the whole snapshot before the volume is usable. For a
-  large workspace this is the main cost. **Lazy restore** is the planned
-  next step: serve the volume to the VM from the manifest through a
+  large workspace this is the main cost. **Lazy restore** was the planned
+  next step, since built (decision 0016): serve the volume to the VM from the manifest through a
   user-space block device (ublk or NBD) that fetches chunks on first read
   and writes to a local copy-on-write overlay. The manifest already records
   everything that needs (fixed offsets, per-chunk hashes).

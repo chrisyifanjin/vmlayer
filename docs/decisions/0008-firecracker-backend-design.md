@@ -105,5 +105,6 @@ order the caller lists them.
   snapshots, restore and fork, including `bench/stress_snapshots.py` with a
   process writing to the volume throughout. Bare-metal x86_64 has not been
   run yet.
-- The OCI image pipeline (roadmap step 3) will produce the ext4 root images
-  this backend consumes; until then the image reference is a path to one.
+- The OCI image pipeline (roadmap step 3, since built: decision 0009)
+  produces the ext4 root images this backend consumes. A host path to an
+  ext4 file is accepted only from `[firecracker] image_dirs` (review T1.2).

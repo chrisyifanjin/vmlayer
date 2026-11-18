@@ -113,12 +113,14 @@ impl Daemon {
             used_mem + inflight.1 + memory_mib,
         );
         if cap_mem > 0 && mem > cap_mem {
+            self.metrics.inc("vmlayer_admission_refusals_total", &[]);
             return Err(Error::ResourceExhausted(format!(
                 "host is full: {memory_mib} MiB requested, {} of {cap_mem} allocatable MiB in use",
                 used_mem + inflight.1
             )));
         }
         if cap_cpu > 0 && cpu > cap_cpu {
+            self.metrics.inc("vmlayer_admission_refusals_total", &[]);
             return Err(Error::ResourceExhausted(format!(
                 "host is full: {vcpus} vCPUs requested, {} of {cap_cpu} allocatable in use",
                 used_cpu + inflight.0

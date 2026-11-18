@@ -21,9 +21,11 @@ pub struct Config {
     pub gateway: crate::gateway::GatewayConfig,
     /// Credentials injected on the egress path (decision 0022).
     pub credential_proxy: crate::credentials::CredentialProxyConfig,
+    /// Prometheus endpoint.
+    pub metrics: crate::metrics::MetricsConfig,
     pub data_dir: PathBuf,
     /// Backend used for `backend = "auto"`; `None` picks the strongest
-    /// available (firecracker, libkrun, docker).
+    /// available (firecracker, then docker).
     pub default_backend: Option<String>,
     pub defaults: Defaults,
     pub docker: DockerConfig,
@@ -260,6 +262,7 @@ impl Default for Config {
             tls: Default::default(),
             gateway: Default::default(),
             credential_proxy: Default::default(),
+            metrics: Default::default(),
             data_dir: default_data_dir(),
             default_backend: None,
             defaults: Defaults::default(),

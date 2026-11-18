@@ -47,27 +47,32 @@ sees recent output. The guest-agent-based backends buffer in the guest
 instead.
 
 **Observability: `tracing` with JSON or pretty output, a `/healthz`-equivalent
-`System.Health` RPC, and per-RPC spans carrying sandbox id.** Metrics
-(Prometheus) come with the cluster layer, not v1.
+`System.Health` RPC, and per-RPC spans.** Every RPC runs in a span with its
+method and a request ID (the caller's `x-request-id` or a new one, echoed
+back in the response); sandbox operations open child spans carrying the
+sandbox ID. Prometheus metrics are served on `[metrics] listen` (RPC counts
+and latency, sandbox operations by backend and result, admission refusals,
+gateway and credential proxy requests, live sandboxes and allocated
+resources).
 
 **Config: one TOML file plus flags via `clap`; flags override file.** Defaults
 work with no file at all. Data dir defaults to `/var/lib/vmlayer` when root,
 `~/.vmlayer` otherwise.
 
 **Image resolution for Docker: pass-through.** The Docker backend accepts
-`Rootfs::EngineImage` and lets dockerd pull. The OCI→ext4/EROFS pipeline
-(for Firecracker and libkrun) is step 4 work and will produce the other
-`Rootfs` variants; the Docker backend ignores them with `Unsupported`.
+`Rootfs::EngineImage` and lets dockerd pull. The OCI→ext4 pipeline for
+microVM backends (decision 0009) produces the other `Rootfs` variants; the
+Docker backend refuses them with `Unsupported`.
 
 ## Layout
 
 ```
-proto/            vmlayer/v1/*.proto, Rust crate vmlayer-proto (tonic-build)
+proto/            vmlayer/v1/*.proto, Rust crate vmlayer-proto (tonic-prost-build)
 daemon/           vmlayerd binary: server, store, volume store, backend registry
 backends/docker/  vmlayer-backend-docker
 backends/firecracker/  vmlayer-backend-firecracker (Linux only)
 guest-agent/      static Linux binary, vsock server
-sdk/python/       generated stubs under vmlayer/_proto/, client in vmlayer/_client/
+sdk/python/       generated stubs under vmlayer/v1/, client modules in vmlayer/
 cli/              `vmlayer` command: thin wrapper over the gRPC API for humans
 ```
 

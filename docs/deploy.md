@@ -191,6 +191,51 @@ vmlayer --endpoint tls://10.0.0.5:7443 --token "$TOKEN" \
   --tls-ca ca.pem --tls-cert client.pem --tls-key client.key info
 ```
 
+## Private registries
+
+The Firecracker backend pulls images itself and finds credentials the way
+`docker pull` does: in `$DOCKER_CONFIG/config.json` (else
+`~/.docker/config.json` of the daemon's user, `/root` under systemd), a
+registry's `credHelpers` entry first, then its inline `auths`, then
+`credsStore`. Cloud registries hand out short-lived credentials through
+helpers, so install the helper and name it:
+
+```json
+{
+  "credHelpers": {
+    "123456789012.dkr.ecr.us-east-1.amazonaws.com": "ecr-login",
+    "us-docker.pkg.dev": "gcloud",
+    "myregistry.azurecr.io": "acr-env"
+  }
+}
+```
+
+The helpers (`docker-credential-ecr-login`, `docker-credential-gcloud`,
+`docker-credential-acr-env`) take credentials from the instance's cloud
+identity (instance profile, service account, managed identity). The Docker
+backend lets the Docker engine pull, with the engine's own configuration.
+
+## Observability
+
+- `[metrics] listen = "127.0.0.1:9464"` serves Prometheus metrics at
+  `/metrics`: RPC counts and latency by method and status code, sandbox
+  creates, restores and forks by backend and result, admission refusals,
+  gateway and credential proxy requests, live sandboxes, and allocated and
+  allocatable resources.
+- Every RPC is logged in a span with its method and a request ID. Send
+  `x-request-id` to choose the ID, or read it from the response headers to
+  find a call in the logs. `--log-format json` emits one JSON object per
+  line for log pipelines.
+
+## Containers and Kubernetes
+
+`Dockerfile` builds an image with the daemon, CLI, shim, guest agent,
+Firecracker, jailer and a guest kernel; releases publish it as
+`ghcr.io/chrisyifanjin/vmlayerd`. `deploy/kubernetes/vmlayer.yaml` runs it
+as a DaemonSet on KVM nodes; [its README](../deploy/kubernetes/README.md)
+explains each privilege and how to roll it without stopping sandboxes
+unexpectedly.
+
 ## Port gateway
 
 Sandboxes can publish ports at `https://<port>-<sandbox-id>.<domain>`,

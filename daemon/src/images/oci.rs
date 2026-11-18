@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use oci_client::client::{ClientConfig, ClientProtocol};
-use oci_client::secrets::RegistryAuth;
 use oci_client::{Client, Reference};
 use serde::{Deserialize, Serialize};
 use vmlayer_core::Result;
@@ -86,42 +85,8 @@ pub struct Pulled {
     pub layers: Vec<Layer>,
 }
 
-/// Registry credentials from `~/.docker/config.json`, if any for this registry.
-fn docker_config_auth(registry: &str) -> RegistryAuth {
-    let Some(home) = std::env::var_os("HOME") else {
-        return RegistryAuth::Anonymous;
-    };
-    let path = std::path::PathBuf::from(home)
-        .join(".docker")
-        .join("config.json");
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return RegistryAuth::Anonymous;
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return RegistryAuth::Anonymous;
-    };
-    let auths = json.get("auths").and_then(|a| a.as_object());
-    let keys = [
-        registry.to_string(),
-        format!("https://{registry}"),
-        format!("https://{registry}/v1/"),
-    ];
-    let entry = auths.and_then(|a| keys.iter().find_map(|k| a.get(k)));
-    let Some(b64) = entry.and_then(|e| e.get("auth")).and_then(|v| v.as_str()) else {
-        return RegistryAuth::Anonymous;
-    };
-    use base64_decode as decode;
-    match decode(b64).and_then(|s| {
-        s.split_once(':')
-            .map(|(u, p)| (u.to_string(), p.to_string()))
-    }) {
-        Some((u, p)) => RegistryAuth::Basic(u, p),
-        None => RegistryAuth::Anonymous,
-    }
-}
-
 /// Minimal standard base64 decoder (no padding tricks needed for docker auth).
-fn base64_decode(s: &str) -> Option<String> {
+pub(super) fn base64_decode(s: &str) -> Option<String> {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = Vec::new();
     let mut buf = 0u32;
@@ -176,7 +141,7 @@ pub async fn pull(reference: &str) -> Result<Pulled> {
         ..Default::default()
     };
     let client = Client::new(config);
-    let auth = docker_config_auth(reference.resolve_registry());
+    let auth = super::auth::registry_auth(reference.resolve_registry()).await;
     let accepted = vec![
         oci_client::manifest::IMAGE_LAYER_MEDIA_TYPE,
         oci_client::manifest::IMAGE_LAYER_GZIP_MEDIA_TYPE,

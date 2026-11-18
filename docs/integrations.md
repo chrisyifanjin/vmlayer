@@ -165,7 +165,8 @@ twice more:
 ## What this changes about priorities
 
 - `expose` and `entrypoint` are on the critical path, not nice-to-haves.
-  Networking moves earlier in roadmap step 4.
+  (Both shipped; agents that run whole inside the sandbox now also get the
+  authenticated HTTPS gateway, decision 0021.)
 - A snapshot of a sandbox with a warmed kernel gateway or agent-server is the
   single most valuable artifact for every one of these runtimes. Step 2
   (snapshot/restore) is the right thing to prove early.

@@ -1,6 +1,7 @@
 //! The image pipeline for microVM backends: OCI reference → cached ext4
 //! root image plus the image config. See ADR 0009.
 
+mod auth;
 mod ext4;
 mod oci;
 mod unpack;

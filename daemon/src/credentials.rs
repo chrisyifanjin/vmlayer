@@ -211,6 +211,27 @@ struct Proxy {
 
 impl Proxy {
     async fn handle(self: Arc<Self>, req: Request<Incoming>) -> Response<Body> {
+        let credential = req
+            .uri()
+            .path()
+            .trim_start_matches('/')
+            .split('/')
+            .next()
+            .filter(|n| self.daemon.cfg.credential_proxy.get(n).is_some())
+            .unwrap_or("unknown")
+            .to_string();
+        let resp = self.clone().forward(req).await;
+        self.daemon.metrics.inc(
+            "vmlayer_credential_proxy_requests_total",
+            &[
+                ("credential", &credential),
+                ("status", resp.status().as_str()),
+            ],
+        );
+        resp
+    }
+
+    async fn forward(self: Arc<Self>, req: Request<Incoming>) -> Response<Body> {
         let path = req.uri().path().to_string();
         let (name, rest) = path
             .trim_start_matches('/')

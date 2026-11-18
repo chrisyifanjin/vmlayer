@@ -26,4 +26,19 @@ bins="$tmp/vmlayerd $tmp/vmlayer"
 if [ -w "$dir" ]; then install -m 0755 $bins "$dir/"; else sudo install -m 0755 $bins "$dir/"; fi
 rm -rf "$tmp"
 echo "installed vmlayerd, vmlayer and vmlayer-shim $VMLAYER_VERSION to $dir"
-echo "start the daemon with: vmlayerd   (see docs/deploy.md for systemd)"
+
+# What this host can run. Nothing here changes the host.
+if [ "$os" = Linux ]; then
+  check() { if eval "$2" >/dev/null 2>&1; then echo "  ok    $1"; else echo "  no    $1${3:+: $3}"; fi; }
+  echo "host checks:"
+  check "/dev/kvm (Firecracker backend)" "test -r /dev/kvm -a -w /dev/kvm" \
+    "no KVM; the Docker backend still works (enable nested virtualization or use bare metal)"
+  check "vhost_vsock module (guest agent link)" "test -e /dev/vhost-vsock || modinfo vhost_vsock" "modprobe vhost_vsock"
+  check "nbd module (lazy volume restore)" "test -e /dev/nbd0 || modinfo nbd" \
+    "volumes from the blob store are downloaded before attaching"
+  check "cgroup v2 (jailer limits)" "test -f /sys/fs/cgroup/cgroup.controllers"
+  check "nftables (microVM networking)" "command -v nft" "install the nftables package"
+  check "mkfs.ext4 (images and volumes)" "command -v mkfs.ext4" "install e2fsprogs"
+  check "docker (Docker backend)" "docker info" "optional"
+fi
+echo "start the daemon with: vmlayerd   (see docs/deploy.md for systemd, a container image and Kubernetes)"

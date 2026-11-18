@@ -6,7 +6,8 @@
 **The layer between agent runtimes and microVMs.**
 
 One sandbox API for running untrusted agent code: Firecracker in production,
-libkrun on your Mac, Docker in CI. Snapshot, restore and fork as first-class
+Docker on your laptop and in CI (a libkrun backend for macOS microVMs is
+planned). Snapshot, restore and fork as first-class
 operations. Not a hosted product: a daemon plus SDKs you embed in your own
 platform.
 
@@ -46,7 +47,7 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Framework adapters: mini-swe-agent `Environment`, AutoGen `CodeExecutor` | working, tested against the real frameworks ([docs](docs/integrations.md)) |
 | Deep Agents `BaseSandbox`, OpenHands `RemoteWorkspace` | working in local Firecracker experiments ([docs](docs/integrations.md)) |
 | E2B compatibility: unmodified E2B SDK code runs against vmlayer by changing two addresses (`vmlayer-e2b-server`), plus a source-level facade (`vmlayer.e2b`) | working, tested with the real E2B Python SDK ([mapping](docs/e2b-mapping.md), [design](docs/decisions/0017-e2b-wire-compatibility.md)) |
-| Several hosts without a scheduler service: host registry and leases in the blob store, placement in the SDK (`vmlayer.Cluster`), single-instance sandboxes (`lease=`) with fencing | working, tested end to end with two daemons ([usage](docs/usage.md#several-hosts), [design](docs/decisions/0014-hosts-placement-and-leases.md)) |
+| Several hosts without a scheduler service: host registry, host leases and ownership epochs in the blob store, placement and admission control in the daemons (`vmlayer.Cluster` in Python and TypeScript), single-instance sandboxes (`lease=`) fenced by a per-VM shim | working, tested end to end with two daemons ([usage](docs/usage.md#several-hosts), [design](docs/decisions/0014-hosts-placement-and-leases.md)) |
 | Automatic rescheduling from dead hosts: periodic workspace checkpoints, any daemon with `--rescue` recreates the sandbox (`reschedule=True`) | working, tested end to end by killing a host ([design](docs/decisions/0015-rescheduling.md)) |
 | Lazy restore: Firecracker volumes from the blob store are usable at once, fetched on demand through NBD | working, tested end to end on KVM ([design](docs/decisions/0016-lazy-volume-restore.md)) |
 | asyncio client (`vmlayer.aio`, native `grpc.aio`) | working, tested against the daemon |
@@ -55,6 +56,7 @@ with Sandbox.create("node:22", workspace=repo) as sb:
 | Run commands as another user (`exec(user=...)`) | working on Docker and Firecracker |
 | API keys that never enter the sandbox: a credential proxy swaps placeholders for real secrets on the way out (`credentials=[...]`) | working on Docker and Firecracker ([usage](docs/usage.md#api-keys-without-giving-them-to-the-sandbox), [design](docs/decisions/0022-credential-proxy.md)) |
 | Exposed ports on an authenticated HTTPS gateway (`expose(port, gateway=True)`): `https://<port>-<sandbox>.<domain>`, a token per port, WebSockets | working, tested end to end ([deploy](docs/deploy.md#port-gateway), [design](docs/decisions/0021-port-gateway.md)) |
+| Deployment: release binaries, a container image (`Dockerfile`), a Kubernetes DaemonSet, Prometheus metrics, per-request IDs in logs | image and manifest built and validated in CI ([deploy](docs/deploy.md), [kubernetes](deploy/kubernetes/README.md)) |
 | More adapters (ADK, SWE-ReX, smolagents), E2B PTY and watchers | planned |
 
 The API is designed for all backends; what a backend cannot do it refuses
@@ -155,8 +157,8 @@ restore each new VM from an on-disk, data-free boot template. This is optional
      ┌───────────┼─────────────┐
      ▼           ▼             ▼
  firecracker   libkrun       docker
- Linux + KVM   macOS, Linux  anywhere
- production    laptop        CI
+ Linux + KVM   (planned)     anywhere
+ production    macOS         laptop, CI
      │
      ▼
  guest agent (vsock): exec, files, pty, mounts
@@ -192,9 +194,9 @@ backend implements). Every non-obvious choice has a record in
 |---|---|---|---|
 | Runs on | Linux + KVM | macOS (Apple Silicon), Linux | Anywhere dockerd runs |
 | Isolation | microVM, own kernel | microVM, own kernel | container |
-| Memory snapshot | yes | yes | no (filesystem only) |
+| Memory snapshot | yes | planned | no (filesystem only) |
 | Fork | yes | planned | no |
-| Status | working on aarch64 nested KVM | planned | **working** |
+| Status | **working**; CI on x86_64 KVM, development on aarch64 nested KVM | planned | **working** |
 
 `Backend.AUTO` picks the strongest one the host supports.
 
@@ -231,6 +233,7 @@ cli/                vmlayer command
 sdk/python/         Python SDK and end-to-end tests
 sdk/typescript/     TypeScript SDK and end-to-end tests
 examples/           runnable examples
+deploy/             container config and Kubernetes DaemonSet (Dockerfile at the root)
 docs/decisions/     design records     docs/research.md   papers that shaped it
 docs/integrations.md  six agent runtimes mapped onto the API
 ```

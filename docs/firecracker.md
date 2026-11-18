@@ -64,7 +64,8 @@ Sandbox.create("python:3.12", backend=Backend.FIRECRACKER)
 ```
 
 The first time an image is used the daemon pulls its layers itself (no
-Docker engine needed; credentials come from `~/.docker/config.json`), applies
+Docker engine needed; credentials are resolved as `docker pull` does, see
+[deploy.md](deploy.md#private-registries)), applies
 them with OCI whiteout rules, and builds one ext4 image with `mkfs.ext4 -d`,
 cached under `<data>/images/<digest>/rootfs.ext4`. Every sandbox then boots
 from a copy-on-write clone of that file. Pre-pull to keep the first create

@@ -16,7 +16,7 @@ use vmlayer_proto::v1 as pb;
 #[command(
     name = "vmlayer",
     version,
-    about = "Sandboxes for agents: Firecracker, libkrun or Docker behind one API."
+    about = "Sandboxes for agents: Firecracker or Docker behind one API."
 )]
 struct Cli {
     /// Daemon endpoint: unix:///path, tcp://host:port or tls://host:port. Defaults to the
