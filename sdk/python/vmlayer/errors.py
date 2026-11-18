@@ -18,6 +18,11 @@ class DaemonUnavailable(VmlayerError):
     """No daemon answers at the endpoint. Is ``vmlayerd`` running?"""
 
 
+class ResourceExhausted(VmlayerError):
+    """The daemon refused because its host is full (admission control), or
+    no host in a cluster has room."""
+
+
 class InvalidArgument(VmlayerError):
     """The daemon rejected the request's arguments."""
 

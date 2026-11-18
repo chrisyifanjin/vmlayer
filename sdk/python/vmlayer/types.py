@@ -180,6 +180,9 @@ class HostInfo:
     sandbox_ids: tuple[str, ...]
     labels: dict[str, str]
     updated_at: float
+    allocatable_vcpus: int = 0
+    """What the host admits in total by its own limits (0 = unlimited)."""
+    allocatable_memory_mb: int = 0
 
 
 @dataclass(frozen=True)

@@ -70,6 +70,11 @@ pub struct HostDoc {
     pub memory_mib: u64,
     pub allocated_vcpus: u32,
     pub allocated_memory_mib: u64,
+    /// What this host admits in total (0 = unlimited), per its own config.
+    #[serde(default)]
+    pub allocatable_vcpus: u32,
+    #[serde(default)]
+    pub allocatable_memory_mib: u64,
     pub sandboxes: Vec<String>,
     #[serde(default)]
     pub labels: BTreeMap<String, String>,
@@ -110,18 +115,6 @@ pub fn default_host_id() -> String {
         .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
         .unwrap_or_default();
     sanitize(name.trim())
-}
-
-fn host_memory_mib() -> u64 {
-    std::fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|m| {
-            m.lines()
-                .find(|l| l.starts_with("MemTotal:"))
-                .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
-        })
-        .map(|kib| kib / 1024)
-        .unwrap_or(0)
 }
 
 impl Daemon {
@@ -415,9 +408,11 @@ impl Daemon {
                 .map(|(n, _)| n.clone())
                 .collect(),
             cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
-            memory_mib: host_memory_mib(),
+            memory_mib: crate::admission::host_memory_mib(),
             allocated_vcpus: vcpus,
             allocated_memory_mib: memory,
+            allocatable_vcpus: self.allocatable().0,
+            allocatable_memory_mib: self.allocatable().1,
             sandboxes: ids,
             labels: self.cfg.cluster.labels.clone(),
             updated_at: now_ms(),
@@ -459,6 +454,54 @@ impl Daemon {
         if let (Some(remote), Some(_)) = (self.volumes.remote(), &self.cfg.cluster.advertise) {
             let _ = remote.delete_doc(HOSTS_DIR, &self.host_id()).await;
         }
+    }
+
+    /// Pick a host for a new sandbox (review A3): fresh heartbeat, the
+    /// backend, matching labels, room for the request by the host's own
+    /// admission limits; most free memory first, then fewest sandboxes.
+    /// The chosen host still admits or refuses the create itself.
+    pub async fn place(
+        &self,
+        backend: &str,
+        vcpus: u32,
+        memory_mib: u64,
+        placement: &BTreeMap<String, String>,
+        exclude: &[String],
+    ) -> vmlayer_core::Result<HostDoc> {
+        let hosts = self.list_hosts().await?;
+        let fits = |h: &HostDoc| {
+            let backend_ok = if backend.is_empty() || backend == "auto" {
+                !h.backends.is_empty()
+            } else {
+                h.backends.iter().any(|b| b == backend)
+            };
+            let free_mem = h
+                .allocatable_memory_mib
+                .saturating_sub(h.allocated_memory_mib);
+            let free_cpu = h.allocatable_vcpus.saturating_sub(h.allocated_vcpus);
+            backend_ok
+                && !exclude.contains(&h.host_id)
+                && placement.iter().all(|(k, v)| h.labels.get(k) == Some(v))
+                && (h.allocatable_memory_mib == 0 || free_mem >= memory_mib)
+                && (h.allocatable_vcpus == 0 || free_cpu >= vcpus)
+        };
+        hosts
+            .into_iter()
+            .filter(fits)
+            .max_by_key(|h| {
+                let free = if h.allocatable_memory_mib == 0 {
+                    u64::MAX / 2
+                } else {
+                    h.allocatable_memory_mib.saturating_sub(h.allocated_memory_mib)
+                };
+                (free, std::cmp::Reverse(h.sandboxes.len()))
+            })
+            .ok_or_else(|| {
+                vmlayer_core::Error::ResourceExhausted(format!(
+                    "no host offers backend {backend:?} with {memory_mib} MiB and {vcpus} vCPUs free{}",
+                    if placement.is_empty() { String::new() } else { format!(" and labels {placement:?}") }
+                ))
+            })
     }
 
     /// Fresh heartbeats of every host sharing the blob store.

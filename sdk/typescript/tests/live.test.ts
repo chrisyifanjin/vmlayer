@@ -15,6 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   BackendUnsupported,
+  Cluster,
+  ResourceExhausted,
   Client,
   ExecTimeout,
   Sandbox,
@@ -237,6 +239,13 @@ test("egress allowlists and IO limits need a backend that enforces them", async 
   await assert.rejects(Sandbox.create(ALPINE, { egress: ["pypi.org"] }), BackendUnsupported);
   await assert.rejects(Sandbox.create(ALPINE, { limits: { diskMbps: 10 } }), BackendUnsupported);
   await assert.rejects(Sandbox.create(ALPINE, { egress: ["not a rule"] }), /egress rule/);
+});
+
+test("cluster placement needs advertised hosts", async () => {
+  // The test daemon does not advertise itself, so no host is placeable.
+  const cluster = new Cluster(client);
+  assert.deepEqual(await cluster.hosts(), []);
+  await assert.rejects(cluster.place(), ResourceExhausted);
 });
 
 test("sandbox snapshot and restore", async () => {

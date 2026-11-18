@@ -75,6 +75,12 @@ lease_ttl_secs = 30
 rescue = true                          # recreate rescheduled sandboxes of dead hosts here
 checkpoint_secs = 60                   # workspace checkpoint interval for rescheduled sandboxes
 
+[admission]                            # refuse what the host cannot hold (review A3)
+enabled = true
+memory_overcommit = 1.0                # allocatable memory = (host memory - reserve) x this
+vcpu_overcommit = 4.0                  # allocatable vCPUs = host CPUs x this
+reserved_memory_mib = 512
+
 [log]
 format = "json"
 filter = "info,vmlayerd=debug"

@@ -1,19 +1,14 @@
-"""Placement across several daemons that share a blob store (decision 0014).
+"""Several daemons that share a blob store (decisions 0014, review A3).
 
-Every daemon started with ``--advertise`` publishes a heartbeat; ``Cluster``
-reads them through any one daemon, picks a host for each new sandbox, and
-finds the host that runs an existing one::
+Every daemon started with ``--advertise`` publishes a heartbeat. Placement
+happens in the daemons: any one of them picks a host from the shared
+heartbeats (``Client.place_sandbox``), and the chosen host admits or refuses
+the create by its own limits. This class only follows those answers, so
+every SDK language behaves the same::
 
     cluster = vmlayer.Cluster("tcp://10.0.0.5:7070", token=TOKEN)
     sb = cluster.create("python:3.12", memory_mb=1024, lease="repo-42")
-    ...
     same = cluster.connect(sb.id)      # from anywhere, later
-
-Placement is client-side: there is no scheduler service to run. A host is
-eligible when its heartbeat is fresh, it offers the requested backend, its
-labels match ``placement``, and it has room for the requested memory. Among
-those it picks the one with the most free memory, then the fewest
-sandboxes. Use ``lease=`` to make a workload single-instance cluster-wide.
 """
 
 from __future__ import annotations
@@ -22,13 +17,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from .client import Client
-from .errors import NotFound, VmlayerError
+from .errors import NotFound, ResourceExhausted
 from .sandbox import Sandbox
 from .types import Backend, HostInfo
 
 
-class NoCapacity(VmlayerError):
-    """No host in the registry can take the sandbox."""
+class NoCapacity(ResourceExhausted):
+    """No host in the cluster can take the sandbox."""
 
 
 class Cluster:
@@ -54,28 +49,21 @@ class Cluster:
         self,
         *,
         backend: Backend = Backend.AUTO,
-        memory_mb: int = 512,
+        cpus: int = 0,
+        memory_mb: int = 0,
         placement: Mapping[str, str] | None = None,
+        exclude: list[str] | None = None,
     ) -> HostInfo:
-        def fits(h: HostInfo) -> bool:
-            if backend != Backend.AUTO and backend.value not in h.backends:
-                return False
-            if not h.backends:
-                return False
-            if any(h.labels.get(k) != v for k, v in (placement or {}).items()):
-                return False
-            return not h.memory_mb or h.memory_mb - h.allocated_memory_mb >= memory_mb
-
-        candidates = [h for h in self.hosts() if fits(h)]
-        if not candidates:
-            raise NoCapacity(
-                f"no host offers backend {backend.value!r} with {memory_mb} MiB free"
-                + (f" and labels {dict(placement)}" if placement else "")
+        try:
+            return self._seed.place_sandbox(
+                backend=backend,
+                cpus=cpus,
+                memory_mb=memory_mb,
+                placement=placement,
+                exclude_hosts=exclude,
             )
-        return max(
-            candidates,
-            key=lambda h: (h.memory_mb - h.allocated_memory_mb, -len(h.sandbox_ids)),
-        )
+        except ResourceExhausted as e:
+            raise NoCapacity(str(e)) from None
 
     def create(
         self,
@@ -83,14 +71,33 @@ class Cluster:
         *,
         placement: Mapping[str, str] | None = None,
         backend: Backend = Backend.AUTO,
+        cpus: int | None = None,
         memory_mb: int | None = None,
         **kwargs: Any,
     ) -> Sandbox:
-        """``Sandbox.create`` on the host ``place`` picks."""
-        host = self.place(backend=backend, memory_mb=memory_mb or 512, placement=placement)
-        return Sandbox.create(
-            image, backend=backend, memory_mb=memory_mb, client=self.client(host), **kwargs
-        )
+        """``Sandbox.create`` on a host the cluster picks. A host that turns
+        out to be full (its heartbeat was stale) is skipped and the next one
+        tried."""
+        refused: list[str] = []
+        while True:
+            host = self.place(
+                backend=backend,
+                cpus=cpus or 0,
+                memory_mb=memory_mb or 0,
+                placement=placement,
+                exclude=refused,
+            )
+            try:
+                return Sandbox.create(
+                    image,
+                    backend=backend,
+                    cpus=cpus,
+                    memory_mb=memory_mb,
+                    client=self.client(host),
+                    **kwargs,
+                )
+            except ResourceExhausted:
+                refused.append(host.host_id)
 
     def connect(self, sandbox_id: str) -> Sandbox:
         """The sandbox with this id, on whichever host runs it."""

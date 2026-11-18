@@ -2,6 +2,7 @@
 //! snapshots and process buffers; picks a backend; serves the `vmlayer.v1`
 //! gRPC API. See ADR 0002 and 0007.
 
+pub mod admission;
 pub mod cluster;
 pub mod config;
 pub mod durable;

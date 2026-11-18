@@ -14,6 +14,7 @@
  */
 
 export { Client, getDefaultClient, setDefaultClient } from "./client.js";
+export { Cluster, type PlaceOptions } from "./cluster.js";
 export * from "./errors.js";
 export { Files } from "./files.js";
 export { Process, Pty } from "./process.js";

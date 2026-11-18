@@ -92,6 +92,25 @@ export interface SystemInfo {
   blobStore: string | null;
 }
 
+/** A daemon in the shared host registry. */
+export interface HostInfo {
+  hostId: string;
+  endpoint: string;
+  daemonVersion: string;
+  backends: string[];
+  cpus: number;
+  /** 0 when the host does not report it. */
+  memoryMb: number;
+  allocatedVcpus: number;
+  allocatedMemoryMb: number;
+  sandboxIds: string[];
+  labels: Record<string, string>;
+  updatedAt: number;
+  /** What the host admits in total by its own limits (0 = unlimited). */
+  allocatableVcpus: number;
+  allocatableMemoryMb: number;
+}
+
 /** What `Client.collectGarbage` found and removed in the blob store. */
 export interface GarbageCollection {
   snapshots: number;

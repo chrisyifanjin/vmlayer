@@ -160,7 +160,10 @@ for the record's lifetime. The Docker backend cannot enforce `egress` or
 ### Several hosts
 
 Daemons that share a blob store and are started with `--advertise` form a
-cluster with no extra service. Place sandboxes through any one of them:
+cluster with no extra service. Any daemon picks a host for a new sandbox
+from the shared heartbeats, and the chosen host admits or refuses it by its
+own limits (`[admission]` in the daemon config); a full host refuses with
+`ResourceExhausted`. Through the Python or TypeScript `Cluster`:
 
 ```python
 cluster = vmlayer.Cluster("tcp://10.0.0.5:7070", token=TOKEN)

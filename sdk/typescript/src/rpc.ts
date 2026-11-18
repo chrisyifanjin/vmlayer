@@ -177,6 +177,7 @@ export function translate(e: grpc.ServiceError | Error): errors.VmlayerError {
   if (kind === "snapshot_incompatible") return new errors.SnapshotIncompatible(message);
   if (kind === "timeout" || code === grpc.status.DEADLINE_EXCEEDED)
     return new errors.TimeoutError(message);
+  if (code === grpc.status.RESOURCE_EXHAUSTED) return new errors.ResourceExhausted(message);
   if (code === grpc.status.INVALID_ARGUMENT) return new errors.InvalidArgument(message);
   if (code === grpc.status.NOT_FOUND) return new errors.NotFound(message);
   return new errors.VmlayerError(`${grpc.status[code]?.toLowerCase() ?? code}: ${message}`);

@@ -118,6 +118,41 @@ def test_registry_placement_and_lookup(hosts: tuple[Host, Host, Path]) -> None:
         cluster.connect("sb-does-not-exist")
 
 
+def test_admission_and_placement(daemon: vmlayer.Client) -> None:
+    """A full host refuses creates; placement in the daemons routes around it."""
+    root = Path(os.environ.get("VMLAYER_TEST_ROOT", Path.home() / ".vmlayer-tests"))
+    tmp = Path(tempfile.mkdtemp(prefix="admit-", dir=root))
+    store = tmp / "blobs"
+    # host-small admits a single vCPU in total.
+    ratio = 1.0 / (os.cpu_count() or 1) + 1e-6
+    (tmp / "small.toml").write_text(f"[admission]\nvcpu_overcommit = {ratio}\n")
+    small = Host(tmp, "host-small", store, ["--config", str(tmp / "small.toml")])
+    big = Host(tmp, "host-big", store)
+    try:
+        cluster = Cluster(small.client)
+        eventually(lambda: len(cluster.hosts()) == 2)
+        first = Sandbox.create(ALPINE, client=small.client)
+        with pytest.raises(vmlayer.ResourceExhausted, match="host is full"):
+            Sandbox.create(ALPINE, client=small.client)
+        eventually(
+            lambda: any(
+                h.host_id == "host-small" and h.allocated_vcpus == 1 for h in cluster.hosts()
+            )
+        )
+        # The daemon places the next sandbox on the host with room.
+        assert cluster.place().host_id == "host-big"
+        placed = cluster.create(ALPINE)
+        assert placed.id in {s.id for s in big.client.list_sandboxes()}
+        with pytest.raises(vmlayer.ResourceExhausted):
+            cluster.place(exclude=["host-big"])
+        placed.kill()
+        first.kill()
+    finally:
+        small.stop()
+        big.stop()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_lease_allows_one_sandbox_cluster_wide(hosts: tuple[Host, Host, Path]) -> None:
     a, b, store = hosts
     first = Sandbox.create(ALPINE, lease="job-1", client=a.client)

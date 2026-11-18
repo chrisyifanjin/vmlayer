@@ -102,6 +102,11 @@ versions; every change to the SDK surface is listed.
   proxies and fencing deadline, so a daemon crash or restart no longer
   interrupts any of them. Install it next to `vmlayerd`
   (`[firecracker] shim_bin` to override).
+- Admission control in every daemon (`[admission]`): creates, restores and
+  forks reserve resources up front and are refused with `ResourceExhausted`
+  when the host is full. Placement moved into the daemons
+  (`System.PlaceSandbox`); the Python and the new TypeScript `Cluster`
+  follow it and skip hosts that refuse.
 - Host leases and ownership records with epochs replace per-sandbox lease
   objects (decision 0014 update): store writes scale with hosts, and a
   stale owner cannot overwrite a newer one.

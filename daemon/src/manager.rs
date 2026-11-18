@@ -95,6 +95,7 @@ pub struct Daemon {
     pub volumes: VolumeStore,
     live: RwLock<HashMap<SandboxId, Arc<Live>>>,
     pub(crate) cluster: crate::cluster::ClusterState,
+    pub(crate) admission: Arc<crate::admission::Admission>,
 }
 
 pub(crate) fn store_err(e: StoreError) -> Error {
@@ -135,6 +136,7 @@ impl Daemon {
             volumes,
             live: RwLock::new(HashMap::new()),
             cluster: Default::default(),
+            admission: Default::default(),
         });
         d.reattach().await;
         d.start_host_lease();
@@ -367,6 +369,10 @@ impl Daemon {
                 None => crate::rescue::Workload::from_params(name, &p)?,
             }),
         };
+        // Reserve before any work; refuse if the host is full (review A3).
+        let vcpus = p.vcpus.unwrap_or(self.cfg.defaults.vcpus).max(1);
+        let memory_mib = p.memory_mib.unwrap_or(self.cfg.defaults.memory_mib).max(64);
+        let _ticket = self.admit(vcpus, u64::from(memory_mib)).await?;
         let resolved = entry.resolver.resolve(&p.image).await?;
         let id = SandboxId(new_id("sb"));
         // The image's WORKDIR is only a useful workspace mount point when it
@@ -408,8 +414,8 @@ impl Daemon {
             id: id.clone(),
             rootfs: resolved.rootfs.clone(),
             mounts,
-            vcpus: p.vcpus.unwrap_or(self.cfg.defaults.vcpus).max(1),
-            memory_mib: p.memory_mib.unwrap_or(self.cfg.defaults.memory_mib).max(64),
+            vcpus,
+            memory_mib,
             disk_mib: p.disk_mib,
             env,
             workdir: workdir.clone(),
@@ -508,6 +514,9 @@ impl Daemon {
                     id: snap.id.clone(),
                     reason: format!("backend {} not available here", snap.backend),
                 })?;
+        let _ticket = self
+            .admit(snap.spec.vcpus, u64::from(snap.spec.memory_mib))
+            .await?;
         let id = SandboxId(new_id("sb"));
         // Fresh copy-on-write clones of every volume (ADR 0006 D5).
         let mut mounts = Vec::new();
@@ -863,6 +872,12 @@ impl Daemon {
                 feature: "fork",
             });
         }
+        let _ticket = self
+            .admit(
+                row.spec.vcpus * count,
+                u64::from(row.spec.memory_mib) * u64::from(count),
+            )
+            .await?;
         let parent_mounts = self.store.mounts_for(id).map_err(store_err)?;
         let snap = live
             .handle

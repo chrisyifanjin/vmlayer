@@ -100,3 +100,17 @@ sandboxes, with safety resting on wall clocks per sandbox. Leases are now:
 Clock skew still matters across hosts (the taker judges the owner's host
 lease by its expiry time), but a host only needs its own clock to agree
 with the store within a small fraction of the TTL.
+
+## Update, 2026-11-18 (review A3)
+
+Placement moved out of the SDKs. Any daemon answers `System.PlaceSandbox`
+from the shared heartbeats (backend, labels, room by each host's own
+admission limits; most free memory first), and every daemon runs
+**admission control**: a create, restore or fork reserves its vCPUs and
+memory before any work, counting creates in flight, and is refused with
+`RESOURCE_EXHAUSTED` when the host's allocatable capacity (`[admission]`:
+host memory minus a reserve times `memory_overcommit`, CPUs times
+`vcpu_overcommit`) would be exceeded. Each heartbeat carries the host's
+allocatable capacity, so placement and admission agree. The SDKs (Python
+and TypeScript `Cluster`) only follow: place, create, and on a refusal
+exclude that host and place again. No component was added.

@@ -17,6 +17,9 @@ service System {
   rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse);
   // Hosts with a fresh heartbeat in the shared blob store, for placement.
   rpc ListHosts(Empty) returns (ListHostsResponse);
+  // Pick a host for a new sandbox from the shared heartbeats. The chosen
+  // host still admits or refuses the create (RESOURCE_EXHAUSTED when full).
+  rpc PlaceSandbox(PlaceSandboxRequest) returns (HostInfo);
 }
 
 message HostInfo {
@@ -35,6 +38,20 @@ message HostInfo {
   repeated string sandbox_ids = 9;
   map<string, string> labels = 10;
   google.protobuf.Timestamp updated_at = 11;
+  // What the host admits in total, per its own limits (0 = unlimited).
+  uint32 allocatable_vcpus = 12;
+  uint64 allocatable_memory_mib = 13;
+}
+
+message PlaceSandboxRequest {
+  // "auto" or a backend name.
+  string backend = 1;
+  uint32 vcpus = 2;
+  uint32 memory_mib = 3;
+  // Required host labels.
+  map<string, string> placement = 4;
+  // Hosts to skip (for example, ones that just refused).
+  repeated string exclude_hosts = 5;
 }
 
 message ListHostsResponse { repeated HostInfo hosts = 1; }

@@ -12,6 +12,8 @@ export class VmlayerError extends Error {
 /** No daemon answers at the endpoint. Is `vmlayerd` running? */
 export class DaemonUnavailable extends VmlayerError {}
 export class InvalidArgument extends VmlayerError {}
+/** The daemon's host is full (admission control), or no host in a cluster has room. */
+export class ResourceExhausted extends VmlayerError {}
 /** A file or process was not found. */
 export class NotFound extends VmlayerError {}
 export class SandboxNotFound extends NotFound {}

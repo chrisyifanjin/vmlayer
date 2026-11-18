@@ -8,7 +8,7 @@ from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Map
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class HostInfo(_message.Message):
-    __slots__ = ("host_id", "endpoint", "daemon_version", "backends", "cpus", "memory_mib", "allocated_vcpus", "allocated_memory_mib", "sandbox_ids", "labels", "updated_at")
+    __slots__ = ("host_id", "endpoint", "daemon_version", "backends", "cpus", "memory_mib", "allocated_vcpus", "allocated_memory_mib", "sandbox_ids", "labels", "updated_at", "allocatable_vcpus", "allocatable_memory_mib")
     class LabelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -27,6 +27,8 @@ class HostInfo(_message.Message):
     SANDBOX_IDS_FIELD_NUMBER: _ClassVar[int]
     LABELS_FIELD_NUMBER: _ClassVar[int]
     UPDATED_AT_FIELD_NUMBER: _ClassVar[int]
+    ALLOCATABLE_VCPUS_FIELD_NUMBER: _ClassVar[int]
+    ALLOCATABLE_MEMORY_MIB_FIELD_NUMBER: _ClassVar[int]
     host_id: str
     endpoint: str
     daemon_version: str
@@ -38,7 +40,30 @@ class HostInfo(_message.Message):
     sandbox_ids: _containers.RepeatedScalarFieldContainer[str]
     labels: _containers.ScalarMap[str, str]
     updated_at: _timestamp_pb2.Timestamp
-    def __init__(self, host_id: _Optional[str] = ..., endpoint: _Optional[str] = ..., daemon_version: _Optional[str] = ..., backends: _Optional[_Iterable[str]] = ..., cpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., allocated_vcpus: _Optional[int] = ..., allocated_memory_mib: _Optional[int] = ..., sandbox_ids: _Optional[_Iterable[str]] = ..., labels: _Optional[_Mapping[str, str]] = ..., updated_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    allocatable_vcpus: int
+    allocatable_memory_mib: int
+    def __init__(self, host_id: _Optional[str] = ..., endpoint: _Optional[str] = ..., daemon_version: _Optional[str] = ..., backends: _Optional[_Iterable[str]] = ..., cpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., allocated_vcpus: _Optional[int] = ..., allocated_memory_mib: _Optional[int] = ..., sandbox_ids: _Optional[_Iterable[str]] = ..., labels: _Optional[_Mapping[str, str]] = ..., updated_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., allocatable_vcpus: _Optional[int] = ..., allocatable_memory_mib: _Optional[int] = ...) -> None: ...
+
+class PlaceSandboxRequest(_message.Message):
+    __slots__ = ("backend", "vcpus", "memory_mib", "placement", "exclude_hosts")
+    class PlacementEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
+    VCPUS_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_MIB_FIELD_NUMBER: _ClassVar[int]
+    PLACEMENT_FIELD_NUMBER: _ClassVar[int]
+    EXCLUDE_HOSTS_FIELD_NUMBER: _ClassVar[int]
+    backend: str
+    vcpus: int
+    memory_mib: int
+    placement: _containers.ScalarMap[str, str]
+    exclude_hosts: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, backend: _Optional[str] = ..., vcpus: _Optional[int] = ..., memory_mib: _Optional[int] = ..., placement: _Optional[_Mapping[str, str]] = ..., exclude_hosts: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ListHostsResponse(_message.Message):
     __slots__ = ("hosts",)

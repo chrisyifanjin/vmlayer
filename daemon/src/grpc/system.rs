@@ -40,25 +40,37 @@ impl System for Services {
     ) -> Result<Response<pb::ListHostsResponse>, Status> {
         let hosts = self.daemon.list_hosts().await.map_err(status)?;
         Ok(Response::new(pb::ListHostsResponse {
-            hosts: hosts
-                .into_iter()
-                .map(|h| pb::HostInfo {
-                    host_id: h.host_id,
-                    endpoint: h.endpoint,
-                    daemon_version: h.daemon_version,
-                    backends: h.backends,
-                    cpus: h.cpus,
-                    memory_mib: h.memory_mib,
-                    allocated_vcpus: h.allocated_vcpus,
-                    allocated_memory_mib: h.allocated_memory_mib,
-                    sandbox_ids: h.sandboxes,
-                    labels: h.labels.into_iter().collect(),
-                    updated_at: convert::ts(
-                        std::time::UNIX_EPOCH + std::time::Duration::from_millis(h.updated_at),
-                    ),
-                })
-                .collect(),
+            hosts: hosts.into_iter().map(host_info).collect(),
         }))
+    }
+
+    async fn place_sandbox(
+        &self,
+        req: Request<pb::PlaceSandboxRequest>,
+    ) -> Result<Response<pb::HostInfo>, Status> {
+        let r = req.into_inner();
+        let vcpus = if r.vcpus == 0 {
+            self.daemon.cfg.defaults.vcpus
+        } else {
+            r.vcpus
+        };
+        let memory = if r.memory_mib == 0 {
+            self.daemon.cfg.defaults.memory_mib
+        } else {
+            r.memory_mib
+        };
+        let host = self
+            .daemon
+            .place(
+                &r.backend,
+                vcpus,
+                u64::from(memory),
+                &convert::labels_from(&r.placement),
+                &r.exclude_hosts,
+            )
+            .await
+            .map_err(status)?;
+        Ok(Response::new(host_info(host)))
     }
 
     async fn collect_garbage(
@@ -143,5 +155,25 @@ impl System for Services {
             .await
             .map_err(status)?;
         Ok(Response::new(pb::Empty {}))
+    }
+}
+
+fn host_info(h: crate::cluster::HostDoc) -> pb::HostInfo {
+    pb::HostInfo {
+        host_id: h.host_id,
+        endpoint: h.endpoint,
+        daemon_version: h.daemon_version,
+        backends: h.backends,
+        cpus: h.cpus,
+        memory_mib: h.memory_mib,
+        allocated_vcpus: h.allocated_vcpus,
+        allocated_memory_mib: h.allocated_memory_mib,
+        sandbox_ids: h.sandboxes,
+        labels: h.labels.into_iter().collect(),
+        updated_at: convert::ts(
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(h.updated_at),
+        ),
+        allocatable_vcpus: h.allocatable_vcpus,
+        allocatable_memory_mib: h.allocatable_memory_mib,
     }
 }

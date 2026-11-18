@@ -136,6 +136,8 @@ def translate(e: grpc.RpcError) -> errors.VmlayerError:
         return errors.SnapshotIncompatible(message)
     if kind == "timeout" or code == grpc.StatusCode.DEADLINE_EXCEEDED:
         return errors.TimeoutError(message)
+    if code == grpc.StatusCode.RESOURCE_EXHAUSTED:
+        return errors.ResourceExhausted(message)
     if code == grpc.StatusCode.INVALID_ARGUMENT:
         return errors.InvalidArgument(message)
     if code == grpc.StatusCode.NOT_FOUND:

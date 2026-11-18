@@ -117,6 +117,40 @@ export class Client {
     await this.conn.call(this.conn.system, "DeleteSnapshot", { id });
   }
 
+  /** Daemons with a fresh heartbeat in this daemon's blob store. */
+  async listHosts(): Promise<import("./types.js").HostInfo[]> {
+    const r: any = await this.conn.call(this.conn.system, "ListHosts", {}, 60_000);
+    return (r.hosts ?? []).map(hostFrom);
+  }
+
+  /**
+   * Ask this daemon to pick a host for a new sandbox from the shared
+   * heartbeats. Rejects with `ResourceExhausted` if none has room.
+   */
+  async placeSandbox(
+    opts: {
+      backend?: Backend | undefined;
+      cpus?: number | undefined;
+      memoryMb?: number | undefined;
+      placement?: Record<string, string> | undefined;
+      excludeHosts?: string[] | undefined;
+    } = {},
+  ): Promise<import("./types.js").HostInfo> {
+    const r: any = await this.conn.call(
+      this.conn.system,
+      "PlaceSandbox",
+      {
+        backend: opts.backend ?? "auto",
+        vcpus: opts.cpus ?? 0,
+        memory_mib: opts.memoryMb ?? 0,
+        placement: opts.placement ?? {},
+        exclude_hosts: opts.excludeHosts ?? [],
+      },
+      60_000,
+    );
+    return hostFrom(r);
+  }
+
   /** This daemon's volume snapshots, or with `remote` every one in its blob store. */
   async listVolumeSnapshots(
     filter: { labels?: Record<string, string>; remote?: boolean } = {},
@@ -169,4 +203,22 @@ export function getDefaultClient(): Client {
 
 export function setDefaultClient(client: Client | undefined): void {
   defaultClient = client;
+}
+
+function hostFrom(h: any): import("./types.js").HostInfo {
+  return {
+    hostId: h.host_id,
+    endpoint: h.endpoint,
+    daemonVersion: h.daemon_version,
+    backends: h.backends ?? [],
+    cpus: Number(h.cpus ?? 0),
+    memoryMb: Number(h.memory_mib ?? 0),
+    allocatedVcpus: Number(h.allocated_vcpus ?? 0),
+    allocatedMemoryMb: Number(h.allocated_memory_mib ?? 0),
+    sandboxIds: h.sandbox_ids ?? [],
+    labels: { ...(h.labels ?? {}) },
+    updatedAt: h.updated_at ? Number(h.updated_at.seconds) + (h.updated_at.nanos ?? 0) / 1e9 : 0,
+    allocatableVcpus: Number(h.allocatable_vcpus ?? 0),
+    allocatableMemoryMb: Number(h.allocatable_memory_mib ?? 0),
+  };
 }

@@ -172,9 +172,49 @@ class Client:
                 sandbox_ids=tuple(h.sandbox_ids),
                 labels=dict(h.labels),
                 updated_at=_rpc.from_timestamp(h.updated_at),
+                allocatable_vcpus=h.allocatable_vcpus,
+                allocatable_memory_mb=h.allocatable_memory_mib,
             )
             for h in r.hosts
         ]
+
+    def place_sandbox(
+        self,
+        *,
+        backend: Backend = Backend.AUTO,
+        cpus: int = 0,
+        memory_mb: int = 0,
+        placement: Mapping[str, str] | None = None,
+        exclude_hosts: list[str] | None = None,
+    ) -> HostInfo:
+        """Ask this daemon to pick a host for a new sandbox from the shared
+        heartbeats. Raises ``ResourceExhausted`` if none has room."""
+        h = self._conn.call(
+            self._conn.system.PlaceSandbox,
+            system_pb2.PlaceSandboxRequest(
+                backend=backend.value,
+                vcpus=cpus,
+                memory_mib=memory_mb,
+                placement=dict(placement or {}),
+                exclude_hosts=list(exclude_hosts or []),
+            ),
+            timeout=60,
+        )
+        return HostInfo(
+            host_id=h.host_id,
+            endpoint=h.endpoint,
+            daemon_version=h.daemon_version,
+            backends=tuple(h.backends),
+            cpus=h.cpus,
+            memory_mb=h.memory_mib,
+            allocated_vcpus=h.allocated_vcpus,
+            allocated_memory_mb=h.allocated_memory_mib,
+            sandbox_ids=tuple(h.sandbox_ids),
+            labels=dict(h.labels),
+            updated_at=_rpc.from_timestamp(h.updated_at),
+            allocatable_vcpus=h.allocatable_vcpus,
+            allocatable_memory_mb=h.allocatable_memory_mib,
+        )
 
     def collect_garbage(self, *, dry_run: bool = False) -> GarbageCollection:
         """Delete blob-store chunks no snapshot references any more.

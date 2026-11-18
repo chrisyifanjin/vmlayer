@@ -70,6 +70,11 @@ class SystemStub(object):
                 request_serializer=vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
                 response_deserializer=vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.FromString,
                 _registered_method=True)
+        self.PlaceSandbox = channel.unary_unary(
+                '/vmlayer.v1.System/PlaceSandbox',
+                request_serializer=vmlayer_dot_v1_dot_system__pb2.PlaceSandboxRequest.SerializeToString,
+                response_deserializer=vmlayer_dot_v1_dot_system__pb2.HostInfo.FromString,
+                _registered_method=True)
 
 
 class SystemServicer(object):
@@ -121,6 +126,14 @@ class SystemServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PlaceSandbox(self, request, context):
+        """Pick a host for a new sandbox from the shared heartbeats. The chosen
+        host still admits or refuses the create (RESOURCE_EXHAUSTED when full).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -158,6 +171,11 @@ def add_SystemServicer_to_server(servicer, server):
                     servicer.ListHosts,
                     request_deserializer=vmlayer_dot_v1_dot_common__pb2.Empty.FromString,
                     response_serializer=vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.SerializeToString,
+            ),
+            'PlaceSandbox': grpc.unary_unary_rpc_method_handler(
+                    servicer.PlaceSandbox,
+                    request_deserializer=vmlayer_dot_v1_dot_system__pb2.PlaceSandboxRequest.FromString,
+                    response_serializer=vmlayer_dot_v1_dot_system__pb2.HostInfo.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -349,6 +367,33 @@ class System(object):
             '/vmlayer.v1.System/ListHosts',
             vmlayer_dot_v1_dot_common__pb2.Empty.SerializeToString,
             vmlayer_dot_v1_dot_system__pb2.ListHostsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PlaceSandbox(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vmlayer.v1.System/PlaceSandbox',
+            vmlayer_dot_v1_dot_system__pb2.PlaceSandboxRequest.SerializeToString,
+            vmlayer_dot_v1_dot_system__pb2.HostInfo.FromString,
             options,
             channel_credentials,
             insecure,

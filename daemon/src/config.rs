@@ -21,6 +21,8 @@ pub struct Config {
     pub firecracker: FirecrackerConfig,
     pub blob_store: BlobStoreConfig,
     pub cluster: ClusterConfig,
+    /// Refuse sandboxes the host cannot hold (review A3).
+    pub admission: crate::admission::AdmissionConfig,
     pub log: LogConfig,
 }
 
@@ -246,6 +248,7 @@ impl Default for Config {
             firecracker: FirecrackerConfig::default(),
             blob_store: BlobStoreConfig::default(),
             cluster: ClusterConfig::default(),
+            admission: Default::default(),
             log: LogConfig::default(),
         }
     }
