@@ -219,13 +219,8 @@ impl Daemon {
         let Some(volume) = row.workspace_volume_id.clone() else {
             return Ok(());
         };
-        // Only the lease holder may move the workload's record forward.
-        let remote = self
-            .volumes
-            .remote()
-            .ok_or_else(|| Error::Guest("no blob store".into()))?;
-        let holder = self.lease_holder(id);
-        if remote.lease(name).await.map_err(blob)?.map(|l| l.holder) != Some(holder) {
+        // Only the current owner (this epoch) may move the record forward.
+        if self.owned_epoch(name, id).await.is_none() {
             return Ok(());
         }
         let _ = live.handle.freeze_fs().await;
@@ -284,11 +279,7 @@ impl Daemon {
                     .iter()
                     .filter_map(|b| serde_json::from_slice::<Workload>(b).ok())
                 {
-                    let expired = match remote.lease(&w.name).await {
-                        Ok(Some(l)) => l.expires_at <= now_ms(),
-                        Ok(None) => true,
-                        Err(_) => false,
-                    };
+                    let expired = d.owner_claimable(&w.name).await;
                     let can_run = d
                         .registry
                         .get(&w.backend)

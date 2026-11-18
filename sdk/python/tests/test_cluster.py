@@ -37,8 +37,7 @@ class Host:
         self.dir.mkdir()
         sock = self.dir / "d.sock"
         self.endpoint = f"unix://{sock}"
-        self.proc = subprocess.Popen(
-            [
+        self.args = [
                 str(_daemon_bin()),
                 "--listen", self.endpoint,
                 "--data-dir", str(self.dir / "data"),
@@ -48,10 +47,10 @@ class Host:
                 "--heartbeat-secs", "1",
                 "--lease-ttl-secs", "3",
                 *(extra or []),
-            ],
-            stdout=open(self.dir / "daemon.log", "wb"),
-            stderr=subprocess.STDOUT,
-        )  # fmt: skip
+            ]  # fmt: skip
+        self.proc = subprocess.Popen(
+            self.args, stdout=open(self.dir / "daemon.log", "wb"), stderr=subprocess.STDOUT
+        )
         self.client = vmlayer.Client(self.endpoint)
         eventually(lambda: sock.exists() and self._healthy())
 
@@ -60,6 +59,13 @@ class Host:
             return self.client.health()
         except vmlayer.VmlayerError:
             return False
+
+    def restart(self) -> None:
+        self.proc = subprocess.Popen(
+            self.args, stdout=open(self.dir / "daemon.log", "ab"), stderr=subprocess.STDOUT
+        )
+        self.client = vmlayer.Client(self.endpoint)
+        eventually(self._healthy)
 
     def stop(self) -> None:
         for sb in self.client.list_sandboxes():
@@ -120,20 +126,27 @@ def test_lease_allows_one_sandbox_cluster_wide(hosts: tuple[Host, Host, Path]) -
     first.kill()  # releases the lease
     second = Sandbox.create(ALPINE, lease="job-1", client=b.client)
 
-    # Someone else takes the lease (as after this host was cut off): the
-    # daemon kills its sandbox instead of letting two run.
-    lease = store / "leases" / "job-1.json"
-    lease.write_text(json.dumps({"name": "job-1", "holder": "intruder/sb-x", "expires_at": 2**62}))
+    # Host B dies without releasing anything. Its host lease (TTL 3 s) stops
+    # being renewed, after which host A may take the name over, at a higher
+    # epoch so anything B still tried to write would be rejected.
+    owner = json.loads((store / "owners" / "job-1.json").read_text())
+    assert (owner["host"], owner["sandbox_id"]) == ("host-b", second.id)
+    b.proc.kill()
+    b.proc.wait()
+    eventually(lambda: _claim(a), within=15)
+    after = json.loads((store / "owners" / "job-1.json").read_text())
+    assert after["host"] == "host-a" and after["epoch"] > owner["epoch"]
+    # A Docker sandbox has no shim to fence it: remove host B's leftover.
+    subprocess.run(["docker", "rm", "-f", f"vmlayer-{second.id}"], capture_output=True, check=False)
+    b.restart()
 
-    def gone() -> bool:
-        try:
-            second.refresh()
-            return False
-        except vmlayer.SandboxNotFound:
-            return True
 
-    eventually(gone, within=10)
-    lease.unlink()
+def _claim(host: Host) -> bool:
+    try:
+        Sandbox.create(ALPINE, lease="job-1", client=host.client).kill()
+        return True
+    except vmlayer.VmlayerError:
+        return False
 
 
 def test_stopped_host_leaves_the_registry(hosts: tuple[Host, Host, Path]) -> None:

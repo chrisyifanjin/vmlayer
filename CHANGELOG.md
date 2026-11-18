@@ -97,7 +97,22 @@ versions; every change to the SDK surface is listed.
 - Firecracker boot templates are pruned to the most recently used
   `template_limit` (default 4), at startup and after each build.
 
+- `vmlayer-shim`, one helper process per microVM (decision 0019): it owns
+  the VM's lazy volume device, restore memory fill, DNS proxy, expose
+  proxies and fencing deadline, so a daemon crash or restart no longer
+  interrupts any of them. Install it next to `vmlayerd`
+  (`[firecracker] shim_bin` to override).
+- Host leases and ownership records with epochs replace per-sandbox lease
+  objects (decision 0014 update): store writes scale with hosts, and a
+  stale owner cannot overwrite a newer one.
+
 ### Fixed
+- From the first external review: sandbox restore attached a partly
+  downloaded lazy volume as a file (the guest read zeros); a lazy volume
+  whose download could not resume after a restart was used as complete;
+  garbage collection could delete a chunk an upload had just renewed;
+  lease renewal had no time-out and fencing stopped with the daemon;
+  prepared images (base image plus guest agent) were never pruned.
 - Security, Firecracker: guests could reach the cloud instance metadata
   service (and with it the host's cloud credentials), any service on the
   host through their veth link, and other guests. Metadata endpoints are

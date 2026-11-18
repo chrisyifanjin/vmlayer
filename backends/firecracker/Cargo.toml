@@ -6,9 +6,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "vmlayer-shim"
+path = "src/bin/vmlayer-shim.rs"
+
 [dependencies]
 vmlayer-core = { workspace = true }
 vmlayer-proto = { workspace = true }
+vmlayer-blob = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
@@ -25,11 +30,13 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = "0.5"
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-nix = { version = "0.31", features = ["socket", "ioctl", "poll", "mman", "uio", "fs"] }
+nix = { version = "0.31", features = ["socket", "ioctl", "poll", "mman", "uio", "fs", "process"] }
 
 [dev-dependencies]
+object_store = { version = "0.14", default-features = false }
 tempfile = { workspace = true }

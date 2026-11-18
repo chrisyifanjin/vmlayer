@@ -122,6 +122,8 @@ pub struct FirecrackerConfig {
     /// Templates kept on disk (one per image and VM shape), most recently
     /// used first. Each takes the guest's memory size plus its root disk.
     pub template_limit: usize,
+    /// The per-VM helper (`vmlayer-shim`); default: next to `vmlayerd`.
+    pub shim_bin: Option<PathBuf>,
     /// Copy all of a restored guest's memory into place right away
     /// (userfaultfd) instead of faulting it in on first touch.
     pub prefetch_memory: bool,
@@ -148,6 +150,7 @@ impl Default for FirecrackerConfig {
             template_snapshots: false,
             template_warmup_argv: Vec::new(),
             template_limit: 4,
+            shim_bin: None,
             prefetch_memory: true,
             max_concurrent_boots: 0,
             boot_timeout_secs: 30,

@@ -29,11 +29,11 @@ jobs:
       - name: protoc
         run: |
           if command -v apt-get >/dev/null; then sudo apt-get update && sudo apt-get install -y protobuf-compiler; else brew install protobuf; fi
-      - run: cargo build --release --target ${{ matrix.target }} -p vmlayerd -p vmlayer-cli
+      - run: cargo build --release --target ${{ matrix.target }} -p vmlayerd -p vmlayer-cli -p vmlayer-backend-firecracker
       - name: Package
         run: |
           mkdir -p dist
-          tar -C target/${{ matrix.target }}/release -czf dist/vmlayer-${{ github.ref_name }}-${{ matrix.target }}.tar.gz vmlayerd vmlayer
+          tar -C target/${{ matrix.target }}/release -czf dist/vmlayer-${{ github.ref_name }}-${{ matrix.target }}.tar.gz vmlayerd vmlayer vmlayer-shim
           ./target/${{ matrix.target }}/release/vmlayer --version
       - uses: actions/upload-artifact@v4
         with:

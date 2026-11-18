@@ -17,6 +17,9 @@ pub enum Error {
     /// withdrawn and can simply be retried.
     #[error("chunk {0} vanished during the upload; retry")]
     Raced(String),
+    /// The lazy image was closed and handed to another owner.
+    #[error("lazy image closed")]
+    Closed,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

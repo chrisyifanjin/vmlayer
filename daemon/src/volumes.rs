@@ -41,15 +41,24 @@ pub struct VolumeStore {
             std::collections::HashMap<VolumeId, std::sync::Arc<vmlayer_blob::LazyImage>>,
         >,
     >,
-    /// Lazy volumes served to a VM as a block device.
-    #[cfg(target_os = "linux")]
-    exports: std::sync::Arc<
-        std::sync::Mutex<std::collections::HashMap<VolumeId, crate::nbd::NbdExport>>,
-    >,
+    /// Lazy volumes handed to a sandbox's backend (its shim serves and
+    /// downloads them; we keep our hands off until it lets go).
+    handed: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<VolumeId>>>,
+    /// The blob store as configured, for backends that read it themselves.
+    remote_config: Option<(String, BTreeMap<String, String>)>,
 }
 
 /// Marks a volume that is still being downloaded; holds the snapshot id.
 const LAZY_FILE: &str = "lazy.json";
+
+fn lazy_snapshot(volume_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(volume_dir.join(LAZY_FILE)).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        .get("snapshot")?
+        .as_str()
+        .map(String::from)
+}
 
 fn blob_err(e: vmlayer_blob::Error) -> Error {
     match e {
@@ -176,8 +185,8 @@ impl VolumeStore {
             remote: None,
             lazy_restore: false,
             lazy: Default::default(),
-            #[cfg(target_os = "linux")]
-            exports: Default::default(),
+            handed: Default::default(),
+            remote_config: None,
         }
     }
 
@@ -187,15 +196,17 @@ impl VolumeStore {
         self
     }
 
-    fn can_export(&self) -> bool {
-        #[cfg(target_os = "linux")]
-        {
-            crate::nbd::available()
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            false
-        }
+    /// The blob store URL and options, passed to backends that serve lazy
+    /// volumes themselves.
+    pub fn with_remote_config(mut self, url: String, options: BTreeMap<String, String>) -> Self {
+        self.remote_config = Some((url, options));
+        self
+    }
+
+    /// Whether a lazy volume can be served to a VM on demand here (the NBD
+    /// kernel driver); otherwise it is downloaded before it is attached.
+    fn can_serve_lazily(&self) -> bool {
+        cfg!(target_os = "linux") && Path::new("/dev/nbd0").exists() && self.remote_config.is_some()
     }
 
     /// Keep downloading `img` until it is complete or the volume is gone.
@@ -208,6 +219,8 @@ impl VolumeStore {
                 }
                 match img.hydrate(16).await {
                     Ok(()) => break,
+                    // Handed to a sandbox; its shim downloads now.
+                    Err(vmlayer_blob::Error::Closed) => return,
                     Err(e) => {
                         tracing::warn!(volume = %id, error = %e, "lazy download failed; retrying");
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -222,10 +235,6 @@ impl VolumeStore {
     }
 
     fn forget_lazy_if_idle(&self, id: &VolumeId) {
-        #[cfg(target_os = "linux")]
-        if self.exports.lock().unwrap().contains_key(id) {
-            return; // a VM still reads through the device; released on detach
-        }
         let mut lazy = self.lazy.lock().unwrap();
         if lazy.get(id).is_some_and(|i| i.is_complete()) {
             lazy.remove(id);
@@ -235,6 +244,9 @@ impl VolumeStore {
     /// Resume downloads interrupted by a daemon restart.
     pub async fn resume_lazy(&self) {
         for row in self.list().unwrap_or_default() {
+            if row.attached_to.is_some() {
+                continue; // a running sandbox's shim owns it; resumed on release
+            }
             if let Err(e) = self.lazy_image(&row).await {
                 // The marker stays, so the volume keeps being refused (and
                 // resumption is retried) instead of passing as complete.
@@ -297,50 +309,35 @@ impl VolumeStore {
         Ok(())
     }
 
-    /// Get a volume ready to be attached: a lazy volume is exported as a
-    /// block device, or downloaded first where that is not possible.
-    pub async fn prepare(&self, row: &VolumeRow) -> Result<()> {
+    /// Get a volume ready to be attached. A lazy volume is handed to the
+    /// sandbox's backend, which serves it on demand (decision 0019): our own
+    /// download stops first, with every in-flight write finished, so exactly
+    /// one process ever writes the image. Read-only attachments, and hosts
+    /// that cannot serve lazily, wait for the download instead.
+    pub async fn prepare(&self, row: &VolumeRow, read_only: bool) -> Result<()> {
         let Some(img) = self.lazy_image(row).await? else {
             return Ok(());
         };
-        if img.is_complete() || !self.can_export() {
+        if img.is_complete() || read_only || !self.can_serve_lazily() {
             return self.complete(&row.id).await;
         }
-        #[cfg(target_os = "linux")]
-        {
-            if self.exports.lock().unwrap().contains_key(&row.id) {
-                return Ok(());
-            }
-            let export = tokio::task::spawn_blocking(move || crate::nbd::NbdExport::attach(img))
-                .await
-                .map_err(|e| Error::Guest(e.to_string()))??;
-            self.exports.lock().unwrap().insert(row.id.clone(), export);
-        }
+        self.lazy.lock().unwrap().remove(&row.id);
+        img.close().await;
+        self.handed.lock().unwrap().insert(row.id.clone());
         Ok(())
     }
 
-    /// Disconnect the block devices of lazy volumes no sandbox holds any more.
+    /// Take lazy volumes back from sandboxes that are gone, and resume their
+    /// downloads (also for volumes a previous daemon handed over).
     pub async fn release_unattached(&self) {
-        #[cfg(target_os = "linux")]
-        {
-            let idle: Vec<VolumeId> = self
-                .exports
-                .lock()
-                .unwrap()
-                .keys()
-                .filter(|id| {
-                    self.get(&id.0)
-                        .map(|r| r.attached_to.is_none())
-                        .unwrap_or(true)
-                })
-                .cloned()
-                .collect();
-            for id in idle {
-                let export = self.exports.lock().unwrap().remove(&id);
-                if let Some(export) = export {
-                    let _ = tokio::task::spawn_blocking(move || drop(export)).await;
+        let rows = self.list().unwrap_or_default();
+        for row in rows.iter().filter(|r| r.attached_to.is_none()) {
+            self.handed.lock().unwrap().remove(&row.id);
+            if row.path.join(LAZY_FILE).exists() && !self.lazy.lock().unwrap().contains_key(&row.id)
+            {
+                if let Err(e) = self.lazy_image(row).await {
+                    tracing::warn!(volume = %row.id, error = %e, "lazy volume cannot resume yet");
                 }
-                self.forget_lazy_if_idle(&id);
             }
         }
     }
@@ -477,11 +474,17 @@ impl VolumeStore {
     }
 
     pub fn source(&self, row: &VolumeRow) -> VolumeSource {
-        #[cfg(target_os = "linux")]
-        if let Some(export) = self.exports.lock().unwrap().get(&row.id) {
-            return VolumeSource::BlockImage {
-                path: export.device.clone(),
-            };
+        if self.handed.lock().unwrap().contains(&row.id) {
+            if let (Some((url, options)), Some(snapshot)) =
+                (&self.remote_config, lazy_snapshot(&row.path))
+            {
+                return VolumeSource::LazyBlockImage {
+                    path: row.path.join(IMAGE_FILE),
+                    snapshot,
+                    store_url: url.clone(),
+                    store_options: options.clone(),
+                };
+            }
         }
         match self.kind(row) {
             VolumeSourceKind::BlockImage => VolumeSource::BlockImage {
@@ -901,7 +904,7 @@ mod tests {
         remote.delete("vsnap-gone").await.unwrap();
 
         vs.resume_lazy().await; // logs, does not pretend
-        let err = vs.prepare(&v).await.unwrap_err();
+        let err = vs.prepare(&v, false).await.unwrap_err();
         assert!(err.to_string().contains("incomplete"), "{err}");
         assert!(vs
             .snapshot(&v.id, None, BTreeMap::new(), false)

@@ -210,7 +210,7 @@ impl DockerBackend {
                     let mode = if m.read_only { "ro" } else { "rw" };
                     binds.push(format!("{}:{}:{}", path.display(), m.guest_path, mode));
                 }
-                VolumeSource::BlockImage { .. } => {
+                VolumeSource::BlockImage { .. } | VolumeSource::LazyBlockImage { .. } => {
                     return Err(Error::Unsupported {
                         backend: BACKEND_NAME,
                         feature: "block-image volumes",

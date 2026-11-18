@@ -41,11 +41,6 @@ const FLAG_SEND_FLUSH: u64 = 1 << 2;
 const FLAG_SEND_TRIM: u64 = 1 << 5;
 const BLOCK: u64 = 4096;
 
-/// Whether this host can serve lazy volumes (the `nbd` module is loaded).
-pub fn available() -> bool {
-    std::path::Path::new("/dev/nbd0").exists()
-}
-
 fn ioctl(fd: &File, request: u64, arg: u64) -> std::io::Result<()> {
     // SAFETY: NBD ioctls on a device we opened, with integer arguments.
     let rc = unsafe { libc::ioctl(fd.as_raw_fd(), request as _, arg as libc::c_ulong) };

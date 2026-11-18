@@ -190,6 +190,12 @@ fn firecracker_config(
         template_snapshots: fc.template_snapshots,
         template_warmup_argv: fc.template_warmup_argv.clone(),
         template_limit: fc.template_limit,
+        shim_bin: fc.shim_bin.clone().unwrap_or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("vmlayer-shim")))
+                .unwrap_or_else(|| "vmlayer-shim".into())
+        }),
         prefetch_memory: fc.prefetch_memory,
         max_concurrent_boots: fc.max_concurrent_boots,
         boot_timeout: std::time::Duration::from_secs(fc.boot_timeout_secs),

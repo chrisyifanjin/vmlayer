@@ -1,6 +1,6 @@
 //! One sandbox = one jailed Firecracker VM plus a gRPC client to its guest agent.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -20,7 +20,7 @@ use vmlayer_proto::guest::v1 as guest;
 use vmlayer_proto::v1 as pb;
 
 use crate::api::{self, err};
-use crate::dns::{AllowSink, Allowed, DnsProxy, Resolver};
+use crate::dns::{AllowSink, Allowed};
 use crate::guest::{Agent, Link};
 use crate::net::{self, Lease, Pool};
 use crate::process::{RemoteProcess, RemotePty};
@@ -56,17 +56,9 @@ pub struct FirecrackerSandbox {
     link: Arc<Link>,
     /// Mount order as given to Firecracker: (device, guest path).
     mounts: Vec<(String, String)>,
-    exposed: Mutex<HashMap<u16, net::Proxy>>,
-    /// Enforces the domain rules of the egress policy; stops when dropped.
-    dns: std::sync::Mutex<Option<DnsProxy>>,
-    /// Populates guest memory after a restore (`prefetch_memory`).
-    memory: std::sync::Mutex<Option<MemoryServer>>,
+    /// The VM's shim: owns its data-path services (decision 0019).
+    shim: crate::shim::Client,
 }
-
-#[cfg(target_os = "linux")]
-type MemoryServer = crate::uffd::UffdServer;
-#[cfg(not(target_os = "linux"))]
-type MemoryServer = ();
 
 /// Upper bound on the volume flush that precedes a kill.
 const VOLUME_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -104,6 +96,11 @@ impl FirecrackerSandbox {
         for (i, m) in mounts.iter().enumerate() {
             let src = match &m.source {
                 VolumeSource::BlockImage { path } => path,
+                // The shim creates this drive (a block device) before boot.
+                VolumeSource::LazyBlockImage { .. } => {
+                    out.push((device_for(i), m.guest_path.clone()));
+                    continue;
+                }
                 VolumeSource::Dir { .. } => {
                     return Err(Error::Unsupported {
                         backend: BACKEND_NAME,
@@ -112,24 +109,6 @@ impl FirecrackerSandbox {
                 }
             };
             let dst = jail.join(vm::vol_disk(i));
-            // A lazily restored volume is a block device (/dev/nbdN):
-            // give the jail its own device node for it.
-            #[cfg(target_os = "linux")]
-            {
-                use std::os::unix::fs::{FileTypeExt, MetadataExt};
-                let meta = std::fs::metadata(src)?;
-                if meta.file_type().is_block_device() {
-                    nix::sys::stat::mknod(
-                        &dst,
-                        nix::sys::stat::SFlag::S_IFBLK,
-                        nix::sys::stat::Mode::from_bits_truncate(0o600),
-                        meta.rdev(),
-                    )
-                    .map_err(|e| err(format!("device node for {}: {e}", src.display())))?;
-                    out.push((device_for(i), m.guest_path.clone()));
-                    continue;
-                }
-            }
             tokio::fs::hard_link(src, &dst).await.map_err(|e| {
                 err(format!(
                     "volume images must live on the same filesystem as the data dir ({}): {e}",
@@ -142,7 +121,10 @@ impl FirecrackerSandbox {
         // creates sockets and snapshot files there) and every disk it opens.
         vm::chown_for_jail(jail, config.jail_uid, config.jail_gid)?;
         vm::chown_for_jail(&root, config.jail_uid, config.jail_gid)?;
-        for i in 0..mounts.len() {
+        for (i, m) in mounts.iter().enumerate() {
+            if matches!(m.source, VolumeSource::LazyBlockImage { .. }) {
+                continue;
+            }
             vm::chown_for_jail(
                 &jail.join(vm::vol_disk(i)),
                 config.jail_uid,
@@ -197,13 +179,13 @@ impl FirecrackerSandbox {
         }
     }
 
-    /// Start the DNS proxy that enforces `spec.egress`, if there is one.
-    async fn start_dns(
+    /// The shim's DNS proxy that enforces `spec.egress`, if there is one.
+    fn dns_spec(
         config: &Config,
         spec: &SandboxSpec,
         lease: &Lease,
-    ) -> Result<Option<DnsProxy>> {
-        let Some(policy) = spec.egress.clone() else {
+    ) -> Result<Option<crate::shim::DnsSpec>> {
+        let Some(egress) = spec.egress.clone() else {
             return Ok(None);
         };
         if spec.network == vmlayer_core::NetworkMode::None {
@@ -218,10 +200,35 @@ impl FirecrackerSandbox {
                     .map_err(|e| err(format!("dns server {d:?}: {e}")))
             })
             .collect::<Result<Vec<_>>>()?;
-        let sink = std::sync::Arc::new(NftSink(lease.netns.clone()));
-        let resolver = Resolver::new(policy, upstreams, sink);
-        let listen = std::net::SocketAddr::new(lease.host_ip.into(), net::DNS_PORT);
-        DnsProxy::start(listen, resolver).await.map(Some)
+        Ok(Some(crate::shim::DnsSpec {
+            listen: std::net::SocketAddr::new(lease.host_ip.into(), net::DNS_PORT),
+            netns: lease.netns.clone(),
+            upstreams,
+            egress,
+        }))
+    }
+
+    /// Lazy volumes the shim serves, at their drive paths in the jail.
+    fn lazy_specs(jail: &Path, mounts: &[Mount]) -> Vec<crate::shim::LazySpec> {
+        mounts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, m)| match &m.source {
+                VolumeSource::LazyBlockImage {
+                    path,
+                    snapshot,
+                    store_url,
+                    store_options,
+                } => Some(crate::shim::LazySpec {
+                    node: jail.join(vm::vol_disk(i)),
+                    image: path.clone(),
+                    snapshot: snapshot.clone(),
+                    store_url: store_url.clone(),
+                    store_options: store_options.clone(),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Connect to the guest agent; on failure include the console tail.
@@ -372,9 +379,13 @@ impl FirecrackerSandbox {
                 spec.egress.as_ref(),
             )
             .await?;
-            let dns = Self::start_dns(&config, &spec, &lease).await?;
+            let services = vm::Services {
+                dns: Self::dns_spec(&config, &spec, &lease)?,
+                lazy: Self::lazy_specs(&jail, &spec.mounts),
+                ..Default::default()
+            };
             let t_net = t0.elapsed();
-            let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
+            let vmm = Vm::launch(&config, &spec.id.0, &lease, services).await?;
             let t_vmm = t0.elapsed();
             Self::configure_and_start(&vmm, &config, &spec, &lease, &spec.mounts).await?;
             let t_start = t0.elapsed();
@@ -399,6 +410,7 @@ impl FirecrackerSandbox {
                 },
             )
             .await?;
+            let vmm_shim = vmm.shim.clone();
             Ok(Self {
                 config: config.clone(),
                 pool: pool.clone(),
@@ -408,9 +420,7 @@ impl FirecrackerSandbox {
                 vm: Mutex::new(vmm),
                 link: Arc::new(Link::new(agent)),
                 mounts,
-                exposed: Mutex::new(HashMap::new()),
-                dns: std::sync::Mutex::new(dns),
-                memory: std::sync::Mutex::new(None),
+                shim: vmm_shim,
             })
         }
         .await;
@@ -468,21 +478,19 @@ impl FirecrackerSandbox {
                 spec.egress.as_ref(),
             )
             .await?;
-            let dns = Self::start_dns(&config, &spec, &lease).await?;
-            #[cfg(target_os = "linux")]
-            let memory = if config.prefetch_memory {
-                Some(crate::uffd::UffdServer::listen(
-                    &jail.join("uffd.sock"),
-                    &jail.join("mem"),
-                    config.jail_uid,
-                    config.jail_gid,
-                )?)
-            } else {
-                None
+            // Ordered like the snapshot's drives (see `ordered`).
+            let services = vm::Services {
+                dns: Self::dns_spec(&config, &spec, &lease)?,
+                lazy: Self::lazy_specs(&jail, &ordered),
+                uffd: (cfg!(target_os = "linux") && config.prefetch_memory).then(|| {
+                    crate::shim::UffdSpec {
+                        socket: jail.join("uffd.sock"),
+                        mem: jail.join("mem"),
+                    }
+                }),
+                ..Default::default()
             };
-            #[cfg(not(target_os = "linux"))]
-            let memory: Option<MemoryServer> = None;
-            let mem_backend = if memory.is_some() {
+            let mem_backend = if services.uffd.is_some() {
                 api::MemBackend {
                     backend_type: "Uffd",
                     backend_path: "/uffd.sock",
@@ -493,7 +501,7 @@ impl FirecrackerSandbox {
                     backend_path: "/mem",
                 }
             };
-            let vmm = Vm::launch(&config, &spec.id.0, &lease).await?;
+            let vmm = Vm::launch(&config, &spec.id.0, &lease, services).await?;
             vmm.api
                 .snapshot_load(&api::SnapshotLoad {
                     snapshot_path: "/vmstate",
@@ -540,6 +548,7 @@ impl FirecrackerSandbox {
                 },
             )
             .await?;
+            let vmm_shim = vmm.shim.clone();
             Ok(Self {
                 config: config.clone(),
                 pool: pool.clone(),
@@ -549,9 +558,7 @@ impl FirecrackerSandbox {
                 vm: Mutex::new(vmm),
                 link: Arc::new(Link::new(agent)),
                 mounts,
-                exposed: Mutex::new(HashMap::new()),
-                dns: std::sync::Mutex::new(dns),
-                memory: std::sync::Mutex::new(memory),
+                shim: vmm_shim,
             })
         }
         .await;
@@ -606,9 +613,8 @@ impl FirecrackerSandbox {
             true,
         )
         .await?;
-        // The namespace and its learned addresses survived the restart; the
-        // DNS proxy did not.
-        let dns = Self::start_dns(&config, &meta.spec, &lease).await?;
+        // The shim kept the VM's services (DNS, proxies, lazy volumes) going.
+        let vmm_shim = vmm.shim.clone();
         Ok(Self {
             config: config.clone(),
             pool,
@@ -618,9 +624,7 @@ impl FirecrackerSandbox {
             vm: Mutex::new(vmm),
             link: Arc::new(Link::new(agent)),
             mounts: meta.mounts,
-            exposed: Mutex::new(HashMap::new()),
-            dns: std::sync::Mutex::new(dns),
-            memory: std::sync::Mutex::new(None),
+            shim: vmm_shim,
         })
     }
 
@@ -992,11 +996,7 @@ impl SandboxHandle for FirecrackerSandbox {
 
     async fn kill(&self) -> Result<()> {
         self.flush_volumes().await;
-        drop(self.dns.lock().unwrap().take());
-        // Stops the memory handler when this function returns.
-        let _memory = self.memory.lock().unwrap().take();
         self.link.mark_dead();
-        self.exposed.lock().await.clear();
         let mut vmm = self.vm.lock().await;
         vmm.kill().await?;
         net::delete_netns(&self.lease).await;
@@ -1020,25 +1020,33 @@ impl SandboxHandle for FirecrackerSandbox {
     }
 
     async fn expose(&self, guest_port: u16) -> Result<Endpoint> {
-        let mut exposed = self.exposed.lock().await;
-        if let Some(p) = exposed.get(&guest_port) {
-            return Ok(Endpoint {
-                host: "127.0.0.1".into(),
-                port: p.port,
-            });
-        }
-        let proxy = net::proxy(self.lease.ns_ip, guest_port).await?;
-        let port = proxy.port;
-        exposed.insert(guest_port, proxy);
+        let r = self
+            .shim
+            .call(&crate::shim::Request::Expose { port: guest_port })
+            .await?;
         Ok(Endpoint {
             host: "127.0.0.1".into(),
-            port,
+            port: r.host_port.ok_or_else(|| err("shim returned no port"))?,
         })
     }
 
     async fn unexpose(&self, guest_port: u16) -> Result<()> {
-        self.exposed.lock().await.remove(&guest_port);
-        Ok(())
+        self.shim
+            .call(&crate::shim::Request::Unexpose { port: guest_port })
+            .await
+            .map(|_| ())
+    }
+
+    async fn set_fencing_deadline(&self, deadline: Option<SystemTime>) -> Result<()> {
+        let deadline_ms = deadline.map(|d| {
+            d.duration_since(std::time::UNIX_EPOCH)
+                .map(|x| x.as_millis() as u64)
+                .unwrap_or(0)
+        });
+        self.shim
+            .call(&crate::shim::Request::Extend { deadline_ms })
+            .await
+            .map(|_| ())
     }
 }
 
@@ -1058,7 +1066,7 @@ fn _labels(m: &BTreeMap<String, String>) -> usize {
 }
 
 /// Sends addresses the DNS proxy learned to a VM namespace's nftables sets.
-struct NftSink(String);
+pub(crate) struct NftSink(pub(crate) String);
 
 #[async_trait::async_trait]
 impl AllowSink for NftSink {

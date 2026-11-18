@@ -159,6 +159,17 @@ pub trait SandboxHandle: Send + Sync {
     /// Make a guest port reachable from the host. *Optional: `expose_port`.*
     async fn expose(&self, guest_port: u16) -> Result<Endpoint>;
     async fn unexpose(&self, guest_port: u16) -> Result<()>;
+
+    /// Kill the sandbox at `deadline` unless the deadline is moved again,
+    /// even if the daemon is gone by then (lease fencing, decision 0019).
+    /// `None` clears it. *Optional: `fencing`.*
+    async fn set_fencing_deadline(&self, deadline: Option<std::time::SystemTime>) -> Result<()> {
+        let _ = deadline;
+        Err(crate::Error::Unsupported {
+            backend: self.backend(),
+            feature: "fencing deadlines",
+        })
+    }
 }
 
 /// A process started with [`SandboxHandle::exec`].

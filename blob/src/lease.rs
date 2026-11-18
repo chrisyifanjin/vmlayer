@@ -22,6 +22,10 @@ use crate::{manifest, Error, Remote, Result};
 
 const LEASE_DIR: &str = "leases";
 
+/// An opaque object version for [`Remote::put_if`].
+#[derive(Clone, Debug)]
+pub struct Version(UpdateVersion);
+
 /// The stored record.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeaseRecord {
@@ -235,6 +239,76 @@ impl Remote {
         Ok(())
     }
 
+    /// A document and the version to compare against when replacing it.
+    pub async fn get_versioned(&self, dir: &str, name: &str) -> Result<Option<(Vec<u8>, Version)>> {
+        manifest::check_id(name)?;
+        match self
+            .store
+            .get(&self.key(&format!("{dir}/{name}.json")))
+            .await
+        {
+            Ok(r) => {
+                let version = Version(UpdateVersion {
+                    e_tag: r.meta.e_tag.clone(),
+                    version: r.meta.version.clone(),
+                });
+                Ok(Some((r.bytes().await?.to_vec(), version)))
+            }
+            Err(object_store::Error::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Write a document only if it is unchanged: `expected` is `None` for
+    /// "must not exist yet", or the version read with [`Remote::get_versioned`].
+    /// `Ok(false)` means someone else wrote first.
+    pub async fn put_if(
+        &self,
+        dir: &str,
+        name: &str,
+        doc: &[u8],
+        expected: Option<Version>,
+    ) -> Result<bool> {
+        manifest::check_id(name)?;
+        let key = self.key(&format!("{dir}/{name}.json"));
+        let mode = match expected {
+            None => PutMode::Create,
+            Some(Version(v)) => PutMode::Update(v),
+        };
+        let payload = PutPayload::from(doc.to_vec());
+        match self
+            .store
+            .put_opts(&key, payload.clone(), PutOptions::from(mode.clone()))
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(
+                object_store::Error::AlreadyExists { .. }
+                | object_store::Error::Precondition { .. },
+            ) => Ok(false),
+            // No compare-and-swap (a directory store): best effort, see the
+            // module docs.
+            Err(object_store::Error::NotImplemented { .. })
+                if matches!(mode, PutMode::Update(_)) =>
+            {
+                match self.store.delete(&key).await {
+                    Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+                    Err(e) => return Err(e.into()),
+                }
+                match self
+                    .store
+                    .put_opts(&key, payload, PutOptions::from(PutMode::Create))
+                    .await
+                {
+                    Ok(_) => Ok(true),
+                    Err(object_store::Error::AlreadyExists { .. }) => Ok(false),
+                    Err(e) => Err(e.into()),
+                }
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// The document `<prefix>/<dir>/<name>.json`, if it exists.
     pub async fn get_doc(&self, dir: &str, name: &str) -> Result<Option<Vec<u8>>> {
         manifest::check_id(name)?;
@@ -369,6 +443,38 @@ mod tests {
         assert_eq!(
             remote.list_docs("hosts").await.unwrap(),
             vec![b"[]".to_vec()]
+        );
+    }
+}
+
+#[cfg(test)]
+mod versioned_tests {
+    use std::sync::Arc;
+
+    use object_store::memory::InMemory;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn put_if_is_compare_and_swap() {
+        let r = Remote::from_store(Arc::new(InMemory::new()), "");
+        assert!(r.put_if("owners", "x", b"1", None).await.unwrap());
+        assert!(
+            !r.put_if("owners", "x", b"2", None).await.unwrap(),
+            "create must not overwrite"
+        );
+        let (_, v1) = r.get_versioned("owners", "x").await.unwrap().unwrap();
+        assert!(r
+            .put_if("owners", "x", b"2", Some(v1.clone()))
+            .await
+            .unwrap());
+        assert!(
+            !r.put_if("owners", "x", b"3", Some(v1)).await.unwrap(),
+            "stale version must lose"
+        );
+        assert_eq!(
+            r.get_versioned("owners", "x").await.unwrap().unwrap().0,
+            b"2"
         );
     }
 }

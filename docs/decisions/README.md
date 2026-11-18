@@ -17,6 +17,7 @@ Format: context, options considered (with evidence), decision, consequences.
 | [0007](0007-daemon-stack.md) | Daemon stack: tonic gRPC over unix socket, SQLite, bollard for Docker | accepted |
 | [0008](0008-firecracker-backend-design.md) | Firecracker: jailed VMs with fixed drive names, one netns each, gRPC guest agent over vsock, fork = snapshot + restores | accepted |
 | [0009](0009-image-pipeline.md) | Image pipeline: pull OCI layers in the daemon, unpack with whiteouts, one cached ext4 per digest via `mkfs.ext4 -d` | accepted |
+| [0019](0019-per-vm-shim.md) | A shim process per microVM owns its data path (lazy disk, memory fill, DNS, proxies) and its fencing deadline; the daemon only gives orders | accepted |
 | [0018](0018-durable-memory-snapshots.md) | Durable memory snapshots: snapshot files in the chunk store, imported on restore by any daemon of the same CPU model and engine release | accepted |
 | [0017](0017-e2b-wire-compatibility.md) | E2B wire compatibility: a gateway serving E2B's REST control plane and envd Connect services on vmlayer, using the e2b package's generated server code | accepted |
 | [0016](0016-lazy-volume-restore.md) | Lazy restore of block volumes: a sparse local image filled on demand from the blob store, served to Firecracker as `/dev/nbdN` | accepted |

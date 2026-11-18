@@ -31,6 +31,10 @@ pub struct LazyImage {
     chunks: HashMap<u64, ChunkRef>,
     locks: Vec<Mutex<()>>,
     present_path: PathBuf,
+    /// Held shared by every operation for its whole duration; `close` takes
+    /// it exclusively, so after `close` returns this instance will never
+    /// write again and another process may take the image over.
+    gate: tokio::sync::RwLock<bool>,
 }
 
 impl std::fmt::Debug for LazyImage {
@@ -106,6 +110,7 @@ impl LazyImage {
             chunks,
             locks: (0..count).map(|_| Mutex::new(())).collect(),
             present_path: marker,
+            gate: tokio::sync::RwLock::new(false),
         }))
     }
 
@@ -149,12 +154,29 @@ impl LazyImage {
         if !overwritten {
             let c = &self.chunks[&(i as u64)];
             let data = self.remote.get_chunk(c).await?;
-            let (image, offset) = (self.image.clone(), c.offset);
-            tokio::task::spawn_blocking(move || image.write_all_at(&data, offset))
-                .await
-                .map_err(std::io::Error::other)??;
+            // Write and mark with no await in between: a cancelled caller
+            // can never leave a write behind that lands later.
+            self.image.write_all_at(&data, c.offset)?;
         }
         self.mark(i)
+    }
+
+    fn open_gate(&self) -> Result<tokio::sync::RwLockReadGuard<'_, bool>> {
+        let gate = self
+            .gate
+            .try_read()
+            .map_err(|_| Error::Io(std::io::Error::other("lazy image is being closed")))?;
+        if *gate {
+            return Err(Error::Closed);
+        }
+        Ok(gate)
+    }
+
+    /// Stop using this image: wait for in-flight operations, then refuse new
+    /// ones. Afterwards another process (or instance) may open it.
+    pub async fn close(&self) {
+        let mut gate = self.gate.write().await;
+        *gate = true;
     }
 
     fn span(&self, offset: u64, len: u64) -> std::ops::Range<usize> {
@@ -163,6 +185,7 @@ impl LazyImage {
     }
 
     pub async fn read(&self, offset: u64, len: usize) -> Result<Vec<u8>> {
+        let _gate = self.open_gate()?;
         if offset + len as u64 > self.size {
             return Err(Error::Io(std::io::Error::other(
                 "read past the end of the image",
@@ -171,17 +194,13 @@ impl LazyImage {
         for i in self.span(offset, len as u64) {
             self.ensure(i, false).await?;
         }
-        let image = self.image.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut buf = vec![0u8; len];
-            image.read_exact_at(&mut buf, offset).map(|_| buf)
-        })
-        .await
-        .map_err(std::io::Error::other)?
-        .map_err(Error::from)
+        let mut buf = vec![0u8; len];
+        self.image.read_exact_at(&mut buf, offset)?;
+        Ok(buf)
     }
 
     pub async fn write(&self, offset: u64, data: Vec<u8>) -> Result<()> {
+        let _gate = self.open_gate()?;
         let end = offset + data.len() as u64;
         if end > self.size {
             return Err(Error::Io(std::io::Error::other(
@@ -202,22 +221,17 @@ impl LazyImage {
                 None
             };
             if _guard.is_some() && !self.is_present(i) {
-                let chunk_data = data[(start - offset) as usize..(stop - offset) as usize].to_vec();
-                let image = self.image.clone();
-                tokio::task::spawn_blocking(move || image.write_all_at(&chunk_data, start))
-                    .await
-                    .map_err(std::io::Error::other)??;
+                let chunk_data = &data[(start - offset) as usize..(stop - offset) as usize];
+                self.image.write_all_at(chunk_data, start)?;
                 self.mark(i)?;
             }
         }
-        let image = self.image.clone();
-        tokio::task::spawn_blocking(move || image.write_all_at(&data, offset))
-            .await
-            .map_err(std::io::Error::other)??;
+        self.image.write_all_at(&data, offset)?;
         Ok(())
     }
 
     pub async fn flush(&self) -> Result<()> {
+        let _gate = self.open_gate()?;
         let image = self.image.clone();
         tokio::task::spawn_blocking(move || image.sync_data())
             .await
@@ -235,13 +249,18 @@ impl LazyImage {
         futures::stream::iter(todo)
             .map(|i| {
                 let this = self.clone();
-                async move { this.ensure(i, false).await }
+                async move {
+                    let _gate = this.open_gate()?;
+                    this.ensure(i, false).await
+                }
             })
             .buffer_unordered(concurrency.max(1))
             .try_collect::<()>()
             .await?;
         self.flush().await?;
-        let _ = std::fs::remove_file(&self.present_path);
+        if self.is_complete() {
+            let _ = std::fs::remove_file(&self.present_path);
+        }
         tracing::info!(
             ms = started.elapsed().as_millis() as u64,
             bytes = self.size,
@@ -321,5 +340,44 @@ mod tests {
         let img = LazyImage::open(remote, &manifest, &dir.path().join("x.ext4")).unwrap();
         assert!(img.read((24 << 20) - 1, 2).await.is_err());
         assert!(img.write(24 << 20, vec![1]).await.is_err());
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use std::sync::Arc;
+
+    use object_store::memory::InMemory;
+
+    use super::*;
+    use crate::SnapshotMeta;
+
+    #[tokio::test]
+    async fn close_waits_and_then_refuses() {
+        let remote = Remote::from_store(Arc::new(InMemory::new()), "");
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::write(&src, vec![1u8; 8 << 20]).unwrap();
+        let (m, _) = remote
+            .push_block(
+                &src,
+                &SnapshotMeta {
+                    id: "c".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let path = dir.path().join("img");
+        let img = LazyImage::open(remote.clone(), &m, &path).unwrap();
+        img.read(0, 10).await.unwrap();
+        img.close().await;
+        assert!(matches!(img.read(0, 10).await, Err(Error::Closed)));
+        assert!(matches!(img.hydrate(2).await, Err(Error::Closed)));
+        // Another instance takes over from the persisted markers.
+        let next = LazyImage::open(remote, &m, &path).unwrap();
+        assert_eq!(next.missing(), 1);
+        next.hydrate(2).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), vec![1u8; 8 << 20]);
     }
 }

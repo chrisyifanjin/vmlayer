@@ -16,6 +16,18 @@ pub enum VolumeSource {
     BlockImage { path: PathBuf },
     /// A host directory, bind-mounted. Docker.
     Dir { path: PathBuf },
+    /// A block image still being restored from the blob store (decision
+    /// 0016). `path` is its sparse local file; the backend serves it to the
+    /// VM and fills missing chunks on demand from `snapshot` in the store at
+    /// `store_url`. The daemon hands the image over and does not touch it
+    /// while it is attached.
+    LazyBlockImage {
+        path: PathBuf,
+        snapshot: String,
+        store_url: String,
+        #[serde(default)]
+        store_options: std::collections::BTreeMap<String, String>,
+    },
 }
 
 /// Which [`VolumeSource`] representation a backend consumes. The daemon

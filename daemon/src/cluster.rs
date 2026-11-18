@@ -8,21 +8,50 @@
 //! place new sandboxes themselves; the SDK's `Cluster` does that. There is no
 //! central scheduler to run or keep available.
 //!
-//! A sandbox created with `lease = "<name>"` holds the store lease `<name>`
-//! for as long as it lives, so at most one sandbox with that name runs
-//! across all hosts. The daemon renews the lease every third of its TTL. If
-//! the lease is lost, or cannot be renewed before it expires (the host is cut
-//! off from the store), the daemon kills the sandbox: by the time anyone else
-//! can take the lease, this one is gone.
+//! Single-instance sandboxes (review A2). Each daemon renews **one** lease
+//! for its host, `leases/host-<host id>.json`, every third of its TTL; that
+//! is the only periodic write, so store traffic scales with hosts, not
+//! sandboxes. A sandbox created with `lease = "<name>"` claims an ownership
+//! record, `owners/<name>.json` = {host, sandbox, epoch}, by
+//! compare-and-swap. A record can be taken over only when it was released
+//! or its host's lease has expired, and every takeover bumps the epoch, so a
+//! stale owner's conditional writes fail. After each host-lease renewal the
+//! daemon pushes the new expiry to the shims of its leased sandboxes as a
+//! fencing deadline; if renewals stop (daemon dead, store unreachable), each
+//! shim kills its VM at that deadline, before anyone else may take the
+//! name over.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use vmlayer_core::SandboxId;
 
 use crate::manager::Daemon;
+
+pub const OWNERS_DIR: &str = "owners";
+
+/// Who runs a single-instance sandbox.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Owner {
+    pub name: String,
+    pub host: String,
+    pub sandbox_id: String,
+    /// Bumped by every claim; writes about the sandbox check it.
+    pub epoch: u64,
+    #[serde(default)]
+    pub released: bool,
+}
+
+/// Host-lease state shared by the daemon's tasks.
+#[derive(Default)]
+pub struct ClusterState {
+    /// When this host's lease is known to expire.
+    pub host_valid_until: std::sync::Mutex<Option<SystemTime>>,
+    /// Epoch of each local single-instance sandbox.
+    pub epochs: std::sync::Mutex<std::collections::HashMap<SandboxId, u64>>,
+}
 
 pub const HOSTS_DIR: &str = "hosts";
 /// Label recording a sandbox's lease, so renewal resumes after a restart.
@@ -105,12 +134,265 @@ impl Daemon {
             .unwrap_or_else(default_host_id)
     }
 
-    pub(crate) fn lease_holder(&self, id: &SandboxId) -> String {
-        format!("{}/{}", self.host_id(), id)
-    }
-
     fn lease_ttl(&self) -> Duration {
         Duration::from_secs(self.cfg.cluster.lease_ttl_secs.max(3))
+    }
+
+    fn host_lease_name(&self) -> String {
+        format!("host-{}", self.host_id())
+    }
+
+    fn host_lease_valid(&self) -> bool {
+        self.cluster
+            .host_valid_until
+            .lock()
+            .unwrap()
+            .is_some_and(|t| t > SystemTime::now())
+    }
+
+    /// Renew this host's lease once, bounded by a third of its TTL. Returns
+    /// the new expiry.
+    async fn renew_host_lease(&self) -> vmlayer_core::Result<SystemTime> {
+        let remote = self
+            .volumes
+            .remote()
+            .ok_or_else(|| vmlayer_core::Error::Guest("no blob store is configured".into()))?;
+        let ttl = self.lease_ttl();
+        let started = SystemTime::now();
+        let (name, holder) = (self.host_lease_name(), self.host_id());
+        let attempt = remote.acquire_lease(&name, &holder, ttl);
+        match tokio::time::timeout(ttl / 3, attempt).await {
+            Ok(Ok(Ok(_))) => {
+                let until = started + ttl;
+                *self.cluster.host_valid_until.lock().unwrap() = Some(until);
+                Ok(until)
+            }
+            Ok(Ok(Err(e))) => Err(vmlayer_core::Error::Guest(format!(
+                "host lease {} is {e} (two daemons with the same host id?)",
+                self.host_lease_name()
+            ))),
+            Ok(Err(e)) => Err(vmlayer_core::Error::Guest(format!("host lease: {e}"))),
+            Err(_) => Err(vmlayer_core::Error::Guest(
+                "host lease renewal timed out".into(),
+            )),
+        }
+    }
+
+    /// Keep this host's lease and push its expiry to every leased sandbox.
+    pub(crate) fn start_host_lease(self: &Arc<Self>) {
+        if self.volumes.remote().is_none() {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let every = self.lease_ttl() / 3;
+        tokio::spawn(async move {
+            loop {
+                let Some(d) = weak.upgrade() else { return };
+                match d.renew_host_lease().await {
+                    Ok(until) => d.push_deadlines(until).await,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "host lease renewal failed");
+                        if !d.host_lease_valid() {
+                            d.fence_without_shim().await;
+                        }
+                    }
+                }
+                drop(d);
+                tokio::time::sleep(every).await;
+            }
+        });
+    }
+
+    /// Tell each leased sandbox's backend when to kill it if no renewal follows.
+    async fn push_deadlines(&self, until: SystemTime) {
+        let leased: Vec<SandboxId> = self
+            .cluster
+            .epochs
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        for id in leased {
+            if let Ok(live) = self.live(&id).await {
+                match live.handle.set_fencing_deadline(Some(until)).await {
+                    Ok(()) | Err(vmlayer_core::Error::Unsupported { .. }) => {}
+                    Err(e) => {
+                        tracing::warn!(%id, error = %e, "could not move the fencing deadline")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The host lease lapsed while the daemon runs: backends that cannot
+    /// fence on their own (Docker) are fenced here.
+    async fn fence_without_shim(&self) {
+        let leased: Vec<SandboxId> = self
+            .cluster
+            .epochs
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        for id in leased {
+            if let Ok(live) = self.live(&id).await {
+                let fences_itself = self
+                    .registry
+                    .get(&live.backend)
+                    .is_some_and(|e| e.backend.capabilities().fencing);
+                if !fences_itself {
+                    tracing::error!(%id, "host lease expired; killing the sandbox to keep its name exclusive");
+                    live.fenced
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    let _ = self.kill(&id).await;
+                }
+            }
+        }
+    }
+
+    async fn owner(
+        &self,
+        name: &str,
+    ) -> vmlayer_core::Result<Option<(Owner, vmlayer_blob::Version)>> {
+        let remote = self.volumes.remote().ok_or_else(|| {
+            vmlayer_core::Error::Guest(
+                "single-instance sandboxes need a blob store (set [blob_store] url)".into(),
+            )
+        })?;
+        let doc = remote
+            .get_versioned(OWNERS_DIR, name)
+            .await
+            .map_err(|e| vmlayer_core::Error::Guest(format!("owner record {name}: {e}")))?;
+        Ok(doc.and_then(|(b, v)| serde_json::from_slice::<Owner>(&b).ok().map(|o| (o, v))))
+    }
+
+    /// Whether `host` has stopped renewing its lease.
+    async fn host_expired(&self, host: &str) -> bool {
+        let Some(remote) = self.volumes.remote() else {
+            return false;
+        };
+        match remote.lease(&format!("host-{host}")).await {
+            Ok(Some(l)) => l.expires_at <= now_ms(),
+            Ok(None) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Whether the name is free for a new owner (released, or its host dead).
+    pub(crate) async fn owner_claimable(&self, name: &str) -> bool {
+        match self.owner(name).await {
+            Ok(None) => true,
+            Ok(Some((o, _))) => o.released || self.host_expired(&o.host).await,
+            Err(_) => false,
+        }
+    }
+
+    /// Claim `name` for sandbox `id` on this host. Returns the new epoch.
+    pub(crate) async fn acquire_lease(
+        &self,
+        name: &str,
+        id: &SandboxId,
+    ) -> vmlayer_core::Result<()> {
+        if !self.host_lease_valid() {
+            self.renew_host_lease().await?;
+        }
+        let remote = self
+            .volumes
+            .remote()
+            .expect("checked by renew_host_lease")
+            .clone();
+        for _ in 0..4 {
+            let current = self.owner(name).await?;
+            let (epoch, expected) = match &current {
+                None => (1, None),
+                Some((o, v)) => {
+                    let mine_but_gone = o.host == self.host_id()
+                        && self.live(&SandboxId(o.sandbox_id.clone())).await.is_err();
+                    if !(o.released || mine_but_gone || self.host_expired(&o.host).await) {
+                        return Err(vmlayer_core::Error::Guest(format!(
+                            "lease {name:?} is held by {}/{} (epoch {})",
+                            o.host, o.sandbox_id, o.epoch
+                        )));
+                    }
+                    (o.epoch + 1, Some(v.clone()))
+                }
+            };
+            let record = Owner {
+                name: name.to_string(),
+                host: self.host_id(),
+                sandbox_id: id.0.clone(),
+                epoch,
+                released: false,
+            };
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|e| vmlayer_core::Error::Guest(e.to_string()))?;
+            match remote.put_if(OWNERS_DIR, name, &bytes, expected).await {
+                Ok(true) => {
+                    self.cluster
+                        .epochs
+                        .lock()
+                        .unwrap()
+                        .insert(id.clone(), epoch);
+                    return Ok(());
+                }
+                Ok(false) => continue, // lost a race; look again
+                Err(e) => return Err(vmlayer_core::Error::Guest(format!("lease {name:?}: {e}"))),
+            }
+        }
+        Err(vmlayer_core::Error::Guest(format!(
+            "lease {name:?}: too much contention"
+        )))
+    }
+
+    /// The epoch this sandbox owns `name` at, if it still does.
+    pub(crate) async fn owned_epoch(&self, name: &str, id: &SandboxId) -> Option<u64> {
+        let epoch = *self.cluster.epochs.lock().unwrap().get(id)?;
+        match self.owner(name).await {
+            Ok(Some((o, _)))
+                if o.host == self.host_id()
+                    && o.sandbox_id == id.0
+                    && o.epoch == epoch
+                    && !o.released =>
+            {
+                Some(epoch)
+            }
+            _ => None,
+        }
+    }
+
+    /// Give `name` up if sandbox `id` still owns it.
+    pub(crate) async fn release_lease(&self, name: &str, id: &SandboxId) {
+        let epoch = self.cluster.epochs.lock().unwrap().remove(id);
+        let (Some(remote), Some(epoch)) = (self.volumes.remote(), epoch) else {
+            return;
+        };
+        if let Ok(Some((mut o, v))) = self.owner(name).await {
+            if o.host == self.host_id() && o.sandbox_id == id.0 && o.epoch == epoch {
+                o.released = true;
+                if let Ok(bytes) = serde_json::to_vec(&o) {
+                    let _ = remote.put_if(OWNERS_DIR, name, &bytes, Some(v)).await;
+                }
+            }
+        }
+    }
+
+    /// After a restart: keep owning `name` if the record still says so;
+    /// otherwise the sandbox must go (someone took the name over).
+    pub(crate) async fn resume_ownership(&self, name: &str, id: &SandboxId) -> bool {
+        match self.owner(name).await {
+            Ok(Some((o, _))) if o.host == self.host_id() && o.sandbox_id == id.0 && !o.released => {
+                self.cluster
+                    .epochs
+                    .lock()
+                    .unwrap()
+                    .insert(id.clone(), o.epoch);
+                true
+            }
+            Ok(_) => false,
+            Err(_) => true, // store unreachable: the host lease decides
+        }
     }
 
     async fn host_doc(&self, endpoint: &str) -> HostDoc {
@@ -203,80 +485,6 @@ impl Daemon {
             .collect();
         hosts.sort_by(|a, b| a.host_id.cmp(&b.host_id));
         Ok(hosts)
-    }
-
-    /// Take the lease for a sandbox about to be created.
-    pub(crate) async fn acquire_lease(
-        &self,
-        name: &str,
-        id: &SandboxId,
-    ) -> vmlayer_core::Result<()> {
-        let remote = self.volumes.remote().ok_or_else(|| {
-            vmlayer_core::Error::Guest("leases need a blob store (set [blob_store] url)".into())
-        })?;
-        match remote
-            .acquire_lease(name, &self.lease_holder(id), self.lease_ttl())
-            .await
-        {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(e)) => Err(vmlayer_core::Error::Guest(format!("lease {name:?} is {e}"))),
-            Err(e) => Err(vmlayer_core::Error::Guest(format!("lease {name:?}: {e}"))),
-        }
-    }
-
-    pub(crate) async fn release_lease(&self, name: &str, id: &SandboxId) {
-        if let Some(remote) = self.volumes.remote() {
-            if let Err(e) = remote.release_lease(name, &self.lease_holder(id)).await {
-                tracing::warn!(lease = name, error = %e, "could not release lease");
-            }
-        }
-    }
-
-    /// Keep the lease while the sandbox lives; kill the sandbox if it goes.
-    pub(crate) fn keep_lease(
-        self: &Arc<Self>,
-        id: SandboxId,
-        name: String,
-    ) -> Option<tokio::task::JoinHandle<()>> {
-        let remote = self.volumes.remote().cloned()?;
-        let ttl = self.lease_ttl();
-        let holder = self.lease_holder(&id);
-        let weak = Arc::downgrade(self);
-        Some(tokio::spawn(async move {
-            let mut valid_until = Instant::now() + ttl;
-            loop {
-                let started = Instant::now();
-                let outcome = remote.renew_lease(&name, &holder, ttl).await;
-                let Some(d) = weak.upgrade() else { return };
-                let reason = match outcome {
-                    Ok(Ok(_)) => {
-                        valid_until = started + ttl;
-                        None
-                    }
-                    Ok(Err(e)) => Some(format!("lease {name:?} {e}")),
-                    Err(e) if Instant::now() >= valid_until => Some(format!(
-                        "lease {name:?} could not be renewed before it expired: {e}"
-                    )),
-                    Err(e) => {
-                        tracing::warn!(lease = %name, error = %e, "lease renewal failed; retrying");
-                        None
-                    }
-                };
-                if let Some(reason) = reason {
-                    tracing::error!(%id, %reason, "killing sandbox to keep the lease exclusive");
-                    if let Ok(live) = d.live(&id).await {
-                        live.fenced
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    if let Err(e) = d.kill(&id).await {
-                        tracing::warn!(%id, error = %e, "kill after losing the lease failed");
-                    }
-                    return;
-                }
-                drop(d);
-                tokio::time::sleep(ttl / 3).await;
-            }
-        }))
     }
 }
 

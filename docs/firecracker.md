@@ -92,7 +92,9 @@ nothing else: no init system, no network scripts. The image's
    NAT out, DNAT in, cloud metadata dropped, and with an egress policy the
    allowlist firewall plus a DNS proxy on the host end of the veth
    (decision 0012). Inspect with `sudo ip netns exec vml-N nft list ruleset`.
-3. `jailer --netns ... -- --api-sock /api.sock`, then the API calls:
+3. `vmlayer-shim` starts (decision 0019) and runs `jailer --netns ... --
+   --api-sock /api.sock`, plus the VM's DNS proxy, lazy volume devices and
+   expose proxies; then the daemon makes the API calls:
    machine config, boot source with `ip=172.16.0.2::172.16.0.1:... init=/vmlayer-guest-agent`,
    drives, `eth0` on `tap0`, vsock, `InstanceStart`.
 4. Connect to the agent over `/v.sock` (`CONNECT 5200`), wait for `Ready`,

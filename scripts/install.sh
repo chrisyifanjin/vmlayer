@@ -20,7 +20,10 @@ url="https://github.com/$repo/releases/download/$VMLAYER_VERSION/vmlayer-$VMLAYE
 tmp="$(mktemp -d)"
 echo "downloading $url"
 curl -fsSL "$url" | tar -xz -C "$tmp"
-if [ -w "$dir" ]; then install -m 0755 "$tmp/vmlayerd" "$tmp/vmlayer" "$dir/"; else sudo install -m 0755 "$tmp/vmlayerd" "$tmp/vmlayer" "$dir/"; fi
+# vmlayer-shim must sit next to vmlayerd (the per-microVM helper, decision 0019).
+bins="$tmp/vmlayerd $tmp/vmlayer"
+[ -f "$tmp/vmlayer-shim" ] && bins="$bins $tmp/vmlayer-shim"
+if [ -w "$dir" ]; then install -m 0755 $bins "$dir/"; else sudo install -m 0755 $bins "$dir/"; fi
 rm -rf "$tmp"
-echo "installed vmlayerd and vmlayer $VMLAYER_VERSION to $dir"
+echo "installed vmlayerd, vmlayer and vmlayer-shim $VMLAYER_VERSION to $dir"
 echo "start the daemon with: vmlayerd   (see docs/deploy.md for systemd)"

@@ -26,6 +26,9 @@ prefetch_memory = ${VMLAYER_PREFETCH_MEMORY:-true}
 [blob_store]
 url = "${VMLAYER_BLOB_STORE:-file:///var/lib/vmlayer-blobs}"
 lazy_restore = ${VMLAYER_LAZY_RESTORE:-true}
+
+[cluster]
+lease_ttl_secs = ${VMLAYER_LEASE_TTL_SECS:-30}
 TOML
 # Lazy volume restore serves volumes through NBD devices (decision 0016).
 sudo modprobe nbd nbds_max=64 2>/dev/null || true

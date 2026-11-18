@@ -24,6 +24,10 @@ pub struct Capabilities {
     /// Enforces [`crate::IoLimits`] (network and disk rate limits).
     #[serde(default)]
     pub io_limits: bool,
+    /// Enforces fencing deadlines outside the daemon
+    /// ([`crate::SandboxHandle::set_fencing_deadline`]).
+    #[serde(default)]
+    pub fencing: bool,
 }
 
 impl Capabilities {
@@ -39,6 +43,7 @@ impl Capabilities {
         hot_attach: false,
         egress_policy: true,
         io_limits: true,
+        fencing: true,
     };
 
     /// What a container backend offers: good enough for local dev and CI.
@@ -53,5 +58,6 @@ impl Capabilities {
         hot_attach: false,
         egress_policy: false,
         io_limits: false,
+        fencing: false,
     };
 }

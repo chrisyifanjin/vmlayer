@@ -26,7 +26,6 @@ pub struct Live {
     pub procs: ProcessTable,
     pub exposed: Mutex<BTreeMap<u16, Endpoint>>,
     ttl_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    lease_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     checkpoint_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Killed because its lease was lost: someone else owns its workload now.
     pub(crate) fenced: std::sync::atomic::AtomicBool,
@@ -95,6 +94,7 @@ pub struct Daemon {
     pub store: Store,
     pub volumes: VolumeStore,
     live: RwLock<HashMap<SandboxId, Arc<Live>>>,
+    pub(crate) cluster: crate::cluster::ClusterState,
 }
 
 pub(crate) fn store_err(e: StoreError) -> Error {
@@ -119,6 +119,12 @@ impl Daemon {
         let volumes = VolumeStore::new(&cfg.data_dir, store.clone(), cfg.defaults.volume_size_mib)
             .with_remote(remote)
             .with_lazy_restore(cfg.blob_store.lazy_restore.unwrap_or(true));
+        let volumes = match &cfg.blob_store.url {
+            Some(url) if !url.is_empty() => {
+                volumes.with_remote_config(url.clone(), cfg.blob_store.options.clone())
+            }
+            _ => volumes,
+        };
         volumes.resume_lazy().await;
         let registry = Registry::from_config(&cfg).await;
         volumes.set_cleaners(registry.entries().map(|(_, e)| e.backend.clone()).collect());
@@ -128,8 +134,10 @@ impl Daemon {
             store,
             volumes,
             live: RwLock::new(HashMap::new()),
+            cluster: Default::default(),
         });
         d.reattach().await;
+        d.start_host_lease();
         d.start_heartbeat();
         d.start_rescue();
         Ok(d)
@@ -157,7 +165,13 @@ impl Daemon {
                         .await;
                     self.arm_ttl(&live, row.created_at, row.ttl);
                     if let Some(name) = row.labels.get(crate::cluster::LEASE_LABEL) {
-                        self.arm_lease(&live, name.clone());
+                        if !self.resume_ownership(name, &row.id).await {
+                            tracing::error!(id = %row.id, lease = %name, "name taken over while the daemon was down; killing");
+                            live.fenced
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                            let _ = self.kill(&row.id).await;
+                            continue;
+                        }
                     }
                     if let Some(name) = crate::rescue::lease_name(&row.labels) {
                         self.arm_checkpoints(&live, name.clone());
@@ -186,7 +200,6 @@ impl Daemon {
             procs: ProcessTable::new(self.cfg.defaults.output_buffer_bytes),
             exposed: Mutex::new(BTreeMap::new()),
             ttl_task: Mutex::new(None),
-            lease_task: Mutex::new(None),
             checkpoint_task: Mutex::new(None),
             fenced: std::sync::atomic::AtomicBool::new(false),
         });
@@ -221,15 +234,6 @@ impl Daemon {
         tokio::spawn(async move {
             *live.checkpoint_task.lock().await = Some(task);
         });
-    }
-
-    fn arm_lease(self: &Arc<Self>, live: &Arc<Live>, name: String) {
-        if let Some(task) = self.keep_lease(live.id.clone(), name) {
-            let live = live.clone();
-            tokio::spawn(async move {
-                *live.lease_task.lock().await = Some(task);
-            });
-        }
     }
 
     pub async fn live(&self, id: &SandboxId) -> Result<Arc<Live>> {
@@ -282,7 +286,7 @@ impl Daemon {
             WorkspaceSpec::Volume(name) => {
                 let v = self.volumes.get(name)?;
                 self.volumes.check_kind(&v, kind)?;
-                self.volumes.prepare(&v).await?;
+                self.volumes.prepare(&v, false).await?;
                 if let Err(e) = self.volumes.attach(&v.id, id, false) {
                     self.rollback_attach(id, &attached).await;
                     return Err(e);
@@ -305,7 +309,7 @@ impl Daemon {
                     return Err(e);
                 }
             };
-            if let Err(e) = self.volumes.prepare(&v).await {
+            if let Err(e) = self.volumes.prepare(&v, m.read_only).await {
                 self.rollback_attach(id, &attached).await;
                 return Err(e);
             }
@@ -468,7 +472,15 @@ impl Daemon {
                 }
                 self.arm_checkpoints(&live, name.clone());
             }
-            self.arm_lease(&live, name);
+            // Fence from the start, with the host lease's current expiry.
+            let until = *self.cluster.host_valid_until.lock().unwrap();
+            if let Some(until) = until {
+                match live.handle.set_fencing_deadline(Some(until)).await {
+                    Ok(()) | Err(Error::Unsupported { .. }) => {}
+                    Err(e) => tracing::warn!(%id, error = %e, "could not set the fencing deadline"),
+                }
+            }
+            let _ = name;
         }
         tracing::info!(%id, image = %row.image, backend = %row.backend, "created");
         self.view(&id).await
@@ -506,10 +518,6 @@ impl Daemon {
                 .volumes
                 .from_snapshot(&vs.id, None, BTreeMap::new(), true)
                 .await?;
-            // A volume restored from the blob store may still be downloading:
-            // attach it through its block device, never as a partial file
-            // (review T0.1).
-            self.volumes.prepare(&vol).await?;
             let guest_path = vs.guest_path.clone().unwrap_or_default();
             let read_only = snap
                 .spec
@@ -518,6 +526,10 @@ impl Daemon {
                 .find(|m| m.guest_path == guest_path)
                 .map(|m| m.read_only)
                 .unwrap_or(false);
+            // A volume restored from the blob store may still be downloading:
+            // hand it to the backend to serve on demand, never attach it as a
+            // partial file (review T0.1).
+            self.volumes.prepare(&vol, read_only).await?;
             self.volumes.attach(&vol.id, &id, read_only)?;
             if guest_path == snap.spec.workdir {
                 workspace_id = Some(vol.id.clone());
@@ -622,7 +634,7 @@ impl Daemon {
     pub async fn kill(&self, id: &SandboxId) -> Result<()> {
         let live = self.live.write().await.remove(id);
         if let Some(live) = &live {
-            for task in [&live.ttl_task, &live.lease_task, &live.checkpoint_task] {
+            for task in [&live.ttl_task, &live.checkpoint_task] {
                 if let Some(t) = task.lock().await.take() {
                     // These tasks call kill themselves; aborting one from
                     // inside would cancel this very call half-way through.
@@ -874,7 +886,7 @@ impl Daemon {
                     self.volumes.clone_volume(&m.volume_id, None, true).await
                 };
                 let vol = match vol {
-                    Ok(v) => self.volumes.prepare(&v).await.map(|_| v),
+                    Ok(v) => self.volumes.prepare(&v, m.read_only).await.map(|_| v),
                     Err(e) => Err(e),
                 };
                 let vol = match vol

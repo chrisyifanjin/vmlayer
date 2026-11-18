@@ -50,11 +50,12 @@ fi
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/target}"
 cd "$REPO"
-cargo build --release --locked -p vmlayerd -p vmlayer-cli 2>&1 | tail -2
+cargo build --release --locked -p vmlayerd -p vmlayer-cli -p vmlayer-backend-firecracker 2>&1 | tail -2
 cargo build --release --locked -p vmlayer-guest-agent --target "$ARCH-unknown-linux-musl" 2>&1 | tail -1
 # Replace atomically: a running vmlayerd keeps its old inode ("text file busy"
 # would otherwise fail the copy and silently leave the old binary in place).
 for bin in "$CARGO_TARGET_DIR/release/vmlayerd" "$CARGO_TARGET_DIR/release/vmlayer" \
+           "$CARGO_TARGET_DIR/release/vmlayer-shim" \
            "$CARGO_TARGET_DIR/$ARCH-unknown-linux-musl/release/vmlayer-guest-agent"; do
   install -m 0755 "$bin" "$PREFIX/bin/.$(basename "$bin").new"
   mv -f "$PREFIX/bin/.$(basename "$bin").new" "$PREFIX/bin/$(basename "$bin")"

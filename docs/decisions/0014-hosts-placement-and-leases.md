@@ -79,3 +79,24 @@ platform's hands; the daemon only publishes facts.
   durable snapshot (ADR 0011) restored elsewhere, under the same lease.
 - Rescheduling sandboxes from a dead host automatically is not done; the
   lease makes it safe for a platform to do it.
+
+## Update, 2026-11-18 (review A2)
+
+The first version kept one lease object per single-instance sandbox,
+renewed every third of its TTL: about 100 store writes per second at 1,000
+sandboxes, with safety resting on wall clocks per sandbox. Leases are now:
+
+- **one per host**, `leases/host-<host id>.json`, renewed every third of
+  the TTL with a bounded request; store writes scale with hosts;
+- **an ownership record per sandbox name**, `owners/<name>.json` =
+  {host, sandbox, epoch, released}, written only on claim, release and
+  takeover, always by compare-and-swap. A name can be taken over only when
+  its record is released or its owner's host lease has expired, and every
+  claim bumps the epoch, so writes by a stale owner (checkpoints, records)
+  are rejected;
+- **fencing in the shim** (decision 0019): the host lease's expiry is pushed
+  to every single-instance VM's shim as its deadline.
+
+Clock skew still matters across hosts (the taker judges the owner's host
+lease by its expiry time), but a host only needs its own clock to agree
+with the store within a small fraction of the TTL.

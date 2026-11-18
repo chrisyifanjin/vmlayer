@@ -23,9 +23,12 @@
 mod api;
 mod dns;
 mod guest;
+#[cfg(target_os = "linux")]
+mod nbd;
 mod net;
 mod process;
 mod sandbox;
+pub mod shim;
 mod template;
 #[cfg(target_os = "linux")]
 mod uffd;
@@ -81,6 +84,8 @@ pub struct Config {
     pub template_warmup_argv: Vec<String>,
     /// Templates kept on disk, most recently used first.
     pub template_limit: usize,
+    /// The per-VM helper binary (`vmlayer-shim`, decision 0019).
+    pub shim_bin: PathBuf,
     /// Restore memory snapshots through userfaultfd and copy all guest memory
     /// into place right away, instead of faulting it in page by page.
     pub prefetch_memory: bool,
@@ -168,6 +173,7 @@ impl FirecrackerBackend {
             ("firecracker binary", &self.config.firecracker_bin),
             ("jailer binary", &self.config.jailer_bin),
             ("kernel image", &self.config.kernel),
+            ("vmlayer-shim binary", &self.config.shim_bin),
         ] {
             if !p.exists() {
                 return Err(Error::Engine {
@@ -401,6 +407,7 @@ pub(crate) fn test_config() -> Config {
         template_snapshots: false,
         template_warmup_argv: Vec::new(),
         template_limit: 4,
+        shim_bin: "/vmlayer-shim".into(),
         prefetch_memory: true,
         max_concurrent_boots: 0,
         boot_timeout: Duration::from_secs(30),
