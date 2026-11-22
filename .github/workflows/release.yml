@@ -35,7 +35,7 @@ jobs:
           mkdir -p dist
           tar -C target/${{ matrix.target }}/release -czf dist/vmlayer-${{ github.ref_name }}-${{ matrix.target }}.tar.gz vmlayerd vmlayer vmlayer-shim
           ./target/${{ matrix.target }}/release/vmlayer --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.target }}
           path: dist/*.tar.gz
@@ -64,7 +64,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.arch }}-unknown-linux-musl/release/vmlayer-guest-agent dist/vmlayer-guest-agent-${{ github.ref_name }}-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: guest-agent-${{ matrix.arch }}
           path: dist/*
@@ -117,7 +117,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: sdk/python/dist/*
@@ -138,7 +138,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci && npm run sync-proto && npm run build && npm pack
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: npm-package
           path: sdk/typescript/*.tgz
