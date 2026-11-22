@@ -28,5 +28,5 @@ tracing-subscriber = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-nix = { version = "0.31", features = ["fs", "ioctl", "mount", "process", "signal", "term", "hostname", "reboot"] }
+nix = { version = "0.32", features = ["fs", "ioctl", "mount", "process", "signal", "term", "hostname", "reboot"] }
 tokio-vsock = { version = "0.7", features = ["tonic014"] }
